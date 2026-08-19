@@ -1,0 +1,129 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@theme {
+  /* Font Family Definitions */
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Inter", monospace; /* Ledger density requests using Inter for numerals */
+
+  /* Design Tokens as CSS Variables */
+  --color-primary: var(--primary);
+  --color-on-primary: var(--on-primary);
+  --color-primary-container: var(--primary-container);
+  --color-on-primary-container: var(--on-primary-container);
+  --color-secondary: var(--secondary);
+  --color-on-secondary: var(--on-secondary);
+  --color-background: var(--background);
+  --color-on-background: var(--on-background);
+  --color-surface: var(--surface);
+  --color-on-surface: var(--on-surface);
+  --color-on-surface-variant: var(--on-surface-variant);
+  --color-surface-border: var(--surface-border);
+  
+  --color-surface-container-lowest: var(--surface-low-lowest);
+  --color-surface-container-low: var(--surface-low-low);
+  --color-surface-container: var(--surface-low-med);
+  --color-surface-container-high: var(--surface-low-high);
+  --color-surface-container-highest: var(--surface-low-highest);
+
+  /* Semantic Colors */
+  --color-bank-truth-green: #2E7D32;
+  --color-alert-red: #D32F2F;
+  --color-pending-amber: #FFA000;
+  --color-bpi-blue: #1976D2;
+
+  /* Custom Transitions */
+  --animate-slide-in: slide-in 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-fade-in: fade-in 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-spin-slow: spin 8s linear infinite;
+}
+
+@keyframes slide-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+:root {
+  /* Light Mode Color Assignments */
+  --primary: #795900;
+  --on-primary: #ffffff;
+  --primary-container: #fbc02d;
+  --on-primary-container: #6c5000;
+  --secondary: #5e5e5e;
+  --on-secondary: #ffffff;
+  
+  --background: #f9f9f9;
+  --on-background: #1a1c1c;
+  
+  --surface: #f9f9f9;
+  --on-surface: #1a1c1c;
+  --on-surface-variant: #4f4633;
+  --surface-border: #E0E0E0;
+
+  --surface-low-lowest: #ffffff;
+  --surface-low-low: #f3f3f3;
+  --surface-low-med: #eeeeee;
+  --surface-low-high: #e8e8e8;
+  --surface-low-highest: #e2e2e2;
+}
+
+.dark {
+  /* Dark Mode has been adjusted to be a beautiful Soft Warm Light theme (High-End Clara aesthetics) */
+  --primary: #795900;
+  --on-primary: #ffffff;
+  --primary-container: #fff9db;
+  --on-primary-container: #795900;
+  --secondary: #5e5e5e;
+  --on-secondary: #ffffff;
+  
+  --background: #faf9f6;
+  --on-background: #1a1c1c;
+  
+  --surface: #ffffff;
+  --on-surface: #1a1c1c;
+  --on-surface-variant: #5e5a4f;
+  --surface-border: #e2e2e2;
+
+  --surface-low-lowest: #ffffff;
+  --surface-low-low: #f5f4ef;
+  --surface-low-med: #eae8df;
+  --surface-low-high: #dfddd2;
+  --surface-low-highest: #d4d2c5;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-background);
+  color: var(--color-on-background);
+  transition: background-color 0.2s, color 0.2s;
+}
+
+/* Custom scrollbars for professional data grids */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: var(--color-surface-container-high);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-surface-container-highest);
+}
