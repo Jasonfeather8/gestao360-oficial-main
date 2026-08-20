@@ -24,7 +24,7 @@ import {
   Shield
 } from 'lucide-react';
 import { useUIStore } from '../store/uiStore';
-import { useLancamentos, useEntidades, useCentrosCusto, useCategorias, useContas, useLancamentoAnexos, useCategoriasAjuste } from '../hooks/useData';
+import { useLancamentos, useLancamento, useEntidades, useCentrosCusto, useCategorias, useContas, useLancamentoAnexos, useCategoriasAjuste } from '../hooks/useData';
 import { useAuth } from '../hooks/useAuth';
 import MoneyInput from './MoneyInput';
 
@@ -209,6 +209,7 @@ export default function NovoLancamentoDrawer() {
   } = useUIStore();
 
   const { createLancamento, updateLancamento, baixaLancamento, isCreating, isUpdating, data: lancamentos = [] } = useLancamentos();
+  const { data: lancamentoSelecionado, isLoading: isLancamentoSelecionadoLoading } = useLancamento(selectedLancamentoIdForModal);
   const { data: entidades = [] } = useEntidades();
   const { data: rawCentros = [] } = useCentrosCusto();
   const { data: rawCategorias = [] } = useCategorias();
@@ -278,18 +279,20 @@ export default function NovoLancamentoDrawer() {
     }, 4500);
   };
 
+  const isEditing = Boolean(selectedLancamentoIdForModal);
   const editingItem = useMemo(() => {
     if (!selectedLancamentoIdForModal) return null;
-    return lancamentos.find(l => l.id === selectedLancamentoIdForModal) || null;
-  }, [selectedLancamentoIdForModal, lancamentos]);
+    return lancamentoSelecionado || lancamentos.find(l => l.id === selectedLancamentoIdForModal) || null;
+  }, [selectedLancamentoIdForModal, lancamentoSelecionado, lancamentos]);
+  const isEditingLoading = isEditing && isLancamentoSelecionadoLoading && !editingItem;
 
   useEffect(() => {
-    if (isNovoLancamentoOpen && !selectedLancamentoIdForModal) {
+    if (isNovoLancamentoOpen && !isEditing) {
       resetAllDrafts();
       setAttachments([]);
       setParcelasManuais([]);
     }
-  }, [isNovoLancamentoOpen, selectedLancamentoIdForModal]);
+  }, [isNovoLancamentoOpen, isEditing]);
 
   useEffect(() => {
     if (editingItem) {
@@ -320,9 +323,11 @@ export default function NovoLancamentoDrawer() {
 
   useEffect(() => {
     if (!editingItem) {
-      setIsAVREdit(false);
-      setAvrReasonId('');
-      setAvrParcels([]);
+      if (!isEditing) {
+        setIsAVREdit(false);
+        setAvrReasonId('');
+        setAvrParcels([]);
+      }
       return;
     }
 
@@ -358,7 +363,7 @@ export default function NovoLancamentoDrawer() {
       setParcelasManuais(loadedParcels.map(({ id, status, ...parcel }) => parcel));
     };
     loadAVRData();
-  }, [editingItem, categoriasAjuste]);
+  }, [editingItem, categoriasAjuste, isEditing]);
 
   useEffect(() => {
     if (contas.length > 0 && !lancamentoFormDraft.conta_bancaria_id) {
@@ -374,14 +379,14 @@ export default function NovoLancamentoDrawer() {
   }, [categorias, lancamentoFormDraft.tipo]);
 
   useEffect(() => {
-    if (filteredCategorias.length > 0 && !editingItem && !lancamentoFormDraft.categoria_id) {
+    if (filteredCategorias.length > 0 && !isEditing && !lancamentoFormDraft.categoria_id) {
       setLancamentoFormDraft({ categoria_id: filteredCategorias[0].id });
     }
-  }, [filteredCategorias, editingItem]);
+  }, [filteredCategorias, isEditing]);
 
   // Parcel Generation Logic
   useEffect(() => {
-    if (editingItem) return; // Don't auto-generate when editing an existing one
+    if (editingItem || isEditing) return; // Don't auto-generate when editing an existing one
     
     // Condition to show/generate parcels: either "A Prazo" OR "Repetir" (with more than 1 parcel)
     const isAPrazo = lancamentoFormDraft.condicao === 'a_prazo';
@@ -440,7 +445,8 @@ export default function NovoLancamentoDrawer() {
     lancamentoFormDraft.data_vencimento,
     lancamentoFormDraft.data_emissao,
     lancamentoFormDraft.recorrencia_com_entrada,
-    editingItem
+    editingItem,
+    isEditing
   ]);
 
   // Financial Calculations
@@ -522,6 +528,15 @@ export default function NovoLancamentoDrawer() {
   };
 
   const handleAVRSubmit = async (propagationOverride?: 'none' | 'open') => {
+    if (isEditing && !editingItem) {
+      showToast(
+        isEditingLoading
+          ? 'Carregando lançamento selecionado. Tente novamente em instantes.'
+          : 'Não foi possível carregar o lançamento selecionado.',
+        'info'
+      );
+      return;
+    }
     if (!editingItem || !avrReasonId) {
       showToast('Selecione um motivo para o AVR.', 'warning');
       return;
@@ -569,6 +584,15 @@ export default function NovoLancamentoDrawer() {
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isEditing && !editingItem) {
+      showToast(
+        isEditingLoading
+          ? 'Carregando lançamento selecionado. Tente novamente em instantes.'
+          : 'Não foi possível carregar o lançamento selecionado.',
+        'info'
+      );
+      return;
+    }
     if (isAVREdit) {
       if (!avrReasonId) {
         showToast('Selecione um motivo para o AVR.', 'warning');
@@ -825,10 +849,10 @@ export default function NovoLancamentoDrawer() {
               <header className="flex items-center justify-between px-6 py-5 border-b border-surface-border bg-surface shrink-0">
                 <div>
                   <h2 className="text-headline-sm text-on-surface font-black tracking-tight uppercase">
-                    {editingItem ? 'Editar Lançamento' : 'Novo Lançamento'}
+                    {isEditing ? 'Editar Lançamento' : 'Novo Lançamento'}
                   </h2>
                   <span className="text-[10px] uppercase font-black text-primary block mt-0.5 tracking-widest">
-                    {editingItem ? 'Ajuste de registro' : 'Inserir nova previsão financeira'}
+                    {isEditing ? 'Ajuste de registro' : 'Inserir nova previsão financeira'}
                   </span>
                   {editingItem?.codigo_sequencial && (
                     <span className="text-[9px] uppercase font-black text-secondary block mt-2 tracking-widest">
@@ -1253,7 +1277,7 @@ export default function NovoLancamentoDrawer() {
                 </div>
 
                 {/* Seção de Parcelamento / Repetição */}
-                {!editingItem && (lancamentoFormDraft.condicao === 'a_prazo' || lancamentoFormDraft.recorrencia_repeat) && (
+                {!isEditing && (lancamentoFormDraft.condicao === 'a_prazo' || lancamentoFormDraft.recorrencia_repeat) && (
                   <motion.div
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -1499,11 +1523,11 @@ export default function NovoLancamentoDrawer() {
                   <label className="text-[10px] font-black text-secondary uppercase tracking-widest">Observações Contábeis</label>
                   <textarea
                     rows={4}
-                    readOnly={!!editingItem}
+                    readOnly={isEditing}
                     placeholder="Digite descrições detalhadas..."
                     value={lancamentoFormDraft.observacoes}
                     onChange={(e) => setLancamentoFormDraft({ observacoes: e.target.value })}
-                    className={`w-full bg-white border-2 border-neutral-200 text-sm font-medium rounded-xl focus:outline-none focus:border-primary transition-all p-4 resize-none shadow-xs ${editingItem ? 'bg-neutral-100 text-neutral-500 cursor-not-allowed' : ''}`}
+                    className={`w-full bg-white border-2 border-neutral-200 text-sm font-medium rounded-xl focus:outline-none focus:border-primary transition-all p-4 resize-none shadow-xs ${isEditing ? 'bg-neutral-100 text-neutral-500 cursor-not-allowed' : ''}`}
                   />
                 </div>
               </div>
