@@ -77,6 +77,7 @@ export default function Lancamentos({
 
   const isMaster = role === 'master';
   const isColaborador = role === 'colaborador';
+  const isFinanceiroView = !typeOverride && !titleOverride;
 
   // Search State
   const [searchTerm, setSearchTerm] = useState('');
@@ -114,7 +115,7 @@ export default function Lancamentos({
   const pageSize = 50;
 
   // Advanced Filters
-  const defaultStatusPagamento = initialStatusPagamento || statusPagamentoOverride || (isColaborador ? 'quitação_pendente' : 'pago');
+  const defaultStatusPagamento = initialStatusPagamento || statusPagamentoOverride || (isFinanceiroView ? 'all' : (isColaborador ? 'quitação_pendente' : 'pago'));
   const defaultTypeFilter = initialTypeFilter || typeOverride || 'all';
   const [approvalStatus, setApprovalStatus] = useState('all');
   const [statusPagamento, setStatusPagamento] = useState<string>(defaultStatusPagamento);
@@ -122,10 +123,10 @@ export default function Lancamentos({
 
   // Sincronizar o estado interno com as propriedades da rota ao navegar
   useEffect(() => {
-    setStatusPagamento(initialStatusPagamento || statusPagamentoOverride || (isColaborador ? 'quitação_pendente' : 'pago'));
+    setStatusPagamento(initialStatusPagamento || statusPagamentoOverride || (isFinanceiroView ? 'all' : (isColaborador ? 'quitação_pendente' : 'pago')));
     setTypeFilter(initialTypeFilter || typeOverride || 'all');
     setSelectedLancamentoIdsForBatch([]);
-  }, [initialStatusPagamento, initialTypeFilter, statusPagamentoOverride, typeOverride, isColaborador]);
+  }, [initialStatusPagamento, initialTypeFilter, statusPagamentoOverride, typeOverride, titleOverride, isColaborador, isFinanceiroView]);
 
   const [authorIdFilter, setAuthorIdIdFilter] = useState('all');
 
@@ -160,7 +161,7 @@ export default function Lancamentos({
     startDate,
     endDate,
     approvalStatus: approvalStatus,
-    statusPagamento: statusPagamento === 'all' && isColaborador ? 'quitação_pendente' : statusPagamento,
+    statusPagamento: statusPagamento === 'all' && !isFinanceiroView && isColaborador ? 'quitação_pendente' : statusPagamento,
     type: typeFilter === 'all' ? undefined : typeFilter,
     authorId: isColaborador ? useUIStore.getState().currentUserId : authorIdFilter,
     categoryId: categoryIdFilter,

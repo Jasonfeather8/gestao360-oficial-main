@@ -9,7 +9,7 @@ export default function Receber() {
       statusPagamentoOverride="aberto"
       statusAprovacaoOverride="fila_operacional"
       initialTypeFilter="all"
-      initialStatusPagamento="all"
+      initialStatusPagamento="aberto"
     />
   );
 }

@@ -343,6 +343,7 @@ export const lancamentosService = {
 
    // Define final payment status based on role
    const finalPaymentStatus = isBPI ? 'bpi' : (isMaster ? 'pago' : 'quitação_pendente');
+   const isBaixaFinanceira = !isBPI && !isAVR;
 
    // AVR logic: Skip financial movement and only update values
    if (isAVR) {
@@ -562,9 +563,9 @@ export const lancamentosService = {
          valor_previsto: valorPagoEfetivo,
          valor_recebido: valorPagoEfetivo,
          status_pagamento: isMaster ? 'pago' : 'quitação_pendente',
+         status_aprovacao: isMaster ? 'confirmado_master' : 'digital',
          data_pagamento: dataPagamentoVal,
          hora_pagamento: horaPagamentoVal,
-
          conta_bancaria_id: contaBancariaVal,
          centro_custo_id: data.centro_custo_id || current.centro_custo_id,
          categoria_id: data.categoria_id || current.categoria_id,
@@ -584,9 +585,9 @@ export const lancamentosService = {
    } else {
      const updatePayload: any = {
        status_pagamento: finalPaymentStatus,
+       ...(isBaixaFinanceira ? { status_aprovacao: isMaster ? 'confirmado_master' : 'digital' } : {}),
        data_pagamento: dataPagamentoVal,
        hora_pagamento: isBPI ? null : horaPagamentoVal,
-
        conta_bancaria_id: contaBancariaVal,
        centro_custo_id: data.centro_custo_id || current.centro_custo_id,
        categoria_id: data.categoria_id || current.categoria_id,
