@@ -26,6 +26,21 @@ export interface LancamentoFilters {
 
 export const lancamentosService = {
   getAll: async (filters?: LancamentoFilters): Promise<{ data: LancamentoFinanceiro[], count: number }> => {
+    let recurrenceIds: string[] = [];
+
+    if (filters?.docCode !== undefined) {
+      const { data: matchingLancamentos, error: matchingError } = await supabase
+        .from('lancamentos_financeiros')
+        .select('recorrencia_id')
+        .eq('codigo_sequencial', filters.docCode);
+
+      if (matchingError) throw matchingError;
+
+      recurrenceIds = (matchingLancamentos || [])
+        .map(({ recorrencia_id }) => recorrencia_id)
+        .filter((recorrenciaId): recorrenciaId is string => Boolean(recorrenciaId));
+    }
+
     let query = supabase
       .from('lancamentos_financeiros')
       .select('*, entidades_negocio!inner(nome_razao_social)', { count: 'exact' })
@@ -34,10 +49,17 @@ export const lancamentosService = {
       .order('created_at', { ascending: false });
 
     if (filters) {
-      if (filters.startDate) query = query.gte('data_vencimento', filters.startDate);
-      if (filters.endDate) query = query.lte('data_vencimento', filters.endDate);
+      if (filters.docCode === undefined) {
+        if (filters.startDate) query = query.gte('data_vencimento', filters.startDate);
+        if (filters.endDate) query = query.lte('data_vencimento', filters.endDate);
+      }
       
-      if (filters.docCode) query = query.eq('codigo_sequencial', filters.docCode);
+      if (filters.docCode !== undefined) {
+        const recurrenceFilter = recurrenceIds.length > 0
+          ? `,recorrencia_id.in.(${recurrenceIds.join(',')})`
+          : '';
+        query = query.or(`codigo_sequencial.eq.${filters.docCode}${recurrenceFilter}`);
+      }
       if (filters.docParcel) query = query.eq('numero_parcela', filters.docParcel);
 
       if (filters.approvalStatus && filters.approvalStatus !== 'all') {
