@@ -18,6 +18,7 @@ interface LancamentoActionMenuProps {
   item: LancamentoFinanceiro;
   isMaster: boolean;
   isActive: boolean;
+  isOperationalView?: boolean;
   onToggle: () => void;
   onBaixa: (id: string) => void;
   onEstornar: (id: string) => void;
@@ -29,6 +30,7 @@ export default function LancamentoActionMenu({
   item,
   isMaster,
   isActive,
+  isOperationalView = true,
   onToggle,
   onBaixa,
   onEstornar,
@@ -84,13 +86,15 @@ export default function LancamentoActionMenu({
         
         <div className="h-px bg-neutral-50 my-1" />
         
-        <button
-          onClick={() => onEdit(item)}
-          className="w-full flex items-center gap-3 px-4 py-3 text-neutral-600 hover:bg-neutral-50 rounded-xl transition-all"
-        >
-          <Edit className="w-4 h-4" />
-          <span className="text-[10px] font-black uppercase tracking-widest">AVR</span>
-        </button>
+        {isOperationalView && (
+          <button
+            onClick={() => onEdit(item)}
+            className="w-full flex items-center gap-3 px-4 py-3 text-neutral-600 hover:bg-neutral-50 rounded-xl transition-all"
+          >
+            <Edit className="w-4 h-4" />
+            <span className="text-[10px] font-black uppercase tracking-widest">AVR</span>
+          </button>
+        )}
         
         {isMaster && (
           <button

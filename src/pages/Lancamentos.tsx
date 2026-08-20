@@ -771,6 +771,7 @@ export default function Lancamentos({
                             item={item}
                             isMaster={isMaster}
                             isActive={activeMenuId === item.id}
+                            isOperationalView={isOperationalView}
                             onToggle={() => setActiveMenuId(activeMenuId === item.id ? null : item.id)}
                             onBaixa={handleOpenBaixa}
                             onEstornar={handleEstornar}
