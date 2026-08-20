@@ -8,6 +8,8 @@ export default function Pagar() {
       titleOverride="Contas a Pagar"
       statusPagamentoOverride="aberto"
       statusAprovacaoOverride="fila_operacional"
+      initialTypeFilter="all"
+      initialStatusPagamento="all"
     />
   );
 }

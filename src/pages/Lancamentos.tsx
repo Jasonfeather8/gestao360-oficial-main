@@ -47,13 +47,17 @@ interface LancamentosProps {
   titleOverride?: string;
   statusPagamentoOverride?: 'aberto' | 'pago' | 'pago_parcial' | 'bpi';
   statusAprovacaoOverride?: string;
+  initialTypeFilter?: 'all' | 'entrada' | 'saida';
+  initialStatusPagamento?: 'all' | 'aberto' | 'pago' | 'pago_parcial' | 'bpi' | 'quitação_pendente';
 }
 
-export default function Lancamentos({ 
-  typeOverride, 
+export default function Lancamentos({
+  typeOverride,
   titleOverride,
   statusPagamentoOverride,
-  statusAprovacaoOverride
+  statusAprovacaoOverride,
+  initialTypeFilter,
+  initialStatusPagamento
 }: LancamentosProps) {
   const { role } = useAuth();
   const {
@@ -110,16 +114,18 @@ export default function Lancamentos({
   const pageSize = 50;
 
   // Advanced Filters
+  const defaultStatusPagamento = initialStatusPagamento || statusPagamentoOverride || (isColaborador ? 'quitação_pendente' : 'pago');
+  const defaultTypeFilter = initialTypeFilter || typeOverride || 'all';
   const [approvalStatus, setApprovalStatus] = useState('all');
-  const [statusPagamento, setStatusPagamento] = useState<string>(statusPagamentoOverride || (isColaborador ? 'quitação_pendente' : 'pago'));
-  const [typeFilter, setTypeFilter] = useState<'all' | 'entrada' | 'saida'>(typeOverride || 'all');
+  const [statusPagamento, setStatusPagamento] = useState<string>(defaultStatusPagamento);
+  const [typeFilter, setTypeFilter] = useState<'all' | 'entrada' | 'saida'>(defaultTypeFilter);
 
   // Sincronizar o estado interno com as propriedades da rota ao navegar
   useEffect(() => {
-    setStatusPagamento(statusPagamentoOverride || (isColaborador ? 'quitação_pendente' : 'pago'));
-    setTypeFilter(typeOverride || 'all');
+    setStatusPagamento(initialStatusPagamento || statusPagamentoOverride || (isColaborador ? 'quitação_pendente' : 'pago'));
+    setTypeFilter(initialTypeFilter || typeOverride || 'all');
     setSelectedLancamentoIdsForBatch([]);
-  }, [statusPagamentoOverride, typeOverride, isColaborador]);
+  }, [initialStatusPagamento, initialTypeFilter, statusPagamentoOverride, typeOverride, isColaborador]);
 
   const [authorIdFilter, setAuthorIdIdFilter] = useState('all');
 
@@ -133,7 +139,7 @@ export default function Lancamentos({
   const [motivoAcrescimoFilter, setMotivoAcrescimoFilter] = useState('all');
   const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
 
-  const hasActiveFilters = searchTerm !== '' || docSearchTerm !== '' || approvalStatus !== 'all' || typeFilter !== (typeOverride || 'all') || authorIdFilter !== 'all' || categoryIdFilter !== 'all' || contaIdFilter !== 'all' || centroCustoIdFilter !== 'all' || condicaoFilter !== 'all' || temDescontoFilter !== 'all' || temAcrescimoFilter !== 'all' || motivoDescontoFilter !== 'all' || motivoAcrescimoFilter !== 'all';
+  const hasActiveFilters = searchTerm !== '' || docSearchTerm !== '' || approvalStatus !== 'all' || typeFilter !== defaultTypeFilter || authorIdFilter !== 'all' || categoryIdFilter !== 'all' || contaIdFilter !== 'all' || centroCustoIdFilter !== 'all' || condicaoFilter !== 'all' || temDescontoFilter !== 'all' || temAcrescimoFilter !== 'all' || motivoDescontoFilter !== 'all' || motivoAcrescimoFilter !== 'all';
 
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [selectedLogItem, setSelectedLogItem] = useState<LancamentoFinanceiro | null>(null);
@@ -274,8 +280,8 @@ export default function Lancamentos({
     setSearchTerm('');
     setDocSearchTerm('');
     setApprovalStatus('all');
-    setStatusPagamento(statusPagamentoOverride || (isColaborador ? 'quitação_pendente' : 'pago'));
-    setTypeFilter(typeOverride || 'all');
+    setStatusPagamento(defaultStatusPagamento);
+    setTypeFilter(defaultTypeFilter);
     setAuthorIdIdFilter('all');
     setCategoryIdFilter('all');
     setContaIdFilter('all');
