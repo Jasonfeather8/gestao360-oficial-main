@@ -195,10 +195,15 @@ export const lancamentosService = {
 
       if (recError) throw recError;
 
+      const valorTotalRecorrencia = recorrencia.parcelas.reduce(
+        (total: number, parcela: any) => total + (Number(parcela.valor_previsto) || 0),
+        0
+      );
       const parcelas = recorrencia.parcelas.map((p: any, index: number) => ({
         ...lancamentoData,
         data_vencimento: p.data_vencimento,
         valor_previsto: p.valor_previsto,
+        valor_original: valorTotalRecorrencia,
         recorrencia_id: recData.id,
         numero_parcela: index + 1,
         quantidade_total_parcelas: recorrencia.quantidade_total_parcelas
@@ -316,6 +321,10 @@ export const lancamentosService = {
     const valorTotalAVR = data.parcelas?.length
       ? data.parcelas.reduce((total, parcela) => total + (Number(parcela.valor.replace(/\./g, '').replace(',', '.')) || 0), 0)
       : valorPagoEfetivo;
+    const parcelaSelecionadaAVR = data.parcelas?.find(parcela => parcela.id === id) || data.parcelas?.[0];
+    const valorParcelaSelecionadaAVR = parcelaSelecionadaAVR
+      ? Number(parcelaSelecionadaAVR.valor.replace(/\./g, '').replace(',', '.')) || 0
+      : valorTotalAVR;
     const subtotal = current.valor_previsto - (data.valor_desconto || 0) + (data.valor_acrescimo || 0);
     const isPartial = valorPagoEfetivo < subtotal;
     const dataPagamentoVal = data.data_pagamento || new Date().toISOString().split('T')[0];
@@ -378,7 +387,7 @@ export const lancamentosService = {
      const updatePayload: any = {
        tipo_baixa: 'avr',
        motivo_ajuste: data.motivo_ajuste || current.motivo_ajuste || null,
-       valor_previsto: valorTotalAVR,
+       valor_previsto: valorParcelaSelecionadaAVR,
        valor_original: valorTotalAVR,
        ...(recurrenceId ? {
          recorrencia_id: recurrenceId,
@@ -435,7 +444,7 @@ export const lancamentosService = {
          const parcelaPayload: any = {
            data_vencimento: parcela.data,
            valor_previsto: parcelaValor,
-           valor_original: parcelaValor,
+           valor_original: valorTotalAVR,
            numero_parcela: parcela.numero,
            recorrencia_id: recurrenceId,
            quantidade_total_parcelas: data.parcela_config?.quantidade || data.parcelas.length,
@@ -491,7 +500,7 @@ export const lancamentosService = {
            .from('lancamentos_financeiros')
            .update({
              valor_previsto: parcelValue,
-             valor_original: parcelValue,
+             valor_original: valorTotalAVR,
              tipo_baixa: 'avr',
              motivo_ajuste: data.motivo_ajuste || current.motivo_ajuste || null,
              ...(data.conta_bancaria_id ? { conta_bancaria_id: data.conta_bancaria_id } : {}),
@@ -509,10 +518,17 @@ export const lancamentosService = {
 
      // Mantém o total do título no registro exibido pela listagem, sem alterar o valor individual da parcela.
      if (data.parcelas?.length) {
-       const { error: totalError } = await supabase
+       const totalQuery = supabase
          .from('lancamentos_financeiros')
-         .update({ valor_original: valorTotalAVR })
-         .eq('id', id);
+         .update({ valor_original: valorTotalAVR });
+
+       if (recurrenceId) {
+         totalQuery.eq('recorrencia_id', recurrenceId);
+       } else {
+         totalQuery.eq('id', id);
+       }
+
+       const { error: totalError } = await totalQuery;
        if (totalError) throw totalError;
      }
 
@@ -586,7 +602,7 @@ export const lancamentosService = {
      };
 
      if (isAVR) {
-       updatePayload.valor_original = valorPagoEfetivo;
+       updatePayload.valor_original = valorTotalAVR;
        // Se for AVR e não for master, o status de aprovação volta para digital para nova conferência do saldo real
        if (!isMaster) {
          updatePayload.status_aprovacao = 'digital';
@@ -612,7 +628,7 @@ export const lancamentosService = {
          .from('lancamentos_financeiros')
          .update({
            valor_previsto: valorPagoEfetivo,
-           valor_original: valorPagoEfetivo,
+           valor_original: valorTotalAVR,
            observacoes: (current.observacoes || '') + `\n[Valor ajustado via AVR propagado (${data.propagate_avr}) em ${new Date().toLocaleDateString('pt-BR')}]`
          })
          .eq('recorrencia_id', current.recorrencia_id);
