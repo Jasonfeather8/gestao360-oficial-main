@@ -41,6 +41,47 @@ export const lancamentosService = {
         .filter((recorrenciaId): recorrenciaId is string => Boolean(recorrenciaId));
     }
 
+    let searchLancamentoIds: string[] | undefined;
+
+    if (filters?.searchTerm) {
+      const term = `%${filters.searchTerm}%`;
+      const { data: matchingObservacoes, error: observacoesError } = await supabase
+        .from('lancamentos_financeiros')
+        .select('id')
+        .ilike('observacoes', term);
+
+      if (observacoesError) throw observacoesError;
+
+      const { data: matchingEntidades, error: entidadesError } = await supabase
+        .from('entidades_negocio')
+        .select('id')
+        .ilike('nome_razao_social', term);
+
+      if (entidadesError) throw entidadesError;
+
+      const entidadeIds = (matchingEntidades || []).map(({ id }) => id);
+      let entidadeLancamentoIds: string[] = [];
+
+      if (entidadeIds.length > 0) {
+        const { data: matchingLancamentosPorEntidade, error: lancamentosEntidadeError } = await supabase
+          .from('lancamentos_financeiros')
+          .select('id')
+          .in('entidade_id', entidadeIds);
+
+        if (lancamentosEntidadeError) throw lancamentosEntidadeError;
+        entidadeLancamentoIds = (matchingLancamentosPorEntidade || []).map(({ id }) => id);
+      }
+
+      searchLancamentoIds = Array.from(new Set([
+        ...(matchingObservacoes || []).map(({ id }) => id),
+        ...entidadeLancamentoIds
+      ]));
+    }
+
+    if (searchLancamentoIds && searchLancamentoIds.length === 0) {
+      return { data: [], count: 0 };
+    }
+
     let query = supabase
       .from('lancamentos_financeiros')
       .select('*, entidades_negocio!inner(nome_razao_social)', { count: 'exact' })
@@ -120,9 +161,8 @@ export const lancamentosService = {
         query = query.eq('motivo_acrescimo_id', filters.motivoAcrescimoId);
       }
 
-      if (filters.searchTerm) {
-        const term = `%${filters.searchTerm}%`;
-        query = query.or(`observacoes.ilike.${term},entidades_negocio.nome_razao_social.ilike.${term}`);
+      if (searchLancamentoIds) {
+        query = query.in('id', searchLancamentoIds);
       }
 
       // Pagination
