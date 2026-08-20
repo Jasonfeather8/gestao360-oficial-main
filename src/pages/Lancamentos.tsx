@@ -755,11 +755,22 @@ export default function Lancamentos({
                       <td className="py-3 px-4 text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-2">
                           <div className="flex items-center gap-1.5 mr-2">
-                            {item.status_pagamento === 'aberto' && (
+                            {isFinanceiroView && isMaster && isAprovacaoPendente && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedLancamentoIdsForBatch([item.id]);
+                                  setModalOpen('isAprovacaoModalOpen', true);
+                                }}
+                                className="px-3 py-1.5 bg-primary text-white text-[9px] font-black uppercase tracking-widest rounded-lg hover:brightness-110 transition-all flex items-center gap-1.5 shadow-sm"
+                              >
+                                <ShieldCheck className="w-3 h-3" /> Aprovar
+                              </button>
+                            )}
+                            {isOperationalView && item.status_pagamento === 'aberto' && (
                               <button
                                 type="button"
                                 onClick={() => handleOpenBaixa(item.id)}
-
                                 className="px-3 py-1.5 bg-bank-truth-green text-white text-[9px] font-black uppercase tracking-widest rounded-lg hover:brightness-110 transition-all flex items-center gap-1.5 shadow-sm"
                               >
                                 <CheckCircle2 className="w-3 h-3" /> Dar baixa
