@@ -25,14 +25,17 @@ export interface LancamentoFilters {
 }
 
 export const lancamentosService = {
-  getAll: async (filters?: LancamentoFilters): Promise<{ data: LancamentoFinanceiro[], count: number }> => {
+  getAll: async (filters?: LancamentoFilters, signal?: AbortSignal): Promise<{ data: LancamentoFinanceiro[], count: number }> => {
     let recurrenceIds: string[] = [];
 
     if (filters?.docCode !== undefined) {
-      const { data: matchingLancamentos, error: matchingError } = await supabase
+      let recurrenceQuery = supabase
         .from('lancamentos_financeiros')
         .select('recorrencia_id')
         .eq('codigo_sequencial', filters.docCode);
+      if (signal) recurrenceQuery = recurrenceQuery.abortSignal(signal);
+
+      const { data: matchingLancamentos, error: matchingError } = await recurrenceQuery;
 
       if (matchingError) throw matchingError;
 
@@ -43,19 +46,25 @@ export const lancamentosService = {
 
     let searchLancamentoIds: string[] | undefined;
 
-    if (filters?.searchTerm) {
+    if (filters?.searchTerm && filters.searchTerm.length >= 3) {
       const term = `%${filters.searchTerm}%`;
-      const { data: matchingObservacoes, error: observacoesError } = await supabase
+      let observacoesQuery = supabase
         .from('lancamentos_financeiros')
         .select('id')
         .ilike('observacoes', term);
+      if (signal) observacoesQuery = observacoesQuery.abortSignal(signal);
+
+      const { data: matchingObservacoes, error: observacoesError } = await observacoesQuery;
 
       if (observacoesError) throw observacoesError;
 
-      const { data: matchingEntidades, error: entidadesError } = await supabase
+      let entidadesQuery = supabase
         .from('entidades_negocio')
         .select('id')
         .ilike('nome_razao_social', term);
+      if (signal) entidadesQuery = entidadesQuery.abortSignal(signal);
+
+      const { data: matchingEntidades, error: entidadesError } = await entidadesQuery;
 
       if (entidadesError) throw entidadesError;
 
@@ -63,10 +72,13 @@ export const lancamentosService = {
       let entidadeLancamentoIds: string[] = [];
 
       if (entidadeIds.length > 0) {
-        const { data: matchingLancamentosPorEntidade, error: lancamentosEntidadeError } = await supabase
+        let lancamentosEntidadeQuery = supabase
           .from('lancamentos_financeiros')
           .select('id')
           .in('entidade_id', entidadeIds);
+        if (signal) lancamentosEntidadeQuery = lancamentosEntidadeQuery.abortSignal(signal);
+
+        const { data: matchingLancamentosPorEntidade, error: lancamentosEntidadeError } = await lancamentosEntidadeQuery;
 
         if (lancamentosEntidadeError) throw lancamentosEntidadeError;
         entidadeLancamentoIds = (matchingLancamentosPorEntidade || []).map(({ id }) => id);
@@ -175,6 +187,7 @@ export const lancamentosService = {
       query = query.range(0, 49); // Default limit
     }
 
+    if (signal) query = query.abortSignal(signal);
     const { data, error, count } = await query;
     if (error) throw error;
     return { data: data as LancamentoFinanceiro[], count: count || 0 };
