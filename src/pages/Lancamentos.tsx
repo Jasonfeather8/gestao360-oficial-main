@@ -631,7 +631,7 @@ export default function Lancamentos({
       )}
 
       {/* Main filter bar */}
-      <div className="bg-white border-2 border-neutral-100 p-4 rounded-3xl flex flex-col lg:flex-row lg:flex-wrap gap-3 shadow-sm items-center">
+      <div className="bg-white border-2 border-neutral-100 p-4 rounded-3xl flex flex-col lg:flex-row gap-4 shadow-sm items-center">
         <button
           type="button"
           onClick={() => setIsFilterPanelOpen(prev => !prev)}
@@ -644,7 +644,7 @@ export default function Lancamentos({
           {hasActiveFilters && <div className="absolute top-2 right-2 w-2 h-2 bg-primary rounded-full ring-2 ring-white" />}
         </button>
 
-        <div className="flex gap-3 w-full lg:w-auto lg:flex-1 lg:min-w-0">
+        <div className="flex gap-3 w-full lg:w-auto">
           <div className="relative w-32 shrink-0">
             <FileText className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-neutral-300" />
             <input
@@ -668,13 +668,13 @@ export default function Lancamentos({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto lg:flex-1 lg:min-w-0 lg:justify-end">
-          <div className="flex bg-neutral-100 p-1 rounded-xl h-10 shrink-0" aria-label="Direção do período">
+        <div className="flex items-center gap-3 w-full lg:w-auto">
+          <div className="flex bg-neutral-100 p-1 rounded-xl h-12 shrink-0" aria-label="Direção do período">
             <button
               type="button"
               disabled={datePreset === 'custom'}
               onClick={() => handleDateDirectionChange('past')}
-              className={`px-2 rounded-lg text-[8px] font-black uppercase tracking-tighter transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+              className={`px-3 rounded-lg text-[9px] font-black uppercase tracking-tighter transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
                 dateDirection === 'past' ? 'bg-white text-primary shadow-sm' : 'text-neutral-400 hover:text-neutral-600'
               }`}
             >
@@ -684,7 +684,7 @@ export default function Lancamentos({
               type="button"
               disabled={datePreset === 'custom'}
               onClick={() => handleDateDirectionChange('future')}
-              className={`px-2 rounded-lg text-[8px] font-black uppercase tracking-tighter transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+              className={`px-3 rounded-lg text-[9px] font-black uppercase tracking-tighter transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
                 dateDirection === 'future' ? 'bg-white text-primary shadow-sm' : 'text-neutral-400 hover:text-neutral-600'
               }`}
             >
@@ -692,7 +692,7 @@ export default function Lancamentos({
             </button>
           </div>
 
-          <div className="flex bg-neutral-100 p-1 rounded-xl h-10 shrink-0">
+          <div className="flex bg-neutral-100 p-1 rounded-xl h-12 shrink-0">
             {[
               { id: '15', label: '15 dias' },
               { id: '30', label: '30 dias' },
@@ -702,7 +702,7 @@ export default function Lancamentos({
               <button
                 key={opt.id}
                 onClick={() => handlePresetChange(opt.id as any)}
-                className={`px-2 rounded-lg text-[8px] font-black uppercase tracking-tighter transition-all ${
+                className={`px-3 rounded-lg text-[9px] font-black uppercase tracking-tighter transition-all ${
                   datePreset === opt.id ? 'bg-white text-primary shadow-sm' : 'text-neutral-400 hover:text-neutral-600'
                 }`}
               >
@@ -711,19 +711,19 @@ export default function Lancamentos({
             ))}
           </div>
 
-          <div className={`flex min-w-[240px] max-w-full flex-1 bg-neutral-100 p-1 rounded-xl h-10 transition-all ${datePreset === 'custom' ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => { setStartDate(e.target.value); setDatePreset('custom'); }}
-              className="w-full min-w-0 flex-1 bg-transparent border-none text-[10px] font-black uppercase px-2 outline-none"
+          <div className={`flex bg-neutral-100 p-1 rounded-xl h-12 transition-all ${datePreset === 'custom' ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
+            <input 
+              type="date" 
+              value={startDate} 
+              onChange={(e) => { setStartDate(e.target.value); setDatePreset('custom'); }} 
+              className="bg-transparent border-none text-[10px] font-black uppercase px-2 outline-none" 
             />
-            <div className="w-px h-4 bg-neutral-200 self-center shrink-0" />
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => { setEndDate(e.target.value); setDatePreset('custom'); }}
-              className="w-full min-w-0 flex-1 bg-transparent border-none text-[10px] font-black uppercase px-2 outline-none"
+            <div className="w-px h-4 bg-neutral-200 self-center" />
+            <input 
+              type="date" 
+              value={endDate} 
+              onChange={(e) => { setEndDate(e.target.value); setDatePreset('custom'); }} 
+              className="bg-transparent border-none text-[10px] font-black uppercase px-2 outline-none" 
             />
           </div>
 
