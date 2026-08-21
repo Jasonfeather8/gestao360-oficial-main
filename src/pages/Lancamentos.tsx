@@ -152,7 +152,7 @@ export default function Lancamentos({
   const [temAcrescimoFilter, setTemAcrescimoFilter] = useState('all');
   const [motivoDescontoFilter, setMotivoDescontoFilter] = useState('all');
   const [motivoAcrescimoFilter, setMotivoAcrescimoFilter] = useState('all');
-  const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
+  const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(true);
 
   const hasActiveFilters = debouncedSearchTerm !== '' || docSearchTerm !== '' || approvalStatus !== 'all' || typeFilter !== defaultTypeFilter || authorIdFilter !== 'all' || categoryIdFilter !== 'all' || contaIdFilter !== 'all' || centroCustoIdFilter !== 'all' || condicaoFilter !== 'all' || temDescontoFilter !== 'all' || temAcrescimoFilter !== 'all' || motivoDescontoFilter !== 'all' || motivoAcrescimoFilter !== 'all';
 
@@ -484,6 +484,134 @@ export default function Lancamentos({
         </div>
       </div>
 
+      {isFilterPanelOpen && (
+        <div className="bg-white border-2 border-neutral-100 p-5 rounded-3xl shadow-sm space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h2 className="text-[11px] font-black uppercase tracking-[0.2em] text-neutral-900">Filtros adicionais</h2>
+              <p className="text-[9px] font-bold uppercase tracking-widest text-neutral-400 mt-1">Refine sua busca no histórico</p>
+            </div>
+            <div className="flex items-center gap-3">
+              {hasActiveFilters && <span className="text-[9px] font-black uppercase tracking-widest text-primary">Filtros ativos</span>}
+              <button
+                type="button"
+                onClick={clearFiltersShortcut}
+                className="text-[9px] font-black uppercase tracking-widest text-neutral-400 hover:text-neutral-900 transition-colors"
+              >
+                Limpar filtros
+              </button>
+              <button
+                type="button"
+                onClick={() => { setIsFilterPanelOpen(false); setCurrentPage(1); }}
+                className="h-9 px-3 rounded-lg border border-neutral-200 text-[9px] font-black uppercase tracking-widest text-secondary hover:border-primary hover:text-primary transition-all"
+              >
+                Ocultar filtros
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary flex items-center gap-2">
+                <Receipt className="w-4 h-4" /> Natureza do Fluxo
+              </label>
+              <div className="flex bg-neutral-100 p-1 rounded-xl h-11">
+                <button type="button" onClick={() => setTypeFilter('all')} className={`flex-1 rounded-lg text-[10px] font-black uppercase transition-all ${typeFilter === 'all' ? 'bg-white text-primary shadow-sm' : 'text-neutral-400'}`}>Todos</button>
+                <button type="button" onClick={() => setTypeFilter('entrada')} className={`flex-1 rounded-lg text-[10px] font-black uppercase transition-all ${typeFilter === 'entrada' ? 'bg-white text-bank-truth-green shadow-sm' : 'text-neutral-400'}`}>Entradas</button>
+                <button type="button" onClick={() => setTypeFilter('saida')} className={`flex-1 rounded-lg text-[10px] font-black uppercase transition-all ${typeFilter === 'saida' ? 'bg-white text-alert-red shadow-sm' : 'text-neutral-400'}`}>Saídas</button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary flex items-center gap-2">
+                <CreditCard className="w-4 h-4" /> Status de Pagamento
+              </label>
+              <div className="grid grid-cols-2 sm:grid-cols-5 xl:grid-cols-3 gap-2">
+                {[
+                  { id: 'all', label: 'Todos' },
+                  { id: 'pago', label: 'Liquidados' },
+                  { id: 'aberto', label: 'Em Aberto' },
+                  { id: 'quitação_pendente', label: 'Pend. Gestor' },
+                  { id: 'bpi', label: 'BPI (Inatividade)' },
+                ].map(opt => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setStatusPagamento(opt.id)}
+                    className={`px-3 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest border-2 transition-all text-left flex items-center justify-between ${
+                      statusPagamento === opt.id ? 'border-primary bg-primary/5 text-primary' : 'border-neutral-100 bg-neutral-50 text-secondary hover:border-neutral-200'
+                    }`}
+                  >
+                    {opt.label}
+                    {statusPagamento === opt.id && <div className="w-2 h-2 bg-primary rounded-full shrink-0" />}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+            {role !== 'colaborador' && (
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary flex items-center gap-2">
+                  <User className="w-4 h-4" /> Responsável
+                </label>
+                <select
+                  value={authorIdFilter}
+                  onChange={(e) => setAuthorIdIdFilter(e.target.value)}
+                  className="w-full h-11 bg-neutral-50 border border-surface-border text-xs font-bold rounded-lg px-3 outline-none focus:border-primary"
+                >
+                  <option value="all">Todos os Usuários</option>
+                  {usuarios.map(u => <option key={u.id} value={u.id}>{u.nome || u.email}</option>)}
+                </select>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary flex items-center gap-2">
+                <Tag className="w-4 h-4" /> Categoria
+              </label>
+              <select
+                value={categoryIdFilter}
+                onChange={(e) => setCategoryIdFilter(e.target.value)}
+                className="w-full h-11 bg-neutral-50 border border-surface-border text-xs font-bold rounded-lg px-3 outline-none focus:border-primary"
+              >
+                <option value="all">Todas as Categorias</option>
+                {categorias.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary flex items-center gap-2">
+                <CreditCard className="w-4 h-4" /> Conta Bancária
+              </label>
+              <select
+                value={contaIdFilter}
+                onChange={(e) => setContaIdFilter(e.target.value)}
+                className="w-full h-11 bg-neutral-50 border border-surface-border text-xs font-bold rounded-lg px-3 outline-none focus:border-primary"
+              >
+                <option value="all">Todas as Contas</option>
+                {activeContas.map(c => <option key={c.id} value={c.id}>{c.nome_banco || c.nome}</option>)}
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary flex items-center gap-2">
+                <Layers className="w-4 h-4" /> Centro de Custo
+              </label>
+              <select
+                value={centroCustoIdFilter}
+                onChange={(e) => setCentroCustoIdFilter(e.target.value)}
+                className="w-full h-11 bg-neutral-50 border border-surface-border text-xs font-bold rounded-lg px-3 outline-none focus:border-primary"
+              >
+                <option value="all">Todos os Centros</option>
+                {centrosCusto.filter((cc: any) => cc.status !== 'excluido').map(cc => <option key={cc.id} value={cc.id}>{cc.nome}</option>)}
+              </select>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Main filter bar */}
       <div className="bg-white border-2 border-neutral-100 p-4 rounded-3xl flex flex-col lg:flex-row gap-4 shadow-sm items-center">
         <div className="flex gap-3 w-full lg:w-auto">
@@ -547,7 +675,8 @@ export default function Lancamentos({
           </div>
 
           <button
-            onClick={() => setIsFilterPanelOpen(true)}
+            onClick={() => setIsFilterPanelOpen(prev => !prev)}
+            title={isFilterPanelOpen ? 'Ocultar filtros' : 'Mostrar filtros'}
             className={`h-12 w-12 flex items-center justify-center rounded-xl border-2 transition-all relative shrink-0 ${
               hasActiveFilters ? 'border-primary bg-primary/5 text-primary shadow-sm' : 'border-neutral-100 text-neutral-400 hover:border-neutral-200'
             }`}
@@ -863,130 +992,6 @@ export default function Lancamentos({
           </div>
         </div>
       </div>
-
-      <AnimatePresence>
-        {isFilterPanelOpen && (
-          <div className="fixed inset-0 z-[100] flex justify-end">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsFilterPanelOpen(false)} className="absolute inset-0 bg-neutral-900/60 backdrop-blur-xs" />
-            <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 25, stiffness: 200 }} className="w-full md:w-[400px] h-full bg-white shadow-2xl relative z-10 flex flex-col">
-              <header className="px-8 py-6 border-b border-neutral-100 flex justify-between items-center bg-neutral-50/50">
-                <div>
-                  <h3 className="text-sm font-black uppercase tracking-widest text-neutral-900">Filtros Inteligentes</h3>
-                  <p className="text-[10px] font-bold text-secondary uppercase mt-0.5">Refine sua busca no histórico</p>
-                </div>
-                <button onClick={() => setIsFilterPanelOpen(false)} className="p-2 hover:bg-neutral-200 rounded-xl transition-all">
-                  <X className="w-5 h-5 text-secondary" />
-                </button>
-              </header>
-
-              <div className="flex-1 overflow-y-auto p-8 space-y-8 scrollbar-thin">
-                <div className="space-y-3">
-                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary flex items-center gap-2">
-                    <Receipt className="w-4 h-4" /> Natureza do Fluxo
-                  </label>
-                  <div className="flex bg-neutral-100 p-1 rounded-xl h-11">
-                    <button onClick={() => setTypeFilter('all')} className={`flex-1 rounded-lg text-[10px] font-black uppercase transition-all ${typeFilter === 'all' ? 'bg-white text-primary shadow-sm' : 'text-neutral-400'}`}>Todos</button>
-                    <button onClick={() => setTypeFilter('entrada')} className={`flex-1 rounded-lg text-[10px] font-black uppercase transition-all ${typeFilter === 'entrada' ? 'bg-white text-bank-truth-green shadow-sm' : 'text-neutral-400'}`}>Entradas</button>
-                    <button onClick={() => setTypeFilter('saida')} className={`flex-1 rounded-lg text-[10px] font-black uppercase transition-all ${typeFilter === 'saida' ? 'bg-white text-alert-red shadow-sm' : 'text-neutral-400'}`}>Saídas</button>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary flex items-center gap-2">
-                    <CreditCard className="w-4 h-4" /> Status de Pagamento
-                  </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {[
-                      { id: 'all', label: 'Todos' },
-                      { id: 'pago', label: 'Liquidados' },
-                      { id: 'aberto', label: 'Em Aberto' },
-                      { id: 'quitação_pendente', label: 'Pend. Gestor' },
-                      { id: 'bpi', label: 'BPI (Inatividade)' },
-                    ].map(opt => (
-                      <button
-                        key={opt.id}
-                        type="button"
-                        onClick={() => setStatusPagamento(opt.id)}
-                        className={`px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border-2 transition-all text-left flex items-center justify-between ${
-                          statusPagamento === opt.id ? 'border-primary bg-primary/5 text-primary' : 'border-neutral-100 bg-neutral-50 text-secondary hover:border-neutral-200'
-                        }`}
-                      >
-                        {opt.label}
-                        {statusPagamento === opt.id && <div className="w-2 h-2 bg-primary rounded-full" />}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-6">
-                  {role !== 'colaborador' && (
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary flex items-center gap-2">
-                        <User className="w-4 h-4" /> Responsável
-                      </label>
-                      <select
-                        value={authorIdFilter}
-                        onChange={(e) => setAuthorIdIdFilter(e.target.value)}
-                        className="w-full h-11 bg-neutral-50 border border-surface-border text-xs font-bold rounded-lg px-3 outline-none focus:border-primary"
-                      >
-                        <option value="all">Todos os Usuários</option>
-                        {usuarios.map(u => <option key={u.id} value={u.id}>{u.nome || u.email}</option>)}
-                      </select>
-                    </div>
-                  )}
-
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary flex items-center gap-2">
-                      <Tag className="w-4 h-4" /> Categoria
-                    </label>
-                    <select
-                      value={categoryIdFilter}
-                      onChange={(e) => setCategoryIdFilter(e.target.value)}
-                      className="w-full h-11 bg-neutral-50 border border-surface-border text-xs font-bold rounded-lg px-3 outline-none focus:border-primary"
-                    >
-                      <option value="all">Todas as Categorias</option>
-                      {categorias.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
-                    </select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary flex items-center gap-2">
-                      <CreditCard className="w-4 h-4" /> Conta Bancária
-                    </label>
-                    <select
-                      value={contaIdFilter}
-                      onChange={(e) => setContaIdFilter(e.target.value)}
-                      className="w-full h-11 bg-neutral-50 border border-surface-border text-xs font-bold rounded-lg px-3 outline-none focus:border-primary"
-                    >
-                      <option value="all">Todas as Contas</option>
-                      {activeContas.map(c => <option key={c.id} value={c.id}>{c.nome_banco || c.nome}</option>)}
-                    </select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary flex items-center gap-2">
-                      <Layers className="w-4 h-4" /> Centro de Custo
-                    </label>
-                    <select
-                      value={centroCustoIdFilter}
-                      onChange={(e) => setCentroCustoIdFilter(e.target.value)}
-                      className="w-full h-11 bg-neutral-50 border border-surface-border text-xs font-bold rounded-lg px-3 outline-none focus:border-primary"
-                    >
-                      <option value="all">Todos os Centros</option>
-                      {centrosCusto.filter((cc: any) => cc.status !== 'excluido').map(cc => <option key={cc.id} value={cc.id}>{cc.nome}</option>)}
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              <footer className="p-8 border-t border-neutral-100 bg-neutral-50/50 flex flex-col gap-3">
-                <button onClick={clearFiltersShortcut} className="w-full h-12 text-[10px] font-black uppercase tracking-widest text-neutral-400 hover:text-neutral-900 transition-colors">Limpar Filtros</button>
-                <button onClick={() => { setIsFilterPanelOpen(false); setCurrentPage(1); }} className="w-full h-14 bg-neutral-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl hover:bg-black transition-all">Aplicar e Fechar</button>
-              </footer>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
 
       <AnimatePresence>
         {selectedLogItem && (
