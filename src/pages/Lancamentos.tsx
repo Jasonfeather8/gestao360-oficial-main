@@ -669,12 +669,12 @@ export default function Lancamentos({
         </div>
 
         <div className="flex items-center gap-3 w-full lg:w-auto">
-          <div className="flex bg-neutral-100 p-1 rounded-xl h-12 shrink-0" aria-label="Direção do período">
+          <div className="flex flex-col bg-neutral-100 p-1 rounded-xl h-12 w-16 shrink-0" aria-label="Direção do período">
             <button
               type="button"
               disabled={datePreset === 'custom'}
               onClick={() => handleDateDirectionChange('past')}
-              className={`px-3 rounded-lg text-[9px] font-black uppercase tracking-tighter transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+              className={`flex-1 px-1 rounded-lg text-[8px] font-black uppercase leading-none tracking-tighter transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
                 dateDirection === 'past' ? 'bg-white text-primary shadow-sm' : 'text-neutral-400 hover:text-neutral-600'
               }`}
             >
@@ -684,7 +684,7 @@ export default function Lancamentos({
               type="button"
               disabled={datePreset === 'custom'}
               onClick={() => handleDateDirectionChange('future')}
-              className={`px-3 rounded-lg text-[9px] font-black uppercase tracking-tighter transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+              className={`flex-1 px-1 rounded-lg text-[8px] font-black uppercase leading-none tracking-tighter transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
                 dateDirection === 'future' ? 'bg-white text-primary shadow-sm' : 'text-neutral-400 hover:text-neutral-600'
               }`}
             >
