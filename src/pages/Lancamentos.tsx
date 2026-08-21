@@ -271,22 +271,20 @@ export default function Lancamentos({
   };
 
   const renderObservacoes = (item: LancamentoFinanceiro) => {
-    const observacao = item.observacoes || 'Sem descrição';
+    if (!item.observacoes) return null;
+
     return (
       <div className="max-w-[240px]">
-        <p className="text-[9px] text-neutral-400 uppercase tracking-widest font-bold line-clamp-2 break-words">{observacao}</p>
-        {item.observacoes && (
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              setSelectedLogItem(item);
-            }}
-            className="mt-1 text-[8px] font-black uppercase tracking-widest text-primary hover:underline"
-          >
-            Ver logs completo
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            setSelectedLogItem(item);
+          }}
+          className="mt-1 text-[8px] font-black uppercase tracking-widest text-primary hover:underline"
+        >
+          Ver logs completo
+        </button>
       </div>
     );
   };
