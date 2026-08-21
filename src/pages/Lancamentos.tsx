@@ -530,7 +530,7 @@ export default function Lancamentos({
                 {[
                   { id: 'all', label: 'Todos' },
                   { id: 'pago', label: 'Liquidados' },
-                  { id: 'aberto', label: 'Em Aberto' },
+                  { id: 'aberto', label: 'Contas em Aberto' },
                   { id: 'atrasadas', label: 'Atrasadas' },
                   { id: 'quitação_pendente', label: 'Pend. Gestor' },
                   { id: 'bpi', label: 'BPI (Inatividade)' },

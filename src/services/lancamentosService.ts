@@ -131,6 +131,11 @@ export const lancamentosService = {
           query = query
             .lt('data_vencimento', today)
             .in('status_pagamento', ['aberto', 'pago_parcial', 'quitação_pendente']);
+        } else if (filters.statusPagamento === 'aberto') {
+          const today = new Date().toISOString().split('T')[0];
+          query = query
+            .eq('status_pagamento', 'aberto')
+            .gte('data_vencimento', today);
         } else {
           query = query.eq('status_pagamento', filters.statusPagamento);
         }
