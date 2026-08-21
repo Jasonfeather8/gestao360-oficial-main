@@ -405,9 +405,10 @@ export default function Lancamentos({
   const getDaysOverdue = (dateStr: string): number => {
     if (!dateStr) return -1;
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const due = new Date(dateStr + 'T00:00:00');
-    const diffTime = today.getTime() - due.getTime();
+    const todayAtMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const [year, month, day] = dateStr.slice(0, 10).split('-').map(Number);
+    const dueAtMidnight = new Date(year, month - 1, day);
+    const diffTime = todayAtMidnight.getTime() - dueAtMidnight.getTime();
     return Math.floor(diffTime / (1000 * 3600 * 24));
   };
 
@@ -426,6 +427,14 @@ export default function Lancamentos({
        </span>
      );
    }
+   const days = getDaysOverdue(item.data_vencimento);
+   if (days > 0) {
+     return (
+       <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-red-50 text-alert-red font-black border border-red-200 text-[9px] uppercase tracking-tighter animate-pulse">
+         Vencido
+       </span>
+     );
+   }
    if (item.status_pagamento === 'quitação_pendente' || item.status_pagamento === 'pago_parcial') {
      return (
        <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-orange-50 text-orange-600 font-black border border-orange-200 text-[9px] uppercase tracking-tighter animate-pulse">
@@ -441,14 +450,7 @@ export default function Lancamentos({
      );
    }
 
-   const days = getDaysOverdue(item.data_vencimento);
-   if (days > 0) {
-     return (
-       <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-red-50 text-alert-red font-black border border-red-200 text-[9px] uppercase tracking-tighter animate-pulse">
-         Vencido
-       </span>
-     );
-   } else if (days === 0) {
+   if (days === 0) {
      return (
        <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-orange-100 text-orange-700 font-black border-2 border-orange-400 text-[9px] uppercase tracking-tighter animate-bounce">
          Vence Hoje
