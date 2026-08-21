@@ -1000,8 +1000,20 @@ export default function Lancamentos({
                 </div>
                 <button type="button" onClick={() => setSelectedLogItem(null)} className="p-2 rounded-xl hover:bg-neutral-200"><X className="w-5 h-5 text-secondary" /></button>
               </header>
-              <div className="p-6 max-h-[60vh] overflow-y-auto">
-                <p className="whitespace-pre-wrap break-words text-xs leading-relaxed font-bold text-neutral-700">{selectedLogItem.observacoes || 'Sem logs registrados.'}</p>
+              <div className="p-6 max-h-[60vh] overflow-y-auto space-y-2">
+                {(selectedLogItem.observacoes || 'Sem logs registrados.')
+                  .replace(/\\n/g, '\n')
+                  .split(/\r?\n/)
+                  .map(log => log.trim())
+                  .filter(Boolean)
+                  .map((log, index) => (
+                    <div key={`${selectedLogItem.id}-log-${index}`} className="flex items-start gap-3 rounded-xl border border-neutral-100 bg-neutral-50/70 px-4 py-3">
+                      <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-neutral-200 text-[8px] font-black text-neutral-500">
+                        {index + 1}
+                      </span>
+                      <p className="min-w-0 whitespace-pre-wrap break-words text-xs leading-relaxed font-bold text-neutral-700">{log}</p>
+                    </div>
+                  ))}
               </div>
             </motion.div>
           </div>
