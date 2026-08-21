@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   AlertCircle,
   Loader2,
+  Check,
   DollarSign,
   Calendar,
   Wallet,
@@ -123,6 +124,7 @@ export default function BaixaLancamentoModal() {
   const [isAVRConfirmationOpen, setIsAVRConfirmationOpen] = useState(false);
   const [isFinalConfirmationOpen, setIsFinalConfirmationOpen] = useState(false);
   const [attachments, setAttachments] = useState<LocalFile[]>([]);
+  const [dispensarComprovante, setDispensarComprovante] = useState(false);
 
   // Quick add states
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
@@ -161,6 +163,7 @@ export default function BaixaLancamentoModal() {
       setPropagateAVR('none');
       setIsAVRConfirmationOpen(false);
       setAttachments([]);
+      setDispensarComprovante(false);
     }
   }, [lancamento, contas]);
 
@@ -221,6 +224,7 @@ export default function BaixaLancamentoModal() {
   const handleClose = () => {
     setModalOpen('isBaixaLancamentoOpen', false);
     setSelectedLancamentoIdForModal(null);
+    setDispensarComprovante(false);
   };
 
   const isGerenteOrMaster = role === 'master' || role === 'gerente';
@@ -245,6 +249,7 @@ export default function BaixaLancamentoModal() {
   // BPI locks everything, AVR allows editing valorPago
   const isBpi = tipoBaixa === 'bpi';
   const isAVR = tipoBaixa === 'avr';
+  const hasAnexo = attachments.length > 0 || (existingAnexos?.length || 0) > 0;
 
   const subtotalCalculado = Math.max(0, totalOriginal - calculatedDesconto + calculatedAcrescimo + numericTaxa);
   const valorDigitado = parseMoney(valorPago);
@@ -282,6 +287,7 @@ export default function BaixaLancamentoModal() {
                   (!isAVRReasonRequired || isAVRReasonSelected) &&
                   (!isDescontoReasonRequired || isDescontoReasonSelected) &&
                   (!isAcrescimoReasonRequired || isAcrescimoReasonSelected) &&
+                  (hasAnexo || dispensarComprovante) &&
                   !isOverpaid && (isBpi || valorDigitado > 0) && !saldoInsuficienteBaixa;
 
   const gerarParcelasAVR = () => {
@@ -1095,6 +1101,25 @@ export default function BaixaLancamentoModal() {
                   ))}
                 </div>
                 </div>
+
+              {role === 'master' && !hasAnexo && (
+                <div className="flex items-start gap-3 p-4 bg-white rounded-2xl border border-neutral-100 shadow-sm">
+                  <div
+                    className={`mt-0.5 w-5 h-5 rounded flex items-center justify-center border-2 transition-all cursor-pointer ${
+                      dispensarComprovante ? 'bg-primary border-primary' : 'bg-white border-neutral-200'
+                    }`}
+                    onClick={() => setDispensarComprovante(!dispensarComprovante)}
+                  >
+                    {dispensarComprovante && <Check className="w-3.5 h-3.5 text-white" />}
+                  </div>
+                  <div className="flex-1 cursor-pointer" onClick={() => setDispensarComprovante(!dispensarComprovante)}>
+                    <p className="text-[10px] font-black uppercase text-neutral-900">Dispensar comprovante</p>
+                    <p className="text-[8px] font-bold text-secondary uppercase leading-tight mt-0.5">
+                      Aprovar este lançamento manualmente sem a necessidade de um anexo.
+                    </p>
+                  </div>
+                </div>
+              )}
 
             </form>
 

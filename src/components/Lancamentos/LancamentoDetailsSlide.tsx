@@ -16,22 +16,16 @@ import {
   Clock, 
   Info,
   Hash,
-  ExternalLink,
   ShieldCheck,
-  Eye,
-  Paperclip,
-  Check,
   AlertTriangle,
   Loader2,
   TrendingUp,
-  Printer,
-  Download
+  Printer
 } from 'lucide-react';
 import { useUIStore } from '../../store/uiStore';
-import { useLancamento, useEntidades, useCategorias, useUsuarios, useLancamentoAnexos, useLancamentos, useContas } from '../../hooks/useData';
+import { useLancamento, useEntidades, useCategorias, useUsuarios, useLancamentos, useContas } from '../../hooks/useData';
 import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
-import { diagnosticLogger } from '../../services/diagnosticLogger';
 import { format } from 'date-fns';
 
 import { ptBR } from 'date-fns/locale';
@@ -53,7 +47,6 @@ export default function LancamentoDetailsSlide() {
   const { data: contas = [] } = useContas();
 
   const [parcelas, setParcelas] = useState<any[]>([]);
-  const [uploadedAnexos, setUploadedAnexos] = useState<any[]>([]);
 
   const isMaster = role === 'master';
 
@@ -67,17 +60,6 @@ export default function LancamentoDetailsSlide() {
   }, [searchParams]);
 
   const { data: lancamento, isLoading: loadingItem } = useLancamento(selectedLancamentoIdForModal);
-  const { anexos = [], error: anexosError, refetch: refetchAnexos, deleteAnexo } = useLancamentoAnexos(selectedLancamentoIdForModal);
-  const [isUploadingComprovante, setIsUploadingComprovante] = useState(false);
-
-  useEffect(() => {
-    if (anexosError) {
-      diagnosticLogger.error('lancamento-anexos-ui', 'A UI recebeu erro ao carregar anexos', {
-        lancamentoId: selectedLancamentoIdForModal,
-        error: anexosError,
-      });
-    }
-  }, [anexosError, selectedLancamentoIdForModal]);
 
   useEffect(() => {
     if (!lancamento) {
@@ -103,8 +85,6 @@ export default function LancamentoDetailsSlide() {
     loadParcelas();
   }, [lancamento?.id, lancamento?.recorrencia_id]);
 
-  const [dispensarComprovante, setDispensarComprovante] = useState(false);
-
   const handleClose = () => {
     // Remover o ID da URL ao fechar
     const newParams = new URLSearchParams(searchParams);
@@ -113,8 +93,6 @@ export default function LancamentoDetailsSlide() {
     
     setModalOpen('isComprovanteOpen', false);
     setSelectedLancamentoIdForModal(null);
-    setDispensarComprovante(false);
-    setUploadedAnexos([]);
   };
 
   if (!isComprovanteOpen) return null;
@@ -157,77 +135,7 @@ export default function LancamentoDetailsSlide() {
     window.print();
   };
 
-  const handleUploadComprovante = async (files: File[] | null) => {
-    if (!files || files.length === 0 || !selectedLancamentoIdForModal) {
-      diagnosticLogger.warn('lancamento-anexos-upload', 'Upload ignorado: arquivo ou lançamento ausente', {
-        hasFiles: !!files && files.length > 0,
-        fileCount: files?.length || 0,
-        lancamentoId: selectedLancamentoIdForModal,
-      });
-
-      return;
-    }
-
-    setIsUploadingComprovante(true);
-    diagnosticLogger.info('lancamento-anexos-upload', 'Upload iniciado', {
-      lancamentoId: selectedLancamentoIdForModal,
-      files: Array.from(files).map(file => ({ name: file.name, size: file.size, type: file.type })),
-    });
-
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Usuário não autenticado.');
-
-      for (const file of Array.from(files)) {
-        const extension = file.name.split('.').pop() || 'bin';
-        const filePath = `lancamentos/${selectedLancamentoIdForModal}/${Date.now()}-${Math.random().toString(36).slice(2)}.${extension}`;
-        diagnosticLogger.info('lancamento-anexos-upload', 'Enviando arquivo para o Storage', { filePath, name: file.name });
-        const { error: uploadError } = await supabase.storage.from('documents').upload(filePath, file, { upsert: false });
-        if (uploadError) {
-          diagnosticLogger.error('lancamento-anexos-upload', 'Falha no upload para o Storage', { filePath, error: uploadError });
-          throw uploadError;
-        }
-
-        const { data: { publicUrl } } = supabase.storage.from('documents').getPublicUrl(filePath);
-        diagnosticLogger.info('lancamento-anexos-upload', 'Arquivo salvo no Storage; inserindo registro', { filePath, publicUrl });
-        const { data: insertedRows, error: insertError } = await (supabase.from('lancamento_anexos') as any).insert({
-          lancamento_id: selectedLancamentoIdForModal,
-          nome: file.name,
-          url: publicUrl,
-          tamanho: file.size,
-          tipo_arquivo: file.type,
-          user_id: user.id
-        }).select();
-        if (insertError) {
-          diagnosticLogger.error('lancamento-anexos-upload', 'Arquivo subiu, mas registro não foi salvo no banco', { filePath, error: insertError });
-          throw insertError;
-        }
-        diagnosticLogger.info('lancamento-anexos-upload', 'Registro do anexo salvo no banco', { filePath, insertedRows });
-        if (insertedRows?.[0]) setUploadedAnexos(prev => [...prev, insertedRows[0]]);
-      }
-
-      const refreshed = await refetchAnexos();
-      diagnosticLogger.info('lancamento-anexos-upload', 'Upload finalizado e UI atualizada', {
-        lancamentoId: selectedLancamentoIdForModal,
-        count: refreshed.data?.length || 0,
-        queryError: refreshed.error,
-      });
-      if (refreshed.error) throw refreshed.error;
-    } catch (error: any) {
-      diagnosticLogger.error('lancamento-anexos-upload', 'Upload interrompido com erro', {
-        lancamentoId: selectedLancamentoIdForModal,
-        error,
-      });
-      alert('Erro ao anexar comprovante: ' + (error?.message || 'erro desconhecido; consulte os logs do diagnóstico'));
-    } finally {
-      setIsUploadingComprovante(false);
-    }
-  };
-
-  const displayedAnexos = [...anexos, ...uploadedAnexos.filter(uploaded => !anexos.some(anexo => anexo.id === uploaded.id))];
-  const hasAnexo = displayedAnexos.length > 0;
   const isQuitacaoPendente = lancamento?.status_pagamento === 'quitação_pendente';
-  const canApprove = hasAnexo || dispensarComprovante;
   const quantidadeParcelas = lancamento?.quantidade_total_parcelas || parcelas.length;
 
   return (
@@ -547,51 +455,6 @@ export default function LancamentoDetailsSlide() {
                     </div>
                   </div>
 
-                  <div className="space-y-4 pb-4">
-                    <h4 className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-2 border-b border-neutral-100 pb-2">
-                      <Paperclip className="w-4 h-4" /> Comprovantes e Anexos
-                    </h4>
-                    <label className={`relative flex items-center justify-center gap-2 h-11 rounded-xl border-2 border-dashed transition-all ${isUploadingComprovante ? 'border-neutral-200 bg-neutral-100 text-neutral-400' : 'border-primary/20 bg-primary/5 text-primary hover:bg-primary/10 cursor-pointer'}`}>
-                      {isUploadingComprovante ? <Loader2 className="w-4 h-4 animate-spin" /> : <Paperclip className="w-4 h-4" />}
-                      <span className="text-[9px] font-black uppercase tracking-widest">{isUploadingComprovante ? 'Enviando comprovante...' : 'Anexar comprovante'}</span>
-                      <input type="file" multiple disabled={isUploadingComprovante} onChange={(event) => { const selectedFiles = event.target.files ? Array.from(event.target.files) as File[] : []; handleUploadComprovante(selectedFiles); event.currentTarget.value = ''; }} className="absolute inset-0 opacity-0 cursor-pointer disabled:cursor-not-allowed" />
-
-                    </label>
-                    {anexosError && (
-                      <div className="p-3 rounded-xl border border-alert-red/30 bg-alert-red/5 text-alert-red">
-                        <p className="text-[9px] font-black uppercase">Não foi possível carregar os anexos</p>
-                        <p className="text-[8px] font-bold mt-1">{anexosError instanceof Error ? anexosError.message : 'Erro desconhecido. O diagnóstico foi registrado.'}</p>
-                      </div>
-                    )}
-                    <div className="grid grid-cols-1 gap-2">
-                      {displayedAnexos.length > 0 ? (
-
-                      displayedAnexos.map((anexo: any, index: number) => (
-                        <div key={`comprovante-${index}`} className="group flex items-center justify-between p-4 bg-neutral-50 hover:bg-neutral-100 border border-neutral-100 rounded-2xl transition-all">
-                          <a href={anexo.url} target="_blank" rel="noreferrer" download className="flex items-center gap-3 min-w-0">
-                            <div className="w-10 h-10 rounded-xl bg-white border border-neutral-200 flex items-center justify-center text-primary shrink-0">
-                              <Eye className="w-5 h-5" />
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-[10px] font-black uppercase text-neutral-900 truncate max-w-[200px]">{anexo.nome || 'Visualizar Comprovante'}</p>
-                              <p className="text-[8px] font-bold text-secondary uppercase">{anexo.tipo_arquivo || 'Formato não informado'} • {anexo.created_at ? formatDateTime(anexo.created_at) : 'Data não informada'}</p>
-                            </div>
-                          </a>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <ExternalLink className="w-4 h-4 text-secondary" />
-                            <button type="button" onClick={() => { if (confirm('Excluir este comprovante permanentemente?')) { const filePath = anexo.url.split('documents/')[1]; deleteAnexo({ id: anexo.id, path: filePath }); } }} className="text-[8px] font-black uppercase text-alert-red hover:underline">Excluir</button>
-                          </div>
-                        </div>
-                      ))
-                      ) : (
-                        <div className="p-8 bg-neutral-50 rounded-2xl border-2 border-dashed border-neutral-200 flex flex-col items-center justify-center text-center">
-                          <Paperclip className="w-8 h-8 text-neutral-300 mb-2" />
-                          <p className="text-[10px] font-black uppercase text-secondary">Nenhum comprovante anexado</p>
-                          <p className="text-[8px] font-bold text-neutral-400 uppercase mt-1">É necessário um anexo para aprovação direta</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
                 </div>
 
                 {/* Coluna da Direita: Operações e Botões */}
@@ -617,69 +480,14 @@ export default function LancamentoDetailsSlide() {
                     </div>
                   )}
 
-                  {isMaster && !hasAnexo && (lancamento.status_aprovacao !== 'confirmado_master' || isQuitacaoPendente) && (
-                    <div className="flex items-start gap-3 p-4 bg-white rounded-2xl border border-neutral-100 shadow-sm">
-                      <div className={`mt-0.5 w-5 h-5 rounded flex items-center justify-center border-2 transition-all cursor-pointer ${
-                        dispensarComprovante ? 'bg-primary border-primary' : 'bg-white border-neutral-200'
-                      }`}
-                      onClick={() => setDispensarComprovante(!dispensarComprovante)}
-                      >
-                        {dispensarComprovante && <Check className="w-3.5 h-3.5 text-white" />}
-                      </div>
-                      <div className="flex-1 cursor-pointer" onClick={() => setDispensarComprovante(!dispensarComprovante)}>
-                        <p className="text-[10px] font-black uppercase text-neutral-900">Dispensar comprovante</p>
-                        <p className="text-[8px] font-bold text-secondary uppercase leading-tight mt-0.5">
-                          Aprovar este lançamento manualmente sem a necessidade de um anexo.
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
                   <div className="flex flex-col gap-3 mt-auto">
-                    {lancamento.status_pagamento === 'aberto' ? (
-                      <button
-                        type="button"
-                        disabled={!canApprove}
-                        onClick={() => {
-                          if (!canApprove) return;
-                          setSelectedLancamentoIdForModal(lancamento.id);
-                          setModalOpen('isComprovanteOpen', false);
-                          setModalOpen('isBaixaLancamentoOpen', true);
-                        }}
-                        className={`w-full h-14 text-white transition-all rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] flex items-center justify-center gap-3 shadow-lg ${
-                          canApprove ? 'bg-bank-truth-green hover:brightness-110' : 'bg-neutral-300 cursor-not-allowed opacity-70'
-                        }`}
-                      >
-                        <CheckCircle2 className="w-5 h-5" /> {canApprove ? 'Dar baixa agora' : 'Anexe o comprovante ou dispense'}
-                      </button>
-                    ) : (
-                      <div className="w-full p-4 bg-neutral-100 rounded-2xl border border-neutral-200 text-center">
-                        <p className="text-[10px] font-black uppercase text-secondary tracking-widest">
-                          {lancamento.status_pagamento === 'pago' ? 'Título Liquidado' : (isMaster ? 'Aprovação pendente via lote' : 'Aprovação reservada ao nível Master')}
-                        </p>
-                      </div>
-                    )}
-
-                    <div className="grid grid-cols-1 gap-2">
-                      <button
-                        type="button"
-                        onClick={handlePrintReceipt}
-                        className="w-full h-11 bg-white hover:bg-neutral-50 text-neutral-900 transition-all rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 border border-neutral-200 shadow-sm"
-                      >
-                        <Printer className="w-4 h-4 text-primary" /> Imprimir / PDF
-                      </button>
-                      {hasAnexo && (
-                        <a
-                          href={anexos[0].url}
-                          download
-                          target="_blank"
-                          rel="noreferrer"
-                          className="w-full h-11 bg-primary/5 hover:bg-primary/10 text-primary transition-all rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 border border-primary/10"
-                        >
-                          <Download className="w-4 h-4" /> Baixar Anexo
-                        </a>
-                      )}
-                    </div>
+                    <button
+                      type="button"
+                      onClick={handlePrintReceipt}
+                      className="w-full h-11 bg-white hover:bg-neutral-50 text-neutral-900 transition-all rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 border border-neutral-200 shadow-sm"
+                    >
+                      <Printer className="w-4 h-4 text-primary" /> Imprimir / PDF
+                    </button>
                   </div>
                 </div>
               </div>
