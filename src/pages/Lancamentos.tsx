@@ -99,6 +99,7 @@ export default function Lancamentos({
 
   // Preset state
   const [datePreset, setDatePreset] = useState<'15' | '30' | '90' | 'custom'>('15');
+  const [dateDirection, setDateDirection] = useState<'past' | 'future'>('past');
 
   // Search & Period States
   const [startDate, setStartDate] = useState(() => {
@@ -110,17 +111,30 @@ export default function Lancamentos({
     return new Date().toISOString().split('T')[0];
   });
 
-  const handlePresetChange = (preset: '15' | '30' | '90' | 'custom') => {
+  const handlePresetChange = (preset: '15' | '30' | '90' | 'custom', direction = dateDirection) => {
     setDatePreset(preset);
     if (preset !== 'custom') {
       const today = new Date();
-      const endStr = today.toISOString().split('T')[0];
       const start = new Date();
-      start.setDate(today.getDate() - parseInt(preset));
-      const startStr = start.toISOString().split('T')[0];
-      
-      setStartDate(startStr);
-      setEndDate(endStr);
+      const end = new Date();
+
+      if (direction === 'future') {
+        start.setDate(today.getDate() + 1);
+        end.setDate(today.getDate() + parseInt(preset));
+      } else {
+        start.setDate(today.getDate() - parseInt(preset));
+        end.setDate(today.getDate());
+      }
+
+      setStartDate(start.toISOString().split('T')[0]);
+      setEndDate(end.toISOString().split('T')[0]);
+    }
+  };
+
+  const handleDateDirectionChange = (direction: 'past' | 'future') => {
+    setDateDirection(direction);
+    if (datePreset !== 'custom') {
+      handlePresetChange(datePreset, direction);
     }
   };
 
@@ -306,8 +320,9 @@ export default function Lancamentos({
     setMotivoAcrescimoFilter('all');
     setSelectedLancamentoIdsForBatch([]);
     setSelectedAccountId(null);
+    setDateDirection('past');
 
-    handlePresetChange('15');
+    handlePresetChange('15', 'past');
     setCurrentPage(1);
   };
 
@@ -640,6 +655,29 @@ export default function Lancamentos({
         </div>
 
         <div className="flex items-center gap-3 w-full lg:w-auto">
+          <div className="flex bg-neutral-100 p-1 rounded-xl h-12 shrink-0" aria-label="Direção do período">
+            <button
+              type="button"
+              disabled={datePreset === 'custom'}
+              onClick={() => handleDateDirectionChange('past')}
+              className={`px-3 rounded-lg text-[9px] font-black uppercase tracking-tighter transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                dateDirection === 'past' ? 'bg-white text-primary shadow-sm' : 'text-neutral-400 hover:text-neutral-600'
+              }`}
+            >
+              Passados
+            </button>
+            <button
+              type="button"
+              disabled={datePreset === 'custom'}
+              onClick={() => handleDateDirectionChange('future')}
+              className={`px-3 rounded-lg text-[9px] font-black uppercase tracking-tighter transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                dateDirection === 'future' ? 'bg-white text-primary shadow-sm' : 'text-neutral-400 hover:text-neutral-600'
+              }`}
+            >
+              Futuros
+            </button>
+          </div>
+
           <div className="flex bg-neutral-100 p-1 rounded-xl h-12 shrink-0">
             {[
               { id: '15', label: '15 dias' },
