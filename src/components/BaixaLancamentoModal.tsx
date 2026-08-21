@@ -1022,9 +1022,8 @@ export default function BaixaLancamentoModal() {
                 </div>
               </div>
 
-              {false && (
-                <div className="space-y-4">
-                  {/* Anexos */}
+              <div className="space-y-4">
+                {/* Anexos */}
                 <h4 className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-2 border-b border-neutral-100 pb-2">
                   <Paperclip className="w-4 h-4" /> Comprovantes e Anexos
                 </h4>
@@ -1096,7 +1095,6 @@ export default function BaixaLancamentoModal() {
                   ))}
                 </div>
                 </div>
-              )}
 
             </form>
 
