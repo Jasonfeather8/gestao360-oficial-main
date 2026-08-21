@@ -97,8 +97,8 @@ export const lancamentosService = {
     let query = supabase
       .from('lancamentos_financeiros')
       .select('*, entidades_negocio!inner(nome_razao_social)', { count: 'exact' })
+      .order('data_vencimento', { ascending: true })
       .order('codigo_sequencial', { ascending: true })
-      .order('data_vencimento', { ascending: false })
       .order('created_at', { ascending: false });
 
     if (filters) {
@@ -126,7 +126,14 @@ export const lancamentosService = {
       }
       
       if (filters.statusPagamento && filters.statusPagamento !== 'all') {
-        query = query.eq('status_pagamento', filters.statusPagamento);
+        if (filters.statusPagamento === 'atrasadas') {
+          const today = new Date().toISOString().split('T')[0];
+          query = query
+            .lt('data_vencimento', today)
+            .in('status_pagamento', ['aberto', 'pago_parcial', 'quitação_pendente']);
+        } else {
+          query = query.eq('status_pagamento', filters.statusPagamento);
+        }
       }
       
       if (filters.type && filters.type !== 'all') {
