@@ -632,6 +632,18 @@ export default function Lancamentos({
 
       {/* Main filter bar */}
       <div className="bg-white border-2 border-neutral-100 p-4 rounded-3xl flex flex-col lg:flex-row gap-4 shadow-sm items-center">
+        <button
+          type="button"
+          onClick={() => setIsFilterPanelOpen(prev => !prev)}
+          title={isFilterPanelOpen ? 'Ocultar filtros' : 'Mostrar filtros'}
+          className={`h-12 w-12 flex items-center justify-center rounded-xl border-2 transition-all relative shrink-0 ${
+            hasActiveFilters ? 'border-primary bg-primary/5 text-primary shadow-sm' : 'border-neutral-100 text-neutral-400 hover:border-neutral-200'
+          }`}
+        >
+          <Filter className="w-5 h-5" />
+          {hasActiveFilters && <div className="absolute top-2 right-2 w-2 h-2 bg-primary rounded-full ring-2 ring-white" />}
+        </button>
+
         <div className="flex gap-3 w-full lg:w-auto">
           <div className="relative w-32 shrink-0">
             <FileText className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-neutral-300" />
@@ -715,16 +727,6 @@ export default function Lancamentos({
             />
           </div>
 
-          <button
-            onClick={() => setIsFilterPanelOpen(prev => !prev)}
-            title={isFilterPanelOpen ? 'Ocultar filtros' : 'Mostrar filtros'}
-            className={`h-12 w-12 flex items-center justify-center rounded-xl border-2 transition-all relative shrink-0 ${
-              hasActiveFilters ? 'border-primary bg-primary/5 text-primary shadow-sm' : 'border-neutral-100 text-neutral-400 hover:border-neutral-200'
-            }`}
-          >
-            <Filter className="w-5 h-5" />
-            {hasActiveFilters && <div className="absolute top-2 right-2 w-2 h-2 bg-primary rounded-full ring-2 ring-white" />}
-          </button>
         </div>
       </div>
 
