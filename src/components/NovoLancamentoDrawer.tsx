@@ -1076,7 +1076,8 @@ export default function NovoLancamentoDrawer() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                {!isAVREdit && (
+                  <div className="grid grid-cols-2 gap-4">
                   <div className="flex flex-col gap-2">
                     <div className="flex justify-between items-center">
                       <label className="text-[10px] font-black text-secondary uppercase tracking-widest">Desconto</label>
@@ -1161,6 +1162,7 @@ export default function NovoLancamentoDrawer() {
                     )}
                   </div>
                 </div>
+                )}
 
                 <div className="flex flex-col gap-2 border-y-2 border-neutral-50 py-4">
                   <div className="flex justify-between items-center px-2">

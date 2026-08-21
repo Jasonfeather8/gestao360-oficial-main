@@ -527,7 +527,8 @@ export default function BaixaLancamentoModal() {
               </div>
 
               {/* Desconto & Acréscimo */}
-              <div className="grid grid-cols-2 gap-6">
+              {!isAVR && (
+                <div className="grid grid-cols-2 gap-6">
                 {/* Desconto */}
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
@@ -634,6 +635,7 @@ export default function BaixaLancamentoModal() {
                   )}
                 </div>
               </div>
+              )}
 
               {/* Taxa Administrativa / Certificado (1%) */}
               <div className="p-5 bg-neutral-50 rounded-3xl border border-neutral-100 space-y-3">
