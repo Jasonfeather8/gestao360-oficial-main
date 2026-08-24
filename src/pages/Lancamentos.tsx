@@ -1008,7 +1008,7 @@ export default function Lancamentos({
                     );
                   })}
                   {isOperationalView && selectedOperationalLancamentos.length > 0 && (
-                    <tr key="selected-lancamentos-total" className="border-t-2 border-neutral-200 bg-neutral-50/70">
+                    <tr key="selected-lancamentos-total" className="sticky bottom-0 z-20 bg-neutral-50 border-t-2 border-neutral-200 shadow-[0_-2px_6px_rgba(0,0,0,0.08)] whitespace-nowrap">
                       <td className="py-3 px-4" />
                       <td className="py-3 px-4 font-black uppercase tracking-widest text-neutral-900">TOTAL</td>
                       <td className="py-3 px-4" />
