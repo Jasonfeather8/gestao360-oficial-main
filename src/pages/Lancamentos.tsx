@@ -692,31 +692,23 @@ export default function Lancamentos({
             </button>
           </div>
 
-          <div className="flex bg-neutral-100 p-1 rounded-xl h-12 shrink-0">
-            {[
-              { id: '15', label: '15 dias' },
-              { id: '30', label: '30 dias' },
-              { id: '90', label: '90 dias' },
-              { id: 'custom', label: 'Personalizado' }
-            ].map(opt => (
-              <button
-                key={opt.id}
-                onClick={() => handlePresetChange(opt.id as any)}
-                className={`px-3 rounded-lg text-[9px] font-black uppercase tracking-tighter transition-all ${
-                  datePreset === opt.id ? 'bg-white text-primary shadow-sm' : 'text-neutral-400 hover:text-neutral-600'
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
+          <select
+            value={datePreset}
+            onChange={(e) => handlePresetChange(e.target.value as '15' | '30' | '90' | 'custom')}
+            className="h-12 bg-neutral-100 border-none rounded-xl px-3 text-[9px] font-black uppercase tracking-tighter text-neutral-600 outline-none shrink-0"
+          >
+            <option value="15">15 dias</option>
+            <option value="30">30 dias</option>
+            <option value="90">90 dias</option>
+            <option value="custom">Personalizado</option>
+          </select>
 
           <div className={`flex bg-neutral-100 p-1 rounded-xl h-12 transition-all ${datePreset === 'custom' ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
-            <input 
-              type="date" 
-              value={startDate} 
-              onChange={(e) => { setStartDate(e.target.value); setDatePreset('custom'); }} 
-              className="bg-transparent border-none text-[10px] font-black uppercase px-2 outline-none" 
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => { setStartDate(e.target.value); setDatePreset('custom'); }}
+              className="bg-transparent border-none text-[10px] font-black uppercase px-2 outline-none"
             />
             <div className="w-px h-4 bg-neutral-200 self-center" />
             <input 
