@@ -731,13 +731,29 @@ export default function Lancamentos({
               className="bg-transparent border-none text-[10px] font-black uppercase px-2 outline-none"
             />
             <div className="w-px h-4 bg-neutral-200 self-center" />
-            <input 
-              type="date" 
-              value={endDate} 
-              onChange={(e) => { setEndDate(e.target.value); setDatePreset('custom'); }} 
-              className="bg-transparent border-none text-[10px] font-black uppercase px-2 outline-none" 
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => { setEndDate(e.target.value); setDatePreset('custom'); }}
+              className="bg-transparent border-none text-[10px] font-black uppercase px-2 outline-none"
             />
           </div>
+
+          <select
+            value={pageSize}
+            onChange={(event) => {
+              const value = event.target.value;
+              const nextPageSize: 50 | 100 | 'all' = value === 'all' ? 'all' : value === '100' ? 100 : 50;
+              setPageSize(nextPageSize);
+              setCurrentPage(1);
+              setSelectedLancamentoIdsForBatch([]);
+            }}
+            className="h-10 rounded-xl border-2 border-neutral-100 bg-white px-3 text-[10px] font-bold uppercase tracking-widest text-neutral-500 outline-none transition-all hover:bg-neutral-50"
+          >
+            <option value="50">50 títulos</option>
+            <option value="100">100 títulos</option>
+            <option value="all">Todos</option>
+          </select>
 
         </div>
       </div>
@@ -1068,22 +1084,6 @@ export default function Lancamentos({
           </span>
 
           <div className="flex items-center gap-2">
-            <select
-              value={pageSize}
-              onChange={(event) => {
-                const value = event.target.value;
-                const nextPageSize: 50 | 100 | 'all' = value === 'all' ? 'all' : value === '100' ? 100 : 50;
-                setPageSize(nextPageSize);
-                setCurrentPage(1);
-                setSelectedLancamentoIdsForBatch([]);
-              }}
-              className="h-10 rounded-xl border-2 border-neutral-100 bg-white px-3 text-[10px] font-bold uppercase tracking-widest text-neutral-500 outline-none transition-all hover:bg-neutral-50"
-            >
-              <option value="50">50 títulos</option>
-              <option value="100">100 títulos</option>
-              <option value="all">Todos</option>
-            </select>
-
             {pageSize !== 'all' && (
               <>
                 <button
