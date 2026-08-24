@@ -746,10 +746,14 @@ export default function Lancamentos({
                 {isOperationalView ? (
                   <>
                     <th className="py-5 px-4">{typeOverride === 'saida' ? 'Local / Fornecedor' : 'Local / Cliente'}</th>
-                    <th className="py-5 px-4">C. Atrasada</th>
-                    <th className="py-5 px-4">Dt. Referência</th>
-                    <th className="py-5 px-4 text-right">Total</th>
-                    <th className="py-5 px-4 text-right">A pagar</th>
+                    <th className="py-5 px-4">Ven. Ref.</th>
+                    <th className="py-5 px-4">Data Doc.</th>
+                    <th className="py-5 px-4 text-right">Valor Doc. Original</th>
+                    <th className="py-5 px-4 text-right">Valor Parc. Original</th>
+                    <th className="py-5 px-4 text-right">Desconto</th>
+                    <th className="py-5 px-4 text-right">Acréscimo</th>
+                    <th className="py-5 px-4 text-right">Valor Pago</th>
+                    <th className="py-5 px-4 text-right">A Pagar</th>
                     <th className="py-5 px-4 text-center">Status</th>
                     <th className="py-5 px-3 text-center">Recibo</th>
                   </>
@@ -769,11 +773,11 @@ export default function Lancamentos({
             </thead>
             <tbody className="text-[11px] font-bold">
               {isLoading ? (
-                <tr><td colSpan={10} className="py-24 text-center"><div className="flex flex-col items-center gap-3 opacity-40"><Clock className="w-10 h-10 animate-spin text-primary" /><p className="font-black uppercase text-[10px] tracking-widest">Sincronizando registros...</p></div></td></tr>
+                <tr><td colSpan={isOperationalView ? 14 : 10} className="py-24 text-center"><div className="flex flex-col items-center gap-3 opacity-40"><Clock className="w-10 h-10 animate-spin text-primary" /><p className="font-black uppercase text-[10px] tracking-widest">Sincronizando registros...</p></div></td></tr>
               ) : isError ? (
-                <tr><td colSpan={10} className="py-24 text-center"><div className="flex flex-col items-center gap-3 text-alert-red"><AlertTriangle className="w-10 h-10" /><p className="font-black uppercase text-[10px] tracking-widest">Erro ao carregar dados. Tente simplificar a busca.</p></div></td></tr>
+                <tr><td colSpan={isOperationalView ? 14 : 10} className="py-24 text-center"><div className="flex flex-col items-center gap-3 text-alert-red"><AlertTriangle className="w-10 h-10" /><p className="font-black uppercase text-[10px] tracking-widest">Erro ao carregar dados. Tente simplificar a busca.</p></div></td></tr>
               ) : filteredLancamentos.length === 0 ? (
-                <tr><td colSpan={10} className="py-24 text-center"><div className="flex flex-col items-center gap-3 opacity-20"><Receipt className="w-12 h-12" /><p className="font-black uppercase text-[10px] tracking-widest">Nenhum lançamento localizado</p></div></td></tr>
+                <tr><td colSpan={isOperationalView ? 14 : 10} className="py-24 text-center"><div className="flex flex-col items-center gap-3 opacity-20"><Receipt className="w-12 h-12" /><p className="font-black uppercase text-[10px] tracking-widest">Nenhum lançamento localizado</p></div></td></tr>
               ) : (
                 filteredLancamentos.map((item, idx) => {
                   const isSelected = selectedLancamentoIdsForBatch.includes(item.id);
@@ -838,13 +842,25 @@ export default function Lancamentos({
                             )}
                           </td>
                           <td className="py-3 px-4 whitespace-nowrap text-neutral-500 font-mono">
-                            {(item.data_competencia || item.data_vencimento).split('-').reverse().join('/')}
+                            {item.data_emissao.split('-').reverse().join('/')}
                           </td>
                           <td className="py-3 px-4 text-right font-black font-mono text-xs text-neutral-900">
                             {valueFormatter(item.valor_original || item.valor_previsto)}
                           </td>
                           <td className={`py-3 px-4 text-right font-black font-mono text-xs ${item.tipo === 'entrada' ? 'text-bank-truth-green' : 'text-neutral-950'}`}>
-                            {valueFormatter(getValorLiquido(item))}
+                            {valueFormatter(item.valor_previsto)}
+                          </td>
+                          <td className="py-3 px-4 text-right font-black font-mono text-xs text-neutral-900">
+                            {valueFormatter(item.desconto_valor || 0)}
+                          </td>
+                          <td className="py-3 px-4 text-right font-black font-mono text-xs text-neutral-900">
+                            {valueFormatter(item.acrescimo_valor || 0)}
+                          </td>
+                          <td className="py-3 px-4 text-right font-black font-mono text-xs text-neutral-900">
+                            {valueFormatter(item.valor_recebido || 0)}
+                          </td>
+                          <td className={`py-3 px-4 text-right font-black font-mono text-xs ${item.tipo === 'entrada' ? 'text-bank-truth-green' : 'text-neutral-950'}`}>
+                            {valueFormatter(item.valor_previsto - (item.desconto_valor || 0) + (item.acrescimo_valor || 0) - (item.valor_recebido || 0))}
                           </td>
                           <td className="py-3 px-4 text-center whitespace-nowrap">
                             {renderStatusBadge(item)}
