@@ -1007,36 +1007,6 @@ export default function Lancamentos({
                     </tr>
                     );
                   })}
-                  {isOperationalView && selectedOperationalLancamentos.length > 0 && (
-                    <tr key="selected-lancamentos-total" className="sticky bottom-0 z-20 bg-neutral-50 border-t-2 border-neutral-200 shadow-[0_-2px_6px_rgba(0,0,0,0.08)] whitespace-nowrap">
-                      <td className="py-3 px-4" />
-                      <td className="py-3 px-4 font-black uppercase tracking-widest text-neutral-900">TOTAL</td>
-                      <td className="py-3 px-4" />
-                      <td className="py-3 px-4" />
-                      <td className="py-3 px-4" />
-                      <td className="py-3 px-4 text-right font-black font-mono text-xs text-neutral-900">
-                        {valueFormatter(operationalTotals.valorDocOriginal)}
-                      </td>
-                      <td className={`py-3 px-4 text-right font-black font-mono text-xs ${typeOverride === 'entrada' ? 'text-bank-truth-green' : 'text-neutral-950'}`}>
-                        {valueFormatter(operationalTotals.valorParcOriginal)}
-                      </td>
-                      <td className="py-3 px-4 text-right font-black font-mono text-xs text-neutral-900">
-                        {valueFormatter(operationalTotals.desconto)}
-                      </td>
-                      <td className="py-3 px-4 text-right font-black font-mono text-xs text-neutral-900">
-                        {valueFormatter(operationalTotals.acrescimo)}
-                      </td>
-                      <td className="py-3 px-4 text-right font-black font-mono text-xs text-neutral-900">
-                        {valueFormatter(operationalTotals.valorPago)}
-                      </td>
-                      <td className={`py-3 px-4 text-right font-black font-mono text-xs ${typeOverride === 'entrada' ? 'text-bank-truth-green' : 'text-neutral-950'}`}>
-                        {valueFormatter(operationalTotals.aPagar)}
-                      </td>
-                      <td className="py-3 px-4" />
-                      <td className="py-3 px-3" />
-                      <td className="py-3 px-4" />
-                    </tr>
-                  )}
                 </>
               )}
             </tbody>
@@ -1046,10 +1016,49 @@ export default function Lancamentos({
         {/* Floating Horizontal Scrollbar Mirror - Stays fixed at viewport bottom */}
         <div
           ref={mirrorScrollRef}
-          className="sticky bottom-0 z-[60] overflow-x-auto scrollbar-thin bg-neutral-50/90 backdrop-blur-md border-y border-neutral-200 flex h-5"
+          className={
+            isOperationalView && selectedOperationalLancamentos.length > 0
+              ? 'sticky bottom-0 z-[60] overflow-x-auto scrollbar-thin bg-neutral-50 border-y-2 border-neutral-200 shadow-[0_-2px_6px_rgba(0,0,0,0.08)] flex min-h-[52px]'
+              : 'sticky bottom-0 z-[60] overflow-x-auto scrollbar-thin bg-neutral-50/90 backdrop-blur-md border-y border-neutral-200 flex h-5'
+          }
           style={{ marginBottom: '-1px' }}
         >
-          <div style={{ width: tableWidth, height: 1 }} className="shrink-0" />
+          {isOperationalView && selectedOperationalLancamentos.length > 0 ? (
+            <table className="w-full text-left border-collapse min-w-[1200px]" style={{ width: tableWidth }}>
+              <tbody>
+                <tr className="whitespace-nowrap">
+                  <td className="py-3 px-4" />
+                  <td className="py-3 px-4 font-black uppercase tracking-widest text-neutral-900">TOTAL</td>
+                  <td className="py-3 px-4" />
+                  <td className="py-3 px-4" />
+                  <td className="py-3 px-4" />
+                  <td className="py-3 px-4 text-right font-black font-mono text-xs text-neutral-900">
+                    {valueFormatter(operationalTotals.valorDocOriginal)}
+                  </td>
+                  <td className={`py-3 px-4 text-right font-black font-mono text-xs ${typeOverride === 'entrada' ? 'text-bank-truth-green' : 'text-neutral-950'}`}>
+                    {valueFormatter(operationalTotals.valorParcOriginal)}
+                  </td>
+                  <td className="py-3 px-4 text-right font-black font-mono text-xs text-neutral-900">
+                    {valueFormatter(operationalTotals.desconto)}
+                  </td>
+                  <td className="py-3 px-4 text-right font-black font-mono text-xs text-neutral-900">
+                    {valueFormatter(operationalTotals.acrescimo)}
+                  </td>
+                  <td className="py-3 px-4 text-right font-black font-mono text-xs text-neutral-900">
+                    {valueFormatter(operationalTotals.valorPago)}
+                  </td>
+                  <td className={`py-3 px-4 text-right font-black font-mono text-xs ${typeOverride === 'entrada' ? 'text-bank-truth-green' : 'text-neutral-950'}`}>
+                    {valueFormatter(operationalTotals.aPagar)}
+                  </td>
+                  <td className="py-3 px-4" />
+                  <td className="py-3 px-3" />
+                  <td className="py-3 px-4" />
+                </tr>
+              </tbody>
+            </table>
+          ) : (
+            <div style={{ width: tableWidth, height: 1 }} className="shrink-0" />
+          )}
         </div>
 
         {/* Pagination Bar */}
