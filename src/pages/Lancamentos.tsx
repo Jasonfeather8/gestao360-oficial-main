@@ -328,14 +328,10 @@ export default function Lancamentos({
 
   const toggleSelectAll = () => {
     if (!isMaster) return;
-    const selectable = filteredLancamentos.filter(l => 
-      (l.status_aprovacao !== 'confirmado_master' || l.status_pagamento === 'quitação_pendente') && 
-      l.status_pagamento !== 'bpi'
-    );
-    if (selectedLancamentoIdsForBatch.length === selectable.length) {
+    if (selectedLancamentoIdsForBatch.length === filteredLancamentos.length) {
       setSelectedLancamentoIdsForBatch([]);
     } else {
-      setSelectedLancamentoIdsForBatch(selectable.map(l => l.id));
+      setSelectedLancamentoIdsForBatch(filteredLancamentos.map(l => l.id));
     }
   };
 
@@ -350,7 +346,12 @@ export default function Lancamentos({
 
   const handleBatchApprove = () => {
     if (!isMaster) return;
-    if (selectedLancamentoIdsForBatch.length === 0) return;
+    const eligibleIds = filteredLancamentos
+      .filter(item => selectedLancamentoIdsForBatch.includes(item.id))
+      .filter(item => (item.status_aprovacao !== 'confirmado_master' || item.status_pagamento === 'quitação_pendente') && item.status_pagamento !== 'bpi')
+      .map(item => item.id);
+    if (eligibleIds.length === 0) return;
+    setSelectedLancamentoIdsForBatch(eligibleIds);
     setModalOpen('isAprovacaoModalOpen', true);
   };
 
@@ -401,6 +402,25 @@ export default function Lancamentos({
   }, [activeContas, contasSaldos]);
 
   const isOperationalView = !!typeOverride;
+  const selectedOperationalLancamentos = isOperationalView
+    ? filteredLancamentos.filter(item => selectedLancamentoIdsForBatch.includes(item.id))
+    : [];
+  const operationalTotals = selectedOperationalLancamentos.reduce(
+    (totals, item) => {
+      const desconto = item.desconto_valor || 0;
+      const acrescimo = item.acrescimo_valor || 0;
+      const valorPago = item.valor_recebido || 0;
+
+      totals.valorDocOriginal += item.valor_original || item.valor_previsto;
+      totals.valorParcOriginal += item.valor_previsto;
+      totals.desconto += desconto;
+      totals.acrescimo += acrescimo;
+      totals.valorPago += valorPago;
+      totals.aPagar += item.valor_previsto - desconto + acrescimo - valorPago;
+      return totals;
+    },
+    { valorDocOriginal: 0, valorParcOriginal: 0, desconto: 0, acrescimo: 0, valorPago: 0, aPagar: 0 }
+  );
 
   const getDaysOverdue = (dateStr: string): number => {
     if (!dateStr) return -1;
@@ -735,7 +755,7 @@ export default function Lancamentos({
                   {isMaster && (
                     <input
                       type="checkbox"
-                      checked={selectedLancamentoIdsForBatch.length > 0 && selectedLancamentoIdsForBatch.length === filteredLancamentos.filter(l => (l.status_aprovacao !== 'confirmado_master' || l.status_pagamento === 'quitação_pendente') && l.status_pagamento !== 'bpi').length}
+                      checked={filteredLancamentos.length > 0 && selectedLancamentoIdsForBatch.length === filteredLancamentos.length}
                       onChange={toggleSelectAll}
                       className="rounded-md border-neutral-300 text-primary focus:ring-primary w-4 h-4 transition-all"
                     />
@@ -779,12 +799,13 @@ export default function Lancamentos({
               ) : filteredLancamentos.length === 0 ? (
                 <tr><td colSpan={isOperationalView ? 14 : 10} className="py-24 text-center"><div className="flex flex-col items-center gap-3 opacity-20"><Receipt className="w-12 h-12" /><p className="font-black uppercase text-[10px] tracking-widest">Nenhum lançamento localizado</p></div></td></tr>
               ) : (
-                filteredLancamentos.map((item, idx) => {
-                  const isSelected = selectedLancamentoIdsForBatch.includes(item.id);
-                  const isAprovacaoPendente = (item.status_aprovacao !== 'confirmado_master' || item.status_pagamento === 'quitação_pendente') && item.status_pagamento !== 'bpi';
-                  const days = getDaysOverdue(item.data_vencimento);
+                <>
+                  {filteredLancamentos.map((item, idx) => {
+                    const isSelected = selectedLancamentoIdsForBatch.includes(item.id);
+                    const isAprovacaoPendente = (item.status_aprovacao !== 'confirmado_master' || item.status_pagamento === 'quitação_pendente') && item.status_pagamento !== 'bpi';
+                    const days = getDaysOverdue(item.data_vencimento);
 
-                  return (
+                    return (
                     <tr
                       key={`${item.id}-${idx}`}
                       onClick={() => {
@@ -794,7 +815,7 @@ export default function Lancamentos({
                       className={`border-b border-neutral-50 hover:bg-neutral-50/50 transition-all cursor-pointer group ${isSelected ? 'bg-primary/5 border-primary/10' : ''}`}
                     >
                       <td className="py-3 px-4 text-center" onClick={(e) => e.stopPropagation()}>
-                        {isMaster && isAprovacaoPendente && (
+                        {isMaster && (
                           <input
                             type="checkbox"
                             checked={isSelected}
@@ -984,8 +1005,39 @@ export default function Lancamentos({
                         </div>
                       </td>
                     </tr>
-                  );
-                })
+                    );
+                  })}
+                  {isOperationalView && selectedOperationalLancamentos.length > 0 && (
+                    <tr key="selected-lancamentos-total" className="border-t-2 border-neutral-200 bg-neutral-50/70">
+                      <td className="py-3 px-4" />
+                      <td className="py-3 px-4 font-black uppercase tracking-widest text-neutral-900">TOTAL</td>
+                      <td className="py-3 px-4" />
+                      <td className="py-3 px-4" />
+                      <td className="py-3 px-4" />
+                      <td className="py-3 px-4 text-right font-black font-mono text-xs text-neutral-900">
+                        {valueFormatter(operationalTotals.valorDocOriginal)}
+                      </td>
+                      <td className={`py-3 px-4 text-right font-black font-mono text-xs ${typeOverride === 'entrada' ? 'text-bank-truth-green' : 'text-neutral-950'}`}>
+                        {valueFormatter(operationalTotals.valorParcOriginal)}
+                      </td>
+                      <td className="py-3 px-4 text-right font-black font-mono text-xs text-neutral-900">
+                        {valueFormatter(operationalTotals.desconto)}
+                      </td>
+                      <td className="py-3 px-4 text-right font-black font-mono text-xs text-neutral-900">
+                        {valueFormatter(operationalTotals.acrescimo)}
+                      </td>
+                      <td className="py-3 px-4 text-right font-black font-mono text-xs text-neutral-900">
+                        {valueFormatter(operationalTotals.valorPago)}
+                      </td>
+                      <td className={`py-3 px-4 text-right font-black font-mono text-xs ${typeOverride === 'entrada' ? 'text-bank-truth-green' : 'text-neutral-950'}`}>
+                        {valueFormatter(operationalTotals.aPagar)}
+                      </td>
+                      <td className="py-3 px-4" />
+                      <td className="py-3 px-3" />
+                      <td className="py-3 px-4" />
+                    </tr>
+                  )}
+                </>
               )}
             </tbody>
           </table>
