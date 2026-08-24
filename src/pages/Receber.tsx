@@ -6,10 +6,8 @@ export default function Receber() {
     <Lancamentos
       typeOverride="entrada"
       titleOverride="Contas a Receber"
-      statusPagamentoOverride="aberto"
       statusAprovacaoOverride="fila_operacional"
       initialTypeFilter="all"
-      initialStatusPagamento="aberto"
     />
   );
 }

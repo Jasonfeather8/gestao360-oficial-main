@@ -6,10 +6,8 @@ export default function Pagar() {
     <Lancamentos
       typeOverride="saida"
       titleOverride="Contas a Pagar"
-      statusPagamentoOverride="aberto"
       statusAprovacaoOverride="fila_operacional"
       initialTypeFilter="all"
-      initialStatusPagamento="aberto"
     />
   );
 }
