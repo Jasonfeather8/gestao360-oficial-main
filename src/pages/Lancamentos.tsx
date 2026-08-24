@@ -140,7 +140,7 @@ export default function Lancamentos({
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 50;
+  const [pageSize, setPageSize] = useState<50 | 100 | 'all'>(50);
 
   // Advanced Filters
   const defaultStatusPagamento = initialStatusPagamento || statusPagamentoOverride || 'all';
@@ -201,7 +201,7 @@ export default function Lancamentos({
     motivoDescontoId: motivoDescontoFilter,
     motivoAcrescimoId: motivoAcrescimoFilter,
     page: currentPage,
-    pageSize
+    pageSize: pageSize === 'all' ? undefined : pageSize
   });
 
   // Sync scroll between mirror and table
@@ -240,7 +240,7 @@ export default function Lancamentos({
     };
   }, [allLancamentos, tableScroll.ref]);
 
-  const totalPages = Math.max(Math.ceil(totalCount / pageSize), 1);
+  const totalPages = pageSize === 'all' ? 1 : Math.max(Math.ceil(totalCount / pageSize), 1);
 
   const { data: entidades = [] } = useEntidades();
   const { data: categorias = [] } = useCategorias();
@@ -1068,39 +1068,59 @@ export default function Lancamentos({
           </span>
 
           <div className="flex items-center gap-2">
-            <button
-              disabled={currentPage === 1}
-              onClick={() => setCurrentPage(prev => prev - 1)}
-              className="h-10 px-4 rounded-xl border-2 border-neutral-100 text-neutral-500 font-bold hover:bg-neutral-50 disabled:opacity-50 text-[10px] uppercase tracking-widest transition-all"
+            <select
+              value={pageSize}
+              onChange={(event) => {
+                const value = event.target.value;
+                const nextPageSize: 50 | 100 | 'all' = value === 'all' ? 'all' : value === '100' ? 100 : 50;
+                setPageSize(nextPageSize);
+                setCurrentPage(1);
+                setSelectedLancamentoIdsForBatch([]);
+              }}
+              className="h-10 rounded-xl border-2 border-neutral-100 bg-white px-3 text-[10px] font-bold uppercase tracking-widest text-neutral-500 outline-none transition-all hover:bg-neutral-50"
             >
-              Anterior
-            </button>
-            <div className="flex gap-1">
-              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                const pageNum = i + 1;
-                return (
-                  <button
-                    key={pageNum}
-                    onClick={() => setCurrentPage(pageNum)}
-                    className={`w-10 h-10 rounded-xl text-[10px] font-black transition-all ${
-                      currentPage === pageNum
-                        ? 'bg-neutral-900 text-white shadow-md'
-                        : 'border-2 border-neutral-100 text-neutral-400 hover:bg-neutral-50'
-                    }`}
-                  >
-                    {pageNum}
-                  </button>
-                );
-              })}
-              {totalPages > 5 && <span className="flex items-end pb-2 text-neutral-400">...</span>}
-            </div>
-            <button
-              disabled={currentPage === totalPages}
-              onClick={() => setCurrentPage(prev => prev + 1)}
-              className="h-10 px-4 rounded-xl border-2 border-neutral-100 text-neutral-500 font-bold hover:bg-neutral-50 disabled:opacity-50 text-[10px] uppercase tracking-widest transition-all"
-            >
-              Próximo
-            </button>
+              <option value="50">50 títulos</option>
+              <option value="100">100 títulos</option>
+              <option value="all">Todos</option>
+            </select>
+
+            {pageSize !== 'all' && (
+              <>
+                <button
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage(prev => prev - 1)}
+                  className="h-10 px-4 rounded-xl border-2 border-neutral-100 text-neutral-500 font-bold hover:bg-neutral-50 disabled:opacity-50 text-[10px] uppercase tracking-widest transition-all"
+                >
+                  Anterior
+                </button>
+                <div className="flex gap-1">
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    const pageNum = i + 1;
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => setCurrentPage(pageNum)}
+                        className={`w-10 h-10 rounded-xl text-[10px] font-black transition-all ${
+                          currentPage === pageNum
+                            ? 'bg-neutral-900 text-white shadow-md'
+                            : 'border-2 border-neutral-100 text-neutral-400 hover:bg-neutral-50'
+                        }`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+                  {totalPages > 5 && <span className="flex items-end pb-2 text-neutral-400">...</span>}
+                </div>
+                <button
+                  disabled={currentPage === totalPages}
+                  onClick={() => setCurrentPage(prev => prev + 1)}
+                  className="h-10 px-4 rounded-xl border-2 border-neutral-100 text-neutral-500 font-bold hover:bg-neutral-50 disabled:opacity-50 text-[10px] uppercase tracking-widest transition-all"
+                >
+                  Próximo
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>
