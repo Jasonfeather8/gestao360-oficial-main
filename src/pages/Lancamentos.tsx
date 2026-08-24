@@ -143,7 +143,7 @@ export default function Lancamentos({
   const pageSize = 50;
 
   // Advanced Filters
-  const defaultStatusPagamento = initialStatusPagamento || statusPagamentoOverride || (isFinanceiroView ? 'all' : (isColaborador ? 'quitação_pendente' : 'pago'));
+  const defaultStatusPagamento = initialStatusPagamento || statusPagamentoOverride || 'all';
   const defaultTypeFilter = initialTypeFilter || typeOverride || 'all';
   const [approvalStatus, setApprovalStatus] = useState('all');
   const [statusPagamento, setStatusPagamento] = useState<string>(defaultStatusPagamento);
@@ -151,10 +151,10 @@ export default function Lancamentos({
 
   // Sincronizar o estado interno com as propriedades da rota ao navegar
   useEffect(() => {
-    setStatusPagamento(initialStatusPagamento || statusPagamentoOverride || (isFinanceiroView ? 'all' : (isColaborador ? 'quitação_pendente' : 'pago')));
+    setStatusPagamento(initialStatusPagamento || statusPagamentoOverride || 'all');
     setTypeFilter(initialTypeFilter || typeOverride || 'all');
     setSelectedLancamentoIdsForBatch([]);
-  }, [initialStatusPagamento, initialTypeFilter, statusPagamentoOverride, typeOverride, titleOverride, isColaborador, isFinanceiroView]);
+  }, [initialStatusPagamento, initialTypeFilter, statusPagamentoOverride, typeOverride, titleOverride]);
 
   const [authorIdFilter, setAuthorIdIdFilter] = useState('all');
 
