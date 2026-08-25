@@ -1205,19 +1205,38 @@ export default function Lancamentos({
           </section>
 
           {isOperationalView ? (
-            <table className="lancamentos-print-report__table">
+            <table className="lancamentos-print-report__table lancamentos-print-report__table--operational">
+              <colgroup>
+                <col className="lancamentos-print-report__col--document" />
+                <col className="lancamentos-print-report__col--entity" />
+                <col className="lancamentos-print-report__col--reference-date" />
+                <col className="lancamentos-print-report__col--document-date" />
+                <col className="lancamentos-print-report__col--value-original" />
+                <col className="lancamentos-print-report__col--value-installment" />
+                <col className="lancamentos-print-report__col--discount" />
+                <col className="lancamentos-print-report__col--increase" />
+                <col className="lancamentos-print-report__col--paid" />
+                <col className="lancamentos-print-report__col--balance" />
+                <col className="lancamentos-print-report__col--status" />
+              </colgroup>
               <thead>
+                <tr>
+                  <th colSpan={2}>Identificação</th>
+                  <th colSpan={2}>Datas</th>
+                  <th colSpan={6}>Valores</th>
+                  <th>Situação</th>
+                </tr>
                 <tr>
                   <th>Documento</th>
                   <th>Entidade</th>
-                  <th>Ven. ref.</th>
-                  <th>Data doc.</th>
+                  <th>Vencimento ref.</th>
+                  <th>Data do documento</th>
                   <th className="number">Valor doc. original</th>
-                  <th className="number">Valor parc. original</th>
+                  <th className="number">Valor da parcela</th>
                   <th className="number">Desconto</th>
                   <th className="number">Acréscimo</th>
                   <th className="number">Valor pago</th>
-                  <th className="number">A pagar</th>
+                  <th className="number">Saldo a pagar</th>
                   <th>Status</th>
                 </tr>
               </thead>
@@ -1252,8 +1271,26 @@ export default function Lancamentos({
               </tfoot>
             </table>
           ) : (
-            <table className="lancamentos-print-report__table">
+            <table className="lancamentos-print-report__table lancamentos-print-report__table--financial">
+              <colgroup>
+                <col className="lancamentos-print-report__col--document" />
+                <col className="lancamentos-print-report__col--flow" />
+                <col className="lancamentos-print-report__col--entity" />
+                <col className="lancamentos-print-report__col--due-date" />
+                <col className="lancamentos-print-report__col--payment-date" />
+                <col className="lancamentos-print-report__col--planned" />
+                <col className="lancamentos-print-report__col--discount" />
+                <col className="lancamentos-print-report__col--increase" />
+                <col className="lancamentos-print-report__col--net" />
+                <col className="lancamentos-print-report__col--status" />
+              </colgroup>
               <thead>
+                <tr>
+                  <th colSpan={3}>Identificação</th>
+                  <th colSpan={2}>Datas</th>
+                  <th colSpan={4}>Valores</th>
+                  <th>Situação</th>
+                </tr>
                 <tr>
                   <th>Documento</th>
                   <th>Fluxo</th>
@@ -1263,7 +1300,7 @@ export default function Lancamentos({
                   <th className="number">Valor previsto</th>
                   <th className="number">Desconto</th>
                   <th className="number">Acréscimo</th>
-                  <th className="number">Valor exibido</th>
+                  <th className="number">Valor líquido</th>
                   <th>Status</th>
                 </tr>
               </thead>

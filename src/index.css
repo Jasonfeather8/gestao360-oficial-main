@@ -286,6 +286,75 @@ body {
     break-inside: auto;
   }
 
+  body.printing-lancamentos-report .lancamentos-print-report__table--operational .lancamentos-print-report__col--document {
+    width: 8%;
+  }
+
+  body.printing-lancamentos-report .lancamentos-print-report__table--operational .lancamentos-print-report__col--entity {
+    width: 17%;
+  }
+
+  body.printing-lancamentos-report .lancamentos-print-report__table--operational .lancamentos-print-report__col--reference-date {
+    width: 8%;
+  }
+
+  body.printing-lancamentos-report .lancamentos-print-report__table--operational .lancamentos-print-report__col--document-date {
+    width: 11%;
+  }
+
+  body.printing-lancamentos-report .lancamentos-print-report__table--operational .lancamentos-print-report__col--value-original,
+  body.printing-lancamentos-report .lancamentos-print-report__table--operational .lancamentos-print-report__col--value-installment {
+    width: 10%;
+  }
+
+  body.printing-lancamentos-report .lancamentos-print-report__table--operational .lancamentos-print-report__col--discount,
+  body.printing-lancamentos-report .lancamentos-print-report__table--operational .lancamentos-print-report__col--increase {
+    width: 7%;
+  }
+
+  body.printing-lancamentos-report .lancamentos-print-report__table--operational .lancamentos-print-report__col--paid {
+    width: 8%;
+  }
+
+  body.printing-lancamentos-report .lancamentos-print-report__table--operational .lancamentos-print-report__col--balance {
+    width: 9%;
+  }
+
+  body.printing-lancamentos-report .lancamentos-print-report__table--operational .lancamentos-print-report__col--status {
+    width: 5%;
+  }
+
+  body.printing-lancamentos-report .lancamentos-print-report__table--financial .lancamentos-print-report__col--document {
+    width: 9%;
+  }
+
+  body.printing-lancamentos-report .lancamentos-print-report__table--financial .lancamentos-print-report__col--flow {
+    width: 6%;
+  }
+
+  body.printing-lancamentos-report .lancamentos-print-report__table--financial .lancamentos-print-report__col--entity {
+    width: 19%;
+  }
+
+  body.printing-lancamentos-report .lancamentos-print-report__table--financial .lancamentos-print-report__col--due-date,
+  body.printing-lancamentos-report .lancamentos-print-report__table--financial .lancamentos-print-report__col--payment-date {
+    width: 11%;
+  }
+
+  body.printing-lancamentos-report .lancamentos-print-report__table--financial .lancamentos-print-report__col--planned,
+  body.printing-lancamentos-report .lancamentos-print-report__table--financial .lancamentos-print-report__col--net {
+    width: 11%;
+  }
+
+  body.printing-lancamentos-report .lancamentos-print-report__table--financial .lancamentos-print-report__col--discount,
+  body.printing-lancamentos-report .lancamentos-print-report__table--financial .lancamentos-print-report__col--increase {
+    width: 7%;
+  }
+
+  body.printing-lancamentos-report .lancamentos-print-report__table--financial .lancamentos-print-report__col--status {
+    width: 8%;
+  }
+
   body.printing-lancamentos-report .lancamentos-print-report__table thead {
     display: table-header-group;
     break-inside: avoid;
@@ -316,7 +385,30 @@ body {
     color: #333;
     background: #f0f0f0;
     font-size: 7pt;
+    line-height: 1.15;
     text-transform: uppercase;
+  }
+
+  body.printing-lancamentos-report .lancamentos-print-report__table thead tr:first-child th {
+    padding: 5px 4px;
+    border: 1px solid #fff;
+    color: #fff;
+    background: #374151;
+    font-size: 6.5pt;
+    line-height: 1.1;
+    text-align: left;
+    vertical-align: middle;
+    white-space: nowrap;
+    letter-spacing: .04em;
+  }
+
+  body.printing-lancamentos-report .lancamentos-print-report__table thead tr:nth-child(2) th {
+    min-height: 27px;
+    padding: 7px 4px;
+    border-bottom: 2px solid #737373;
+    background: #e5e7eb;
+    line-height: 1.15;
+    white-space: normal;
   }
 
   body.printing-lancamentos-report .lancamentos-print-report__table td {
@@ -334,6 +426,17 @@ body {
     white-space: nowrap;
     overflow-wrap: normal;
     font-variant-numeric: tabular-nums;
+  }
+
+  body.printing-lancamentos-report .lancamentos-print-report__table thead th.number {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  body.printing-lancamentos-report .lancamentos-print-report__table td.number,
+  body.printing-lancamentos-report .lancamentos-print-report__table tfoot th.number {
+    white-space: nowrap;
+    overflow-wrap: normal;
   }
 
   body.printing-lancamentos-report .lancamentos-print-report__table tfoot th,
