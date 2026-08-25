@@ -402,9 +402,8 @@ export default function Lancamentos({
   }, [activeContas, contasSaldos]);
 
   const isOperationalView = !!typeOverride;
-  const selectedOperationalLancamentos = isOperationalView
-    ? filteredLancamentos.filter(item => selectedLancamentoIdsForBatch.includes(item.id))
-    : [];
+  const selectedPrintLancamentos = filteredLancamentos.filter(item => selectedLancamentoIdsForBatch.includes(item.id));
+  const selectedOperationalLancamentos = isOperationalView ? selectedPrintLancamentos : [];
   const operationalTotals = selectedOperationalLancamentos.reduce(
     (totals, item) => {
       const desconto = item.desconto_valor || 0;
@@ -421,6 +420,42 @@ export default function Lancamentos({
     },
     { valorDocOriginal: 0, valorParcOriginal: 0, desconto: 0, acrescimo: 0, valorPago: 0, aPagar: 0 }
   );
+  const printTotals = selectedPrintLancamentos.reduce(
+    (totals, item) => {
+      const desconto = item.desconto_valor || 0;
+      const acrescimo = item.acrescimo_valor || 0;
+      const valorPago = item.valor_recebido || 0;
+      const liquido = getValorLiquido(item);
+
+      totals.valorPrevisto += item.valor_previsto;
+      totals.desconto += desconto;
+      totals.acrescimo += acrescimo;
+      totals.valorPago += valorPago;
+      totals.liquido += liquido;
+      totals.aPagar += item.valor_previsto - desconto + acrescimo - valorPago;
+      if (item.tipo === 'entrada') totals.entradas += liquido;
+      if (item.tipo === 'saida') totals.saidas += liquido;
+      return totals;
+    },
+    { valorPrevisto: 0, desconto: 0, acrescimo: 0, valorPago: 0, liquido: 0, aPagar: 0, entradas: 0, saidas: 0 }
+  );
+
+  const formatPrintDate = (dateStr: string | null | undefined) => dateStr ? dateStr.slice(0, 10).split('-').reverse().join('/') : '-';
+  const getPrintStatus = (item: LancamentoFinanceiro) => {
+    if (item.status_pagamento === 'pago') return 'Pago';
+    if (item.status_pagamento === 'pago_parcial') return 'Pago parcial';
+    if (item.status_pagamento === 'quitação_pendente') return 'Quitação pendente';
+    if (item.status_pagamento === 'bpi') return 'BPI';
+    return item.status_aprovacao === 'reprovado' ? 'Reprovado' : 'Em aberto';
+  };
+  const handlePrintSelected = () => {
+    if (selectedLancamentoIdsForBatch.length === 0 || selectedPrintLancamentos.length === 0) return;
+
+    document.body.classList.add('printing-lancamentos-report');
+    const cleanupPrintMode = () => document.body.classList.remove('printing-lancamentos-report');
+    window.addEventListener('afterprint', cleanupPrintMode, { once: true });
+    window.print();
+  };
 
   const getDaysOverdue = (dateStr: string): number => {
     if (!dateStr) return -1;
@@ -486,9 +521,9 @@ export default function Lancamentos({
  };
 
   return (
-    <div className="space-y-6 animate-fade-in" onClick={() => setActiveMenuId(null)}>
+    <div className="lancamentos-page space-y-6 animate-fade-in" onClick={() => setActiveMenuId(null)}>
       
-      <AccountFilterCards 
+      <AccountFilterCards
         accounts={accountCardsData}
         selectedId={selectedAccountId}
         onSelect={setSelectedAccountId}
@@ -508,6 +543,21 @@ export default function Lancamentos({
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          <Button
+            type="button"
+            onClick={handlePrintSelected}
+            disabled={selectedLancamentoIdsForBatch.length === 0 || selectedPrintLancamentos.length === 0}
+            title="Imprimir relatório somente dos lançamentos selecionados"
+          >
+            <Download className="w-4 h-4" />
+            Gerar PDF do Filtro
+          </Button>
+          {selectedPrintLancamentos.length > 0 && (
+            <span className="text-[9px] font-black uppercase tracking-widest text-neutral-400">
+              {selectedPrintLancamentos.length} selecionado{selectedPrintLancamentos.length === 1 ? '' : 's'}
+            </span>
+          )}
+
           {isMaster && (
             <Button
               onClick={() => handleBatchApprove()}
@@ -1122,6 +1172,144 @@ export default function Lancamentos({
               </>
             )}
           </div>
+        </div>
+      </div>
+
+      <div className="lancamentos-print-report" aria-label="Relatório dos lançamentos selecionados">
+        <div className="lancamentos-print-report__sheet">
+          <header className="lancamentos-print-report__header">
+            <div>
+              <h1>{titleOverride || 'Financeiro / Extrato'}</h1>
+              <p>Relatório dos lançamentos selecionados</p>
+            </div>
+            <div className="lancamentos-print-report__meta">
+              <strong>Emissão: {new Date().toLocaleDateString('pt-BR')}</strong>
+              <span>{selectedPrintLancamentos.length} lançamento{selectedPrintLancamentos.length === 1 ? '' : 's'}</span>
+            </div>
+          </header>
+
+          <section className="lancamentos-print-report__filters">
+            <strong>Filtros aplicados</strong>
+            <span>Período: {formatPrintDate(startDate)} a {formatPrintDate(endDate)}</span>
+            <span>Fluxo: {typeFilter === 'all' ? 'Todos' : typeFilter === 'entrada' ? 'Entradas' : 'Saídas'}</span>
+            <span>Status: {statusPagamento === 'all' ? 'Todos' : statusPagamento}</span>
+            <span>Aprovação: {approvalStatus === 'all' ? 'Todas' : approvalStatus}</span>
+            <span>Responsável: {authorIdFilter === 'all' ? 'Todos' : usuarios.find(usuario => usuario.id === authorIdFilter)?.nome || 'Não encontrado'}</span>
+            <span>Condição: {condicaoFilter === 'all' ? 'Todas' : condicaoFilter}</span>
+            <span>Desconto: {temDescontoFilter === 'all' ? 'Todos' : temDescontoFilter}</span>
+            <span>Acréscimo: {temAcrescimoFilter === 'all' ? 'Todos' : temAcrescimoFilter}</span>
+            <span>Conta: {contaIdFilter === 'all' ? 'Todas' : activeContas.find(conta => conta.id === contaIdFilter)?.nome_banco || activeContas.find(conta => conta.id === contaIdFilter)?.nome || 'Não encontrada'}</span>
+            <span>Categoria: {categoryIdFilter === 'all' ? 'Todas' : categorias.find(categoria => categoria.id === categoryIdFilter)?.nome || 'Não encontrada'}</span>
+            <span>Centro de custo: {centroCustoIdFilter === 'all' ? 'Todos' : centrosCusto.find((centro: any) => centro.id === centroCustoIdFilter)?.nome || 'Não encontrado'}</span>
+            {(debouncedSearchTerm || docSearchTerm) && <span>Busca: {debouncedSearchTerm || docSearchTerm}</span>}
+          </section>
+
+          {isOperationalView ? (
+            <table className="lancamentos-print-report__table">
+              <thead>
+                <tr>
+                  <th>Documento</th>
+                  <th>Entidade</th>
+                  <th>Ven. ref.</th>
+                  <th>Data doc.</th>
+                  <th className="number">Valor doc. original</th>
+                  <th className="number">Valor parc. original</th>
+                  <th className="number">Desconto</th>
+                  <th className="number">Acréscimo</th>
+                  <th className="number">Valor pago</th>
+                  <th className="number">A pagar</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {selectedPrintLancamentos.map(item => (
+                  <tr key={`print-${item.id}`}>
+                    <td>{item.codigo_sequencial ? `${item.codigo_sequencial}${item.numero_parcela ? `-${item.numero_parcela}` : ''}` : '-'}</td>
+                    <td>{entidades.find(entidade => entidade.id === item.entidade_id)?.nome_razao_social || 'N/A'}</td>
+                    <td>{getDaysOverdue(item.data_vencimento) > 0 ? `${getDaysOverdue(item.data_vencimento)} dia(s)` : getDaysOverdue(item.data_vencimento) === 0 ? 'Hoje' : '-'}</td>
+                    <td>{formatPrintDate(item.data_emissao)}</td>
+                    <td className="number">{valueFormatter(item.valor_original || item.valor_previsto)}</td>
+                    <td className="number">{valueFormatter(item.valor_previsto)}</td>
+                    <td className="number">{valueFormatter(item.desconto_valor || 0)}</td>
+                    <td className="number">{valueFormatter(item.acrescimo_valor || 0)}</td>
+                    <td className="number">{valueFormatter(item.valor_recebido || 0)}</td>
+                    <td className="number">{valueFormatter(item.valor_previsto - (item.desconto_valor || 0) + (item.acrescimo_valor || 0) - (item.valor_recebido || 0))}</td>
+                    <td>{getPrintStatus(item)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <th colSpan={4}>Totais selecionados</th>
+                  <th className="number">{valueFormatter(operationalTotals.valorDocOriginal)}</th>
+                  <th className="number">{valueFormatter(operationalTotals.valorParcOriginal)}</th>
+                  <th className="number">{valueFormatter(operationalTotals.desconto)}</th>
+                  <th className="number">{valueFormatter(operationalTotals.acrescimo)}</th>
+                  <th className="number">{valueFormatter(operationalTotals.valorPago)}</th>
+                  <th className="number">{valueFormatter(operationalTotals.aPagar)}</th>
+                  <th />
+                </tr>
+              </tfoot>
+            </table>
+          ) : (
+            <table className="lancamentos-print-report__table">
+              <thead>
+                <tr>
+                  <th>Documento</th>
+                  <th>Fluxo</th>
+                  <th>Entidade</th>
+                  <th>Vencimento</th>
+                  <th>Pagamento</th>
+                  <th className="number">Valor previsto</th>
+                  <th className="number">Desconto</th>
+                  <th className="number">Acréscimo</th>
+                  <th className="number">Valor exibido</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {selectedPrintLancamentos.map(item => (
+                  <tr key={`print-${item.id}`}>
+                    <td>{item.codigo_sequencial ? `${item.codigo_sequencial}${item.numero_parcela ? `-${item.numero_parcela}` : ''}` : '-'}</td>
+                    <td>{item.tipo === 'entrada' ? 'Entrada' : 'Saída'}</td>
+                    <td>{entidades.find(entidade => entidade.id === item.entidade_id)?.nome_razao_social || 'N/A'}</td>
+                    <td>{formatPrintDate(item.data_vencimento)}</td>
+                    <td>{formatPrintDate(item.data_pagamento)}</td>
+                    <td className="number">{valueFormatter(item.valor_previsto)}</td>
+                    <td className="number">{valueFormatter(item.desconto_valor || 0)}</td>
+                    <td className="number">{valueFormatter(item.acrescimo_valor || 0)}</td>
+                    <td className="number">{valueFormatter(getValorLiquido(item))}</td>
+                    <td>{getPrintStatus(item)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <th colSpan={5}>Totais selecionados</th>
+                  <th className="number">{valueFormatter(printTotals.valorPrevisto)}</th>
+                  <th className="number">{valueFormatter(printTotals.desconto)}</th>
+                  <th className="number">{valueFormatter(printTotals.acrescimo)}</th>
+                  <th className="number">{valueFormatter(printTotals.liquido)}</th>
+                  <th />
+                </tr>
+              </tfoot>
+            </table>
+          )}
+
+          <footer className="lancamentos-print-report__totals">
+            {isOperationalView ? (
+              <>
+                <span>Valor pago: <strong>{valueFormatter(operationalTotals.valorPago)}</strong></span>
+                <span>A pagar: <strong>{valueFormatter(operationalTotals.aPagar)}</strong></span>
+              </>
+            ) : (
+              <>
+                <span>Entradas: <strong>{valueFormatter(printTotals.entradas)}</strong></span>
+                <span>Saídas: <strong>{valueFormatter(printTotals.saidas)}</strong></span>
+                <span>Valor líquido exibido: <strong>{valueFormatter(printTotals.liquido)}</strong></span>
+              </>
+            )}
+          </footer>
         </div>
       </div>
 
