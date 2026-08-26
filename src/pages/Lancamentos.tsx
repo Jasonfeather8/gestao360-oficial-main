@@ -1188,128 +1188,159 @@ export default function Lancamentos({
             </div>
           </header>
 
-          <section className="lancamentos-print-report__filters">
-            <strong>Filtros aplicados</strong>
-            <span>Período: {formatPrintDate(startDate)} a {formatPrintDate(endDate)}</span>
-            <span>Fluxo: {typeFilter === 'all' ? 'Todos' : typeFilter === 'entrada' ? 'Entradas' : 'Saídas'}</span>
-            <span>Status: {statusPagamento === 'all' ? 'Todos' : statusPagamento}</span>
-            <span>Aprovação: {approvalStatus === 'all' ? 'Todas' : approvalStatus}</span>
-            <span>Responsável: {authorIdFilter === 'all' ? 'Todos' : usuarios.find(usuario => usuario.id === authorIdFilter)?.nome || 'Não encontrado'}</span>
-            <span>Condição: {condicaoFilter === 'all' ? 'Todas' : condicaoFilter}</span>
-            <span>Desconto: {temDescontoFilter === 'all' ? 'Todos' : temDescontoFilter}</span>
-            <span>Acréscimo: {temAcrescimoFilter === 'all' ? 'Todos' : temAcrescimoFilter}</span>
-            <span>Conta: {contaIdFilter === 'all' ? 'Todas' : activeContas.find(conta => conta.id === contaIdFilter)?.nome_banco || activeContas.find(conta => conta.id === contaIdFilter)?.nome || 'Não encontrada'}</span>
-            <span>Categoria: {categoryIdFilter === 'all' ? 'Todas' : categorias.find(categoria => categoria.id === categoryIdFilter)?.nome || 'Não encontrada'}</span>
-            <span>Centro de custo: {centroCustoIdFilter === 'all' ? 'Todos' : centrosCusto.find((centro: any) => centro.id === centroCustoIdFilter)?.nome || 'Não encontrado'}</span>
-            {(debouncedSearchTerm || docSearchTerm) && <span>Busca: {debouncedSearchTerm || docSearchTerm}</span>}
-          </section>
-
           {isOperationalView ? (
-            <table className="lancamentos-print-report__table">
-              <thead>
-                <tr>
-                  <th>Documento</th>
-                  <th>Entidade</th>
-                  <th>Ven. ref.</th>
-                  <th>Data doc.</th>
-                  <th className="number">Valor doc. original</th>
-                  <th className="number">Valor parc. original</th>
-                  <th className="number">Desconto</th>
-                  <th className="number">Acréscimo</th>
-                  <th className="number">Valor pago</th>
-                  <th className="number">A pagar</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {selectedPrintLancamentos.map(item => (
-                  <tr key={`print-${item.id}`}>
-                    <td>{item.codigo_sequencial ? `${item.codigo_sequencial}${item.numero_parcela ? `-${item.numero_parcela}` : ''}` : '-'}</td>
-                    <td>{entidades.find(entidade => entidade.id === item.entidade_id)?.nome_razao_social || 'N/A'}</td>
-                    <td>{getDaysOverdue(item.data_vencimento) > 0 ? `${getDaysOverdue(item.data_vencimento)} dia(s)` : getDaysOverdue(item.data_vencimento) === 0 ? 'Hoje' : '-'}</td>
-                    <td>{formatPrintDate(item.data_emissao)}</td>
-                    <td className="number">{valueFormatter(item.valor_original || item.valor_previsto)}</td>
-                    <td className="number">{valueFormatter(item.valor_previsto)}</td>
-                    <td className="number">{valueFormatter(item.desconto_valor || 0)}</td>
-                    <td className="number">{valueFormatter(item.acrescimo_valor || 0)}</td>
-                    <td className="number">{valueFormatter(item.valor_recebido || 0)}</td>
-                    <td className="number">{valueFormatter(item.valor_previsto - (item.desconto_valor || 0) + (item.acrescimo_valor || 0) - (item.valor_recebido || 0))}</td>
-                    <td>{getPrintStatus(item)}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr>
-                  <th colSpan={4}>Totais selecionados</th>
-                  <th className="number">{valueFormatter(operationalTotals.valorDocOriginal)}</th>
-                  <th className="number">{valueFormatter(operationalTotals.valorParcOriginal)}</th>
-                  <th className="number">{valueFormatter(operationalTotals.desconto)}</th>
-                  <th className="number">{valueFormatter(operationalTotals.acrescimo)}</th>
-                  <th className="number">{valueFormatter(operationalTotals.valorPago)}</th>
-                  <th className="number">{valueFormatter(operationalTotals.aPagar)}</th>
-                  <th />
-                </tr>
-              </tfoot>
-            </table>
+            <section className="lancamentos-print-report__items" aria-label="Lançamentos operacionais">
+              {selectedPrintLancamentos.map(item => (
+                <article className="lancamentos-print-report__item" key={`print-${item.id}`}>
+                  <section className="lancamentos-print-report__block">
+                    <h2>Identificação</h2>
+                    <div className="lancamentos-print-report__grid lancamentos-print-report__grid--operational-identification">
+                      <div className="lancamentos-print-report__cell">
+                        <span className="lancamentos-print-report__label">Documento</span>
+                        <span className="lancamentos-print-report__value">{item.codigo_sequencial ? `${item.codigo_sequencial}${item.numero_parcela ? `-${item.numero_parcela}` : ''}` : '-'}</span>
+                      </div>
+                      <div className="lancamentos-print-report__cell">
+                        <span className="lancamentos-print-report__label">Entidade</span>
+                        <span className="lancamentos-print-report__value">{entidades.find(entidade => entidade.id === item.entidade_id)?.nome_razao_social || 'N/A'}</span>
+                      </div>
+                      <div className="lancamentos-print-report__cell">
+                        <span className="lancamentos-print-report__label">Vencimento / referência</span>
+                        <span className="lancamentos-print-report__value">
+                          {formatPrintDate(item.data_vencimento)}
+                          <small>{getDaysOverdue(item.data_vencimento) > 0 ? `${getDaysOverdue(item.data_vencimento)} dia(s)` : getDaysOverdue(item.data_vencimento) === 0 ? 'Hoje' : '-'}</small>
+                        </span>
+                      </div>
+                      <div className="lancamentos-print-report__cell">
+                        <span className="lancamentos-print-report__label">Data do documento</span>
+                        <span className="lancamentos-print-report__value">{formatPrintDate(item.data_emissao)}</span>
+                      </div>
+                      <div className="lancamentos-print-report__cell">
+                        <span className="lancamentos-print-report__label">Status</span>
+                        <span className="lancamentos-print-report__value">{getPrintStatus(item)}</span>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section className="lancamentos-print-report__block">
+                    <h2>Memória do cálculo</h2>
+                    <div className="lancamentos-print-report__grid lancamentos-print-report__grid--operational-values">
+                      <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number">
+                        <span className="lancamentos-print-report__label">Valor documento original</span>
+                        <span className="lancamentos-print-report__value">{valueFormatter(item.valor_original || item.valor_previsto)}</span>
+                      </div>
+                      <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number">
+                        <span className="lancamentos-print-report__label">Valor parcela original</span>
+                        <span className="lancamentos-print-report__value">{valueFormatter(item.valor_previsto)}</span>
+                      </div>
+                      <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number">
+                        <span className="lancamentos-print-report__label">Desconto</span>
+                        <span className="lancamentos-print-report__value">{valueFormatter(item.desconto_valor || 0)}</span>
+                      </div>
+                      <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number">
+                        <span className="lancamentos-print-report__label">Acréscimo</span>
+                        <span className="lancamentos-print-report__value">{valueFormatter(item.acrescimo_valor || 0)}</span>
+                      </div>
+                      <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number">
+                        <span className="lancamentos-print-report__label">Valor pago</span>
+                        <span className="lancamentos-print-report__value">{valueFormatter(item.valor_recebido || 0)}</span>
+                      </div>
+                      <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number">
+                        <span className="lancamentos-print-report__label">A pagar</span>
+                        <span className="lancamentos-print-report__value">{valueFormatter(item.valor_previsto - (item.desconto_valor || 0) + (item.acrescimo_valor || 0) - (item.valor_recebido || 0))}</span>
+                      </div>
+                    </div>
+                  </section>
+                </article>
+              ))}
+            </section>
           ) : (
-            <table className="lancamentos-print-report__table">
-              <thead>
-                <tr>
-                  <th>Documento</th>
-                  <th>Fluxo</th>
-                  <th>Entidade</th>
-                  <th>Vencimento</th>
-                  <th>Pagamento</th>
-                  <th className="number">Valor previsto</th>
-                  <th className="number">Desconto</th>
-                  <th className="number">Acréscimo</th>
-                  <th className="number">Valor exibido</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {selectedPrintLancamentos.map(item => (
-                  <tr key={`print-${item.id}`}>
-                    <td>{item.codigo_sequencial ? `${item.codigo_sequencial}${item.numero_parcela ? `-${item.numero_parcela}` : ''}` : '-'}</td>
-                    <td>{item.tipo === 'entrada' ? 'Entrada' : 'Saída'}</td>
-                    <td>{entidades.find(entidade => entidade.id === item.entidade_id)?.nome_razao_social || 'N/A'}</td>
-                    <td>{formatPrintDate(item.data_vencimento)}</td>
-                    <td>{formatPrintDate(item.data_pagamento)}</td>
-                    <td className="number">{valueFormatter(item.valor_previsto)}</td>
-                    <td className="number">{valueFormatter(item.desconto_valor || 0)}</td>
-                    <td className="number">{valueFormatter(item.acrescimo_valor || 0)}</td>
-                    <td className="number">{valueFormatter(getValorLiquido(item))}</td>
-                    <td>{getPrintStatus(item)}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr>
-                  <th colSpan={5}>Totais selecionados</th>
-                  <th className="number">{valueFormatter(printTotals.valorPrevisto)}</th>
-                  <th className="number">{valueFormatter(printTotals.desconto)}</th>
-                  <th className="number">{valueFormatter(printTotals.acrescimo)}</th>
-                  <th className="number">{valueFormatter(printTotals.liquido)}</th>
-                  <th />
-                </tr>
-              </tfoot>
-            </table>
+            <section className="lancamentos-print-report__items" aria-label="Lançamentos financeiros">
+              {selectedPrintLancamentos.map(item => (
+                <article className="lancamentos-print-report__item" key={`print-${item.id}`}>
+                  <section className="lancamentos-print-report__block">
+                    <h2>Identificação</h2>
+                    <div className="lancamentos-print-report__grid lancamentos-print-report__grid--financial-identification">
+                      <div className="lancamentos-print-report__cell">
+                        <span className="lancamentos-print-report__label">Documento</span>
+                        <span className="lancamentos-print-report__value">{item.codigo_sequencial ? `${item.codigo_sequencial}${item.numero_parcela ? `-${item.numero_parcela}` : ''}` : '-'}</span>
+                      </div>
+                      <div className="lancamentos-print-report__cell">
+                        <span className="lancamentos-print-report__label">Fluxo</span>
+                        <span className="lancamentos-print-report__value">{item.tipo === 'entrada' ? 'Entrada' : 'Saída'}</span>
+                      </div>
+                      <div className="lancamentos-print-report__cell">
+                        <span className="lancamentos-print-report__label">Entidade</span>
+                        <span className="lancamentos-print-report__value">{entidades.find(entidade => entidade.id === item.entidade_id)?.nome_razao_social || 'N/A'}</span>
+                      </div>
+                      <div className="lancamentos-print-report__cell">
+                        <span className="lancamentos-print-report__label">Vencimento</span>
+                        <span className="lancamentos-print-report__value">{formatPrintDate(item.data_vencimento)}</span>
+                      </div>
+                      <div className="lancamentos-print-report__cell">
+                        <span className="lancamentos-print-report__label">Pagamento</span>
+                        <span className="lancamentos-print-report__value">{formatPrintDate(item.data_pagamento)}</span>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section className="lancamentos-print-report__block">
+                    <h2>Valores</h2>
+                    <div className="lancamentos-print-report__grid lancamentos-print-report__grid--financial-values">
+                      <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number">
+                        <span className="lancamentos-print-report__label">Valor previsto</span>
+                        <span className="lancamentos-print-report__value">{valueFormatter(item.valor_previsto)}</span>
+                      </div>
+                      <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number">
+                        <span className="lancamentos-print-report__label">Desconto</span>
+                        <span className="lancamentos-print-report__value">{valueFormatter(item.desconto_valor || 0)}</span>
+                      </div>
+                      <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number">
+                        <span className="lancamentos-print-report__label">Acréscimo</span>
+                        <span className="lancamentos-print-report__value">{valueFormatter(item.acrescimo_valor || 0)}</span>
+                      </div>
+                      <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number">
+                        <span className="lancamentos-print-report__label">Valor exibido</span>
+                        <span className="lancamentos-print-report__value">{valueFormatter(getValorLiquido(item))}</span>
+                      </div>
+                      <div className="lancamentos-print-report__cell">
+                        <span className="lancamentos-print-report__label">Status</span>
+                        <span className="lancamentos-print-report__value">{getPrintStatus(item)}</span>
+                      </div>
+                    </div>
+                  </section>
+                </article>
+              ))}
+            </section>
           )}
 
-          <footer className="lancamentos-print-report__totals">
+          <section className="lancamentos-print-report__summary" aria-label="Totais selecionados">
+            <strong>Totais selecionados</strong>
             {isOperationalView ? (
-              <>
-                <span>Valor pago: <strong>{valueFormatter(operationalTotals.valorPago)}</strong></span>
-                <span>A pagar: <strong>{valueFormatter(operationalTotals.aPagar)}</strong></span>
-              </>
+              <div className="lancamentos-print-report__grid lancamentos-print-report__grid--operational-summary">
+                <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number"><span className="lancamentos-print-report__label">Valor documento original</span><span className="lancamentos-print-report__value">{valueFormatter(operationalTotals.valorDocOriginal)}</span></div>
+                <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number"><span className="lancamentos-print-report__label">Valor parcela original</span><span className="lancamentos-print-report__value">{valueFormatter(operationalTotals.valorParcOriginal)}</span></div>
+                <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number"><span className="lancamentos-print-report__label">Desconto</span><span className="lancamentos-print-report__value">{valueFormatter(operationalTotals.desconto)}</span></div>
+                <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number"><span className="lancamentos-print-report__label">Acréscimo</span><span className="lancamentos-print-report__value">{valueFormatter(operationalTotals.acrescimo)}</span></div>
+                <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number"><span className="lancamentos-print-report__label">Valor pago</span><span className="lancamentos-print-report__value">{valueFormatter(operationalTotals.valorPago)}</span></div>
+                <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number"><span className="lancamentos-print-report__label">A pagar</span><span className="lancamentos-print-report__value">{valueFormatter(operationalTotals.aPagar)}</span></div>
+              </div>
             ) : (
-              <>
-                <span>Entradas: <strong>{valueFormatter(printTotals.entradas)}</strong></span>
-                <span>Saídas: <strong>{valueFormatter(printTotals.saidas)}</strong></span>
-                <span>Valor líquido exibido: <strong>{valueFormatter(printTotals.liquido)}</strong></span>
-              </>
+              <div className="lancamentos-print-report__grid lancamentos-print-report__grid--financial-summary">
+                <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number"><span className="lancamentos-print-report__label">Valor previsto</span><span className="lancamentos-print-report__value">{valueFormatter(printTotals.valorPrevisto)}</span></div>
+                <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number"><span className="lancamentos-print-report__label">Desconto</span><span className="lancamentos-print-report__value">{valueFormatter(printTotals.desconto)}</span></div>
+                <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number"><span className="lancamentos-print-report__label">Acréscimo</span><span className="lancamentos-print-report__value">{valueFormatter(printTotals.acrescimo)}</span></div>
+                <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number"><span className="lancamentos-print-report__label">Valor exibido</span><span className="lancamentos-print-report__value">{valueFormatter(printTotals.liquido)}</span></div>
+              </div>
             )}
-          </footer>
+          </section>
+
+          {!isOperationalView && (
+            <footer className="lancamentos-print-report__totals">
+              <span>Entradas: <strong>{valueFormatter(printTotals.entradas)}</strong></span>
+              <span>Saídas: <strong>{valueFormatter(printTotals.saidas)}</strong></span>
+              <span>Valor líquido exibido: <strong>{valueFormatter(printTotals.liquido)}</strong></span>
+            </footer>
+          )}
         </div>
       </div>
 
