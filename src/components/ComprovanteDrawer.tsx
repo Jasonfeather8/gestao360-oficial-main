@@ -46,6 +46,7 @@ export default function ComprovanteDrawer() {
   const categoria = categorias.find(c => c.id === lancamento.categoria_id);
   const conta = contas.find(c => c.id === lancamento.conta_bancaria_id);
   const autor = usuarios.find(u => u.id === lancamento.usuario_criador_id);
+  const isPartialPayment = lancamento.status_pagamento === 'pago_parcial' || (lancamento.status_pagamento === 'quitação_pendente' && Boolean((lancamento as any).vinculo_residuo_id));
 
   const formatBRL = (val: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
@@ -116,10 +117,10 @@ export default function ComprovanteDrawer() {
 
                   <div className="mt-6 flex items-center gap-3">
                     <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${
-                      lancamento.status_pagamento === 'pago' ? 'bg-bank-truth-green text-white' : 'bg-pending-amber/10 text-pending-amber border border-pending-amber/20'
+                      lancamento.status_pagamento === 'pago' ? 'bg-bank-truth-green text-white' : isPartialPayment ? 'bg-orange-50 text-orange-600 border border-orange-200' : 'bg-pending-amber/10 text-pending-amber border border-pending-amber/20'
                     }`}>
                       {lancamento.status_pagamento === 'pago' ? <CheckCircle2 className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
-                      {lancamento.status_pagamento === 'pago' ? 'Liquidado' : 'Em Aberto'}
+                      {lancamento.status_pagamento === 'pago' ? 'Liquidado, Pago' : isPartialPayment ? 'Pago Parcial' : 'Em Aberto'}
                     </div>
                     <div className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest bg-neutral-900 text-white">
                       {lancamento.status_aprovacao === 'confirmado_master' ? <CheckCircle2 className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
@@ -177,7 +178,9 @@ export default function ComprovanteDrawer() {
                   </span>
                   <p className="text-xs font-black text-on-surface truncate">{conta?.nome_banco || 'N/A'}</p>
                   {lancamento.status_pagamento === 'pago' ? (
-                    <p className="text-[9px] text-bank-truth-green font-bold uppercase tracking-tight">Liquidado em: {formatDate(lancamento.data_pagamento)}</p>
+                    <p className="text-[9px] text-bank-truth-green font-bold uppercase tracking-tight">Liquidado, Pago em: {formatDate(lancamento.data_pagamento)}</p>
+                  ) : isPartialPayment ? (
+                    <p className="text-[9px] text-orange-600 font-bold uppercase tracking-tight">Pago Parcial em: {formatDate(lancamento.data_pagamento)}</p>
                   ) : (
                     <p className="text-[9px] text-amber-500 font-bold uppercase tracking-tight">Aguardando Baixa</p>
                   )}

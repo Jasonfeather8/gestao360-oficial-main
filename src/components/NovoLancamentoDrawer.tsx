@@ -487,6 +487,10 @@ export default function NovoLancamentoDrawer() {
   const isSaidaImediata = lancamentoFormDraft.tipo === 'saida' && lancamentoFormDraft.ja_recebido;
   const valorOperacaoSaida = isSaidaImediata ? calculations.subtotal : 0;
   const saldoInsuficiente = isSaidaImediata && selectedConta ? valorOperacaoSaida > (selectedConta as any).saldo_real : false;
+  const saldoRecebimento = Math.max(0, calculations.subtotal);
+  const valorRecebido = parseMoney(lancamentoFormDraft.valor_recebido);
+  const recebimentoAcimaSaldo = lancamentoFormDraft.ja_recebido && valorRecebido > saldoRecebimento + 0.005;
+  const pagamentoParcial = lancamentoFormDraft.ja_recebido && valorRecebido > 0 && valorRecebido < saldoRecebimento - 0.005;
 
   const isApproved = editingItem?.status_aprovacao === 'confirmado_master';
   const isMaster = role === 'master';
@@ -652,6 +656,12 @@ export default function NovoLancamentoDrawer() {
       return;
     }
 
+    if (recebimentoAcimaSaldo) {
+      showToast('O valor recebido não pode ser maior que o saldo do lançamento.', 'warning');
+      setIsSubmitting(false);
+      return;
+    }
+
     const itemDetails = {
 
       tipo: lancamentoFormDraft.tipo,
@@ -664,7 +674,7 @@ export default function NovoLancamentoDrawer() {
       centro_custo_id: lancamentoFormDraft.centro_custo_id || null,
       categoria_id: lancamentoFormDraft.categoria_id || null,
       conta_bancaria_id: lancamentoFormDraft.conta_bancaria_id || null,
-      status_pagamento: lancamentoFormDraft.ja_recebido ? 'pago' : 'aberto',
+      status_pagamento: lancamentoFormDraft.ja_recebido ? (pagamentoParcial ? 'pago_parcial' : 'pago') : 'aberto',
       status_aprovacao: editingItem?.status_aprovacao || 'pendente_digital',
       observacoes: lancamentoFormDraft.observacoes,
       condicao: lancamentoFormDraft.condicao,
@@ -1172,14 +1182,15 @@ export default function NovoLancamentoDrawer() {
                   
                   {lancamentoFormDraft.ja_recebido && (
                     <div className="flex justify-between items-center px-2 mt-2">
-                      <span className={`text-[10px] font-black uppercase tracking-widest ${calculations.isTroco ? 'text-bank-truth-green' : calculations.isDevedor ? 'text-alert-red' : 'text-secondary'}`}>
-                        {calculations.isTroco ? 'Troco' : calculations.isDevedor ? 'Devedor' : 'Saldo'}
+                      <span className={`text-[10px] font-black uppercase tracking-widest ${recebimentoAcimaSaldo ? 'text-alert-red' : pagamentoParcial ? 'text-alert-red' : 'text-bank-truth-green'}`}>
+                        {recebimentoAcimaSaldo ? 'Valor acima do saldo' : pagamentoParcial ? 'Pago Parcial' : 'Liquidado, Pago'}
                       </span>
-                      <span className={`text-sm font-black ${calculations.isTroco ? 'text-bank-truth-green' : calculations.isDevedor ? 'text-alert-red' : 'text-neutral-900'}`}>
-                        R$ {formatBRL(Math.abs(calculations.diferenca))}
+                      <span className={`text-sm font-black ${recebimentoAcimaSaldo || pagamentoParcial ? 'text-alert-red' : 'text-bank-truth-green'}`}>
+                        R$ {formatBRL(recebimentoAcimaSaldo ? valorRecebido - saldoRecebimento : Math.max(0, saldoRecebimento - valorRecebido))}
                       </span>
                     </div>
                   )}
+
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">

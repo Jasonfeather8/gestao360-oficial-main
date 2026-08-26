@@ -247,7 +247,7 @@ export default function AITestSuite() {
               .from('lancamentos_financeiros')
               .select('id')
               .eq('vinculo_residuo_id', masterId) // The paid portion links to residue_id
-              .eq('status_pagamento', 'pago')
+              .in('status_pagamento', ['pago', 'pago_parcial'])
               .single();
               
             if (!pago) throw new Error('Registro pago não encontrado.');

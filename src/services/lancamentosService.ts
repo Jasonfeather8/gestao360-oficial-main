@@ -228,6 +228,18 @@ export const lancamentosService = {
       .single();
 
     const isMaster = profile?.role === 'master';
+    const valorPrevisto = Number(item.valor_previsto) || 0;
+    const descontoBase = Number(item.desconto_valor) || 0;
+    const acrescimoBase = Number(item.acrescimo_valor) || 0;
+    const desconto = item.desconto_tipo === 'porcentagem' ? (valorPrevisto * descontoBase) / 100 : descontoBase;
+    const acrescimo = item.acrescimo_tipo === 'porcentagem' ? (valorPrevisto * acrescimoBase) / 100 : acrescimoBase;
+    const saldoDisponivel = Math.max(0, valorPrevisto - desconto + acrescimo);
+    const valorRecebido = Number(item.valor_recebido) || 0;
+    const hasReceivedPayment = item.ja_recebido === true || item.status_pagamento === 'pago' || item.status_pagamento === 'pago_parcial' || item.valor_recebido !== undefined;
+
+    if (hasReceivedPayment && (valorRecebido < 0 || valorRecebido > saldoDisponivel + 0.005)) {
+      throw new Error('O valor recebido não pode ser maior que o saldo disponível do lançamento.');
+    }
 
     const lancamentoData = {
       ...item,
@@ -304,9 +316,25 @@ export const lancamentosService = {
 
     const { data: current } = await supabase
       .from('lancamentos_financeiros')
-      .select('recorrencia_id')
+      .select('recorrencia_id, valor_previsto, desconto_valor, desconto_tipo, acrescimo_valor, acrescimo_tipo, valor_recebido, status_pagamento, tipo_baixa')
       .eq('id', id)
       .single();
+
+    const isAVRUpdate = safeData.tipo_baixa === 'avr' || current?.tipo_baixa === 'avr';
+    const valorPrevisto = Number(safeData.valor_previsto ?? current?.valor_previsto) || 0;
+    const descontoBase = Number(safeData.desconto_valor ?? current?.desconto_valor) || 0;
+    const acrescimoBase = Number(safeData.acrescimo_valor ?? current?.acrescimo_valor) || 0;
+    const descontoTipo = safeData.desconto_tipo ?? current?.desconto_tipo;
+    const acrescimoTipo = safeData.acrescimo_tipo ?? current?.acrescimo_tipo;
+    const desconto = descontoTipo === 'porcentagem' ? (valorPrevisto * descontoBase) / 100 : descontoBase;
+    const acrescimo = acrescimoTipo === 'porcentagem' ? (valorPrevisto * acrescimoBase) / 100 : acrescimoBase;
+    const saldoDisponivel = Math.max(0, valorPrevisto - desconto + acrescimo);
+    const valorRecebido = Number(safeData.valor_recebido ?? current?.valor_recebido) || 0;
+    const hasReceivedPayment = safeData.ja_recebido === true || safeData.status_pagamento === 'pago' || safeData.status_pagamento === 'pago_parcial' || safeData.valor_recebido !== undefined || current?.status_pagamento === 'pago' || current?.status_pagamento === 'pago_parcial' || valorRecebido > 0;
+
+    if (!isAVRUpdate && hasReceivedPayment && (valorRecebido < 0 || valorRecebido > saldoDisponivel + 0.005)) {
+      throw new Error('O valor recebido não pode ser maior que o saldo disponível do lançamento.');
+    }
 
     if (mode === 'all' && current?.recorrencia_id) {
       const { data: updated, error } = await supabase
@@ -390,8 +418,11 @@ export const lancamentosService = {
     const valorParcelaSelecionadaAVR = parcelaSelecionadaAVR
       ? Number(parcelaSelecionadaAVR.valor.replace(/\./g, '').replace(',', '.')) || 0
       : valorTotalAVR;
-    const subtotal = current.valor_previsto - (data.valor_desconto || 0) + (data.valor_acrescimo || 0);
-    const isPartial = valorPagoEfetivo < subtotal;
+    const subtotal = Math.max(0, current.valor_previsto - (data.valor_desconto || 0) + (data.valor_acrescimo || 0));
+    if (!isBPI && !isAVR && (data.valor_pago < 0 || data.valor_pago > subtotal + 0.005)) {
+      throw new Error('O valor pago não pode ser maior que o saldo disponível do título.');
+    }
+    const isPartial = valorPagoEfetivo < subtotal - 0.005;
     const dataPagamentoVal = data.data_pagamento || new Date().toISOString().split('T')[0];
     const horaPagamentoVal = new Date().toTimeString().slice(0, 8);
    const contaBancariaVal = data.conta_bancaria_id || current.conta_bancaria_id;
@@ -627,7 +658,7 @@ export const lancamentosService = {
          ...rest,
          valor_previsto: valorPagoEfetivo,
          valor_recebido: valorPagoEfetivo,
-         status_pagamento: isMaster ? 'pago' : 'quitação_pendente',
+         status_pagamento: isMaster ? 'pago_parcial' : 'quitação_pendente',
          status_aprovacao: isMaster ? 'confirmado_master' : 'digital',
          data_pagamento: dataPagamentoVal,
          hora_pagamento: horaPagamentoVal,
@@ -769,11 +800,40 @@ export const lancamentosService = {
       updatePayload.data_pagamento = null;
     }
 
-    const { error } = await supabase
-      .from('lancamentos_financeiros')
-      .update(updatePayload)
-      .in('id', ids);
-    if (error) throw error;
+    if (targetStatus === 'confirmado_master') {
+      const { data: partialRows, error: partialRowsError } = await supabase
+        .from('lancamentos_financeiros')
+        .select('id, status_pagamento, vinculo_residuo_id')
+        .in('id', ids);
+      if (partialRowsError) throw partialRowsError;
+
+      const partialIds = new Set((partialRows || [])
+        .filter(row => row.status_pagamento === 'pago_parcial' || row.vinculo_residuo_id)
+        .map(row => row.id));
+      const regularIds = ids.filter(id => !partialIds.has(id));
+
+      if (regularIds.length > 0) {
+        const { error } = await supabase
+          .from('lancamentos_financeiros')
+          .update(updatePayload)
+          .in('id', regularIds);
+        if (error) throw error;
+      }
+
+      if (partialIds.size > 0) {
+        const { error } = await supabase
+          .from('lancamentos_financeiros')
+          .update({ ...updatePayload, status_pagamento: 'pago_parcial' })
+          .in('id', Array.from(partialIds));
+        if (error) throw error;
+      }
+    } else {
+      const { error } = await supabase
+        .from('lancamentos_financeiros')
+        .update(updatePayload)
+        .in('id', ids);
+      if (error) throw error;
+    }
   },
 
   confirmarQuitacao: async (id: string, isMaster: boolean = false): Promise<void> => {

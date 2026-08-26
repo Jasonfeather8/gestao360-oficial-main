@@ -296,13 +296,17 @@ export default function LancamentoDetailsSlide() {
                           <div className="flex items-center gap-1.5 text-neutral-900 font-black text-[10px] uppercase">
                             <AlertTriangle className="w-4 h-4" /> BPI
                           </div>
-                        ) : lancamento.status_pagamento === 'quitação_pendente' || lancamento.status_pagamento === 'pago_parcial' ? (
+                        ) : lancamento.status_pagamento === 'pago_parcial' || (lancamento.status_pagamento === 'quitação_pendente' && Boolean((lancamento as any).vinculo_residuo_id)) ? (
                           <div className="flex items-center gap-1.5 text-orange-600 font-black text-[10px] uppercase">
-                            <Clock className="w-4 h-4" /> {lancamento.status_pagamento === 'pago_parcial' ? 'Parcial' : (isMaster ? 'Confirme Baixa' : 'Pendente Gestor')}
+                            <Clock className="w-4 h-4" /> Pago Parcial
+                          </div>
+                        ) : lancamento.status_pagamento === 'quitação_pendente' ? (
+                          <div className="flex items-center gap-1.5 text-orange-600 font-black text-[10px] uppercase">
+                            <Clock className="w-4 h-4" /> {isMaster ? 'Confirme Baixa' : 'Pendente Gestor'}
                           </div>
                         ) : lancamento.status_pagamento === 'pago' ? (
                           <div className="flex items-center gap-1.5 text-bank-truth-green font-black text-[10px] uppercase">
-                            <CheckCircle2 className="w-4 h-4" /> Liquidado
+                            <CheckCircle2 className="w-4 h-4" /> Liquidado, Pago
                           </div>
                         ) : (
                           <div className="flex items-center gap-1.5 text-alert-red font-black text-[10px] uppercase">
@@ -338,7 +342,7 @@ export default function LancamentoDetailsSlide() {
                         <DetailItem
                           icon={<Clock className="w-3.5 h-3.5 text-orange-600" />}
                           label="Saldo A Pagar"
-                          value={formatCurrency(lancamento.valor_previsto)}
+                          value={formatCurrency(Math.max(0, lancamento.valor_previsto - (lancamento.desconto_valor || 0) + (lancamento.acrescimo_valor || 0) - (lancamento.valor_recebido || 0)))}
                           highlight
                         />
                       )}
@@ -371,7 +375,7 @@ export default function LancamentoDetailsSlide() {
                               </div>
                               <div className="flex justify-between items-center text-[10px] font-black pt-2 border-t border-primary/10">
                                 <span className="text-primary uppercase tracking-widest">Saldo Aberto (Diferença):</span>
-                                <span className="text-alert-red">{formatCurrency(lancamento.valor_original - (lancamento.valor_recebido || 0))}</span>
+                                <span className="text-alert-red">{formatCurrency(Math.max(0, lancamento.valor_original - (lancamento.valor_recebido || 0)))}</span>
                               </div>
                             </div>
                           </div>

@@ -255,9 +255,9 @@ export default function BaixaLancamentoModal() {
   const valorDigitado = parseMoney(valorPago);
 
   // Checks and balances
-  const diff = subtotalCalculado - valorDigitado;
-  const isPartial = !isAVR && valorDigitado < subtotalCalculado && valorDigitado > 0;
-  const isOverpaid = !isAVR && valorDigitado > subtotalCalculado;
+  const diff = Math.max(0, subtotalCalculado - valorDigitado);
+  const isPartial = !isAVR && valorDigitado < subtotalCalculado - 0.005 && valorDigitado > 0;
+  const isOverpaid = !isAVR && valorDigitado > subtotalCalculado + 0.005;
   
   // Adjustment Reasons Logic
   const discReasons = (categoriasAjuste || []).filter(c => c.tipo === 'desconto');

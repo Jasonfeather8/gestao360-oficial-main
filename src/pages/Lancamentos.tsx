@@ -269,13 +269,20 @@ export default function Lancamentos({
   };
 
   const getValorLiquido = (item: LancamentoFinanceiro): number => {
-    if (item.status_pagamento === 'pago' && item.valor_recebido) {
+    if ((item.status_pagamento === 'pago' || item.status_pagamento === 'pago_parcial') && item.valor_recebido) {
       return item.valor_recebido;
     }
     const desconto = Number((item as any).desconto_valor) || 0;
     const acrescimo = Number((item as any).acrescimo_valor) || 0;
     const liquido = item.valor_previsto - desconto + acrescimo;
     return liquido;
+  };
+
+  const getSaldoAPagar = (item: LancamentoFinanceiro): number => {
+    const desconto = Number((item as any).desconto_valor) || 0;
+    const acrescimo = Number((item as any).acrescimo_valor) || 0;
+    const valorPago = Number(item.valor_recebido) || 0;
+    return Math.max(0, item.valor_previsto - desconto + acrescimo - valorPago);
   };
 
   const hasAjuste = (item: LancamentoFinanceiro): boolean => {
@@ -415,7 +422,7 @@ export default function Lancamentos({
       totals.desconto += desconto;
       totals.acrescimo += acrescimo;
       totals.valorPago += valorPago;
-      totals.aPagar += item.valor_previsto - desconto + acrescimo - valorPago;
+      totals.aPagar += Math.max(0, item.valor_previsto - desconto + acrescimo - valorPago);
       return totals;
     },
     { valorDocOriginal: 0, valorParcOriginal: 0, desconto: 0, acrescimo: 0, valorPago: 0, aPagar: 0 }
@@ -432,7 +439,7 @@ export default function Lancamentos({
       totals.acrescimo += acrescimo;
       totals.valorPago += valorPago;
       totals.liquido += liquido;
-      totals.aPagar += item.valor_previsto - desconto + acrescimo - valorPago;
+      totals.aPagar += Math.max(0, item.valor_previsto - desconto + acrescimo - valorPago);
       if (item.tipo === 'entrada') totals.entradas += liquido;
       if (item.tipo === 'saida') totals.saidas += liquido;
       return totals;
@@ -441,9 +448,10 @@ export default function Lancamentos({
   );
 
   const formatPrintDate = (dateStr: string | null | undefined) => dateStr ? dateStr.slice(0, 10).split('-').reverse().join('/') : '-';
+  const isPartialPayment = (item: LancamentoFinanceiro) => item.status_pagamento === 'pago_parcial' || (item.status_pagamento === 'quitação_pendente' && Boolean((item as any).vinculo_residuo_id));
   const getPrintStatus = (item: LancamentoFinanceiro) => {
-    if (item.status_pagamento === 'pago') return 'Pago';
-    if (item.status_pagamento === 'pago_parcial') return 'Pago parcial';
+    if (item.status_pagamento === 'pago') return 'Liquidado, Pago';
+    if (isPartialPayment(item)) return 'Pago Parcial';
     if (item.status_pagamento === 'quitação_pendente') return 'Quitação pendente';
     if (item.status_pagamento === 'bpi') return 'BPI';
     return item.status_aprovacao === 'reprovado' ? 'Reprovado' : 'Em aberto';
@@ -478,7 +486,14 @@ export default function Lancamentos({
    if (item.status_pagamento === 'pago') {
      return (
        <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-emerald-50 text-bank-truth-green font-black border border-emerald-200 text-[9px] uppercase tracking-tighter">
-         Pago
+         Liquidado, Pago
+       </span>
+     );
+   }
+   if (isPartialPayment(item)) {
+     return (
+       <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-orange-50 text-orange-600 font-black border border-orange-200 text-[9px] uppercase tracking-tighter animate-pulse">
+         Pago Parcial
        </span>
      );
    }
@@ -490,10 +505,10 @@ export default function Lancamentos({
        </span>
      );
    }
-   if (item.status_pagamento === 'quitação_pendente' || item.status_pagamento === 'pago_parcial') {
+   if (item.status_pagamento === 'quitação_pendente') {
      return (
        <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-orange-50 text-orange-600 font-black border border-orange-200 text-[9px] uppercase tracking-tighter animate-pulse">
-         {item.status_pagamento === 'pago_parcial' ? 'Parcial' : (isMaster ? 'Confirme Baixa' : 'Pendente Gestor')}
+         {isMaster ? 'Confirme Baixa' : 'Pendente Gestor'}
        </span>
      );
    }
@@ -947,7 +962,7 @@ export default function Lancamentos({
                             {valueFormatter(item.valor_recebido || 0)}
                           </td>
                           <td className={`py-3 px-4 text-right font-black font-mono text-xs ${item.tipo === 'entrada' ? 'text-bank-truth-green' : 'text-neutral-950'}`}>
-                            {valueFormatter(item.valor_previsto - (item.desconto_valor || 0) + (item.acrescimo_valor || 0) - (item.valor_recebido || 0))}
+                            {valueFormatter(getSaldoAPagar(item))}
                           </td>
                           <td className="py-3 px-4 text-center whitespace-nowrap">
                             {renderStatusBadge(item)}
@@ -985,7 +1000,12 @@ export default function Lancamentos({
                           <td className="py-3 px-4 whitespace-nowrap">
                             {item.status_pagamento === 'pago' ? (
                               <div className="flex flex-col">
-                                <span className="text-bank-truth-green font-black text-[9px] uppercase">Liquidado</span>
+                                <span className="text-bank-truth-green font-black text-[9px] uppercase">Liquidado, Pago</span>
+                                <span className="text-[9px] text-neutral-400 font-mono">{item.data_pagamento?.split('-').reverse().join('/')}</span>
+                              </div>
+                            ) : isPartialPayment(item) ? (
+                              <div className="flex flex-col">
+                                <span className="text-orange-600 font-black text-[9px] uppercase">Pago Parcial</span>
                                 <span className="text-[9px] text-neutral-400 font-mono">{item.data_pagamento?.split('-').reverse().join('/')}</span>
                               </div>
                             ) : item.status_pagamento === 'quitação_pendente' ? (
@@ -1270,7 +1290,7 @@ export default function Lancamentos({
                       </div>
                       <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number">
                         <span className="lancamentos-print-report__label">A pagar</span>
-                        <span className="lancamentos-print-report__value">{valueFormatter(item.valor_previsto - (item.desconto_valor || 0) + (item.acrescimo_valor || 0) - (item.valor_recebido || 0))}</span>
+                        <span className="lancamentos-print-report__value">{valueFormatter(getSaldoAPagar(item))}</span>
                       </div>
                     </div>
                   </section>
