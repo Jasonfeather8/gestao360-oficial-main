@@ -499,7 +499,7 @@ body {
     display: block;
     margin-bottom: 6px;
     font-size: 8pt;
-    text-transform: uppercase;
+    text-transform: none;
     letter-spacing: .05em;
   }
 
@@ -512,6 +512,6 @@ body {
   }
 
   body.printing-lancamentos-report .lancamentos-print-report__grid--financial-summary {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(7, minmax(0, 1fr));
   }
 }
