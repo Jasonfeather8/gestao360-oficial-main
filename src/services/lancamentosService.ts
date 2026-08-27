@@ -313,6 +313,8 @@ export const lancamentosService = {
     if (!isMaster && safeData.status_aprovacao === 'confirmado_master') {
       delete safeData.status_aprovacao;
     }
+    delete safeData.valor_original;
+    delete safeData.valor_previsto;
 
     const { data: current } = await supabase
       .from('lancamentos_financeiros')
@@ -418,7 +420,9 @@ export const lancamentosService = {
     const valorParcelaSelecionadaAVR = parcelaSelecionadaAVR
       ? Number(parcelaSelecionadaAVR.valor.replace(/\./g, '').replace(',', '.')) || 0
       : valorTotalAVR;
-    const subtotal = Math.max(0, current.valor_previsto - (data.valor_desconto || 0) + (data.valor_acrescimo || 0));
+    const descontoAplicado = data.valor_desconto || current.desconto_valor || 0;
+    const acrescimoAplicado = data.valor_acrescimo || current.acrescimo_valor || 0;
+    const subtotal = Math.max(0, current.valor_previsto - descontoAplicado + acrescimoAplicado);
     if (!isBPI && !isAVR && (data.valor_pago < 0 || data.valor_pago > subtotal + 0.005)) {
       throw new Error('O valor pago não pode ser maior que o saldo disponível do título.');
     }
@@ -632,114 +636,66 @@ export const lancamentosService = {
      return updated as LancamentoFinanceiro;
    }
 
-   if (isPartial && !isBPI) {
-     const saldoRestante = subtotal - valorPagoEfetivo;
+   const updatePayload: any = {
+     status_pagamento: isPartial && !isBPI ? (isMaster ? 'pago_parcial' : 'quitação_pendente') : finalPaymentStatus,
+     ...(isBaixaFinanceira ? { status_aprovacao: isMaster ? 'confirmado_master' : 'digital' } : {}),
+     data_pagamento: dataPagamentoVal,
+     hora_pagamento: isBPI ? null : horaPagamentoVal,
+     conta_bancaria_id: contaBancariaVal,
+     centro_custo_id: data.centro_custo_id || current.centro_custo_id,
+     categoria_id: data.categoria_id || current.categoria_id,
+     tipo_baixa: data.tipo_baixa || 'financeira',
+     desconto_valor: descontoAplicado,
+     acrescimo_valor: acrescimoAplicado,
+     motivo_ajuste: data.motivo_ajuste || null,
+     motivo_desconto_id: data.motivo_desconto_id || current.motivo_desconto_id || null,
+     motivo_acrescimo_id: data.motivo_acrescimo_id || current.motivo_acrescimo_id || null,
+     observacoes: isPartial && !isBPI
+       ? observacaoOriginal + `\n[Pagamento parcial de R$ ${valorPagoEfetivo} em ${dataPagamentoVal.split('-').reverse().join('/')}]`
+       : observacaoFinal,
+     valor_recebido: isBPI ? 0 : valorPagoEfetivo
+   };
 
-     // ATUALIZAÇÃO CRÍTICA: O resíduo mantém o status de aprovação do pai
-     const { data: updatedOriginal, error: updateError } = await supabase
+   if (isAVR) {
+     updatePayload.valor_previsto = valorPagoEfetivo;
+     updatePayload.valor_original = valorTotalAVR;
+     if (!isMaster) {
+       updatePayload.status_aprovacao = 'digital';
+     }
+   }
+   
+   if (isBPI) {
+     updatePayload.bpi_em = new Date().toISOString();
+   }
+
+   const { data: updated, error: updateError } = await supabase
+     .from('lancamentos_financeiros')
+     .update(updatePayload)
+     .eq('id', id)
+     .select()
+     .single();
+
+   if (updateError) throw updateError;
+
+   // Propagação do AVR se solicitado e for recorrente
+   if (isAVR && data.propagate_avr !== 'none' && current.recorrencia_id) {
+     const propagationQuery = supabase
        .from('lancamentos_financeiros')
        .update({
-         valor_previsto: saldoRestante,
-         valor_original: current.valor_original || current.valor_previsto, // Preserva o valor original da dívida total
-         // Não resetamos mais para 'pendente_digital' se o original já era 'confirmado_master'
-         status_aprovacao: current.status_aprovacao,
-         observacoes: observacaoOriginal + `\n[Abatido pagamento parcial de R$ ${valorPagoEfetivo} em ${dataPagamentoVal.split('-').reverse().join('/')}]`
-       })
-       .eq('id', id)
-       .select()
-       .single();
-
-     if (updateError) throw updateError;
-
-     const { id: _, created_at: __, updated_at: ___, ...rest } = current;
-     const { error: insertError } = await supabase
-       .from('lancamentos_financeiros')
-       .insert([{
-         ...rest,
          valor_previsto: valorPagoEfetivo,
-         valor_recebido: valorPagoEfetivo,
-         status_pagamento: isMaster ? 'pago_parcial' : 'quitação_pendente',
-         status_aprovacao: isMaster ? 'confirmado_master' : 'digital',
-         data_pagamento: dataPagamentoVal,
-         hora_pagamento: horaPagamentoVal,
-         conta_bancaria_id: contaBancariaVal,
-         centro_custo_id: data.centro_custo_id || current.centro_custo_id,
-         categoria_id: data.categoria_id || current.categoria_id,
-         tipo_baixa: data.tipo_baixa || 'financeira',
-         desconto_valor: data.valor_desconto || 0,
-         acrescimo_valor: data.valor_acrescimo || 0,
-         motivo_ajuste: data.motivo_ajuste || null,
-         motivo_desconto_id: data.motivo_desconto_id || null,
-         motivo_acrescimo_id: data.motivo_acrescimo_id || null,
-         vinculo_residuo_id: id,
-         observacoes: observacaoOriginal + `\n[Pagamento parcial quitado. Referente à cobrança original de R$ ${current.valor_previsto}]`,
-         bpi_em: isBPI ? new Date().toISOString() : null
-       }]);
+         valor_original: valorTotalAVR,
+         observacoes: (current.observacoes || '') + `\n[Valor ajustado via AVR propagado (${data.propagate_avr}) em ${new Date().toLocaleDateString('pt-BR')}]`
+       })
+       .eq('recorrencia_id', current.recorrencia_id);
 
-     if (insertError) throw insertError;
-     return updatedOriginal as LancamentoFinanceiro;
-   } else {
-     const updatePayload: any = {
-       status_pagamento: finalPaymentStatus,
-       ...(isBaixaFinanceira ? { status_aprovacao: isMaster ? 'confirmado_master' : 'digital' } : {}),
-       data_pagamento: dataPagamentoVal,
-       hora_pagamento: isBPI ? null : horaPagamentoVal,
-       conta_bancaria_id: contaBancariaVal,
-       centro_custo_id: data.centro_custo_id || current.centro_custo_id,
-       categoria_id: data.categoria_id || current.categoria_id,
-       tipo_baixa: data.tipo_baixa || 'financeira',
-       desconto_valor: data.valor_desconto || 0,
-       acrescimo_valor: data.valor_acrescimo || 0,
-       motivo_ajuste: data.motivo_ajuste || null,
-       motivo_desconto_id: data.motivo_desconto_id || null,
-       motivo_acrescimo_id: data.motivo_acrescimo_id || null,
-       valor_previsto: isAVR ? valorPagoEfetivo : (isBPI ? current.valor_previsto : subtotal),
-       observacoes: observacaoFinal,
-       valor_recebido: isBPI ? 0 : valorPagoEfetivo
-     };
-
-     if (isAVR) {
-       updatePayload.valor_original = valorTotalAVR;
-       // Se for AVR e não for master, o status de aprovação volta para digital para nova conferência do saldo real
-       if (!isMaster) {
-         updatePayload.status_aprovacao = 'digital';
-       }
-     }
-     
-     if (isBPI) {
-       updatePayload.bpi_em = new Date().toISOString();
+     if (data.propagate_avr === 'open') {
+       propagationQuery.eq('status_pagamento', 'aberto');
      }
 
-     const { data: updated, error: updateError } = await supabase
-       .from('lancamentos_financeiros')
-       .update(updatePayload)
-       .eq('id', id)
-       .select()
-       .single();
-
-     if (updateError) throw updateError;
-
-     // Propagação do AVR se solicitado e for recorrente
-     if (isAVR && data.propagate_avr !== 'none' && current.recorrencia_id) {
-       const propagationQuery = supabase
-         .from('lancamentos_financeiros')
-         .update({
-           valor_previsto: valorPagoEfetivo,
-           valor_original: valorTotalAVR,
-           observacoes: (current.observacoes || '') + `\n[Valor ajustado via AVR propagado (${data.propagate_avr}) em ${new Date().toLocaleDateString('pt-BR')}]`
-         })
-         .eq('recorrencia_id', current.recorrencia_id);
-
-       if (data.propagate_avr === 'open') {
-         propagationQuery.eq('status_pagamento', 'aberto');
-       }
-       // Se for 'all', não adiciona filtro de status
-
-       await propagationQuery;
-     }
-
-     return updated as LancamentoFinanceiro;
+     await propagationQuery;
    }
+
+   return updated as LancamentoFinanceiro;
  },
 
   estornarLancamento: async (id: string): Promise<void> => {
