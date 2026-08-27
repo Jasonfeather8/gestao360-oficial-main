@@ -1068,7 +1068,7 @@ export default function Lancamentos({
                                 <ShieldCheck className="w-3 h-3" /> Aprovar
                               </button>
                             )}
-                            {isOperationalView && item.status_pagamento === 'aberto' && (
+                            {isOperationalView && (item.status_pagamento === 'aberto' || item.status_pagamento === 'pago_parcial') && (
                               <button
                                 type="button"
                                 onClick={() => handleOpenBaixa(item.id)}

@@ -86,7 +86,7 @@ export default function LancamentoActionMenu({
         
         <div className="h-px bg-neutral-50 my-1" />
         
-        {isOperationalView && (
+        {isOperationalView && item.status_pagamento !== 'pago' && (
           <button
             onClick={() => onEdit(item)}
             className="w-full flex items-center gap-3 px-4 py-3 text-neutral-600 hover:bg-neutral-50 rounded-xl transition-all"
