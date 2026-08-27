@@ -573,7 +573,7 @@ export default function Lancamentos({
             </span>
           )}
 
-          {isMaster && (
+          {isFinanceiroView && isMaster && (
             <Button
               onClick={() => handleBatchApprove()}
               disabled={selectedLancamentoIdsForBatch.length === 0 || isBatchApproving}
