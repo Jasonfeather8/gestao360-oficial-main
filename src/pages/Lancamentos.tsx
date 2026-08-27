@@ -931,6 +931,8 @@ export default function Lancamentos({
                             </div>
                           </td>
                           <td className="py-3 px-4 whitespace-nowrap font-mono text-xs">
+                            {item.data_vencimento.split('-').reverse().join('/')}
+                            <br />
                             {item.status_pagamento === 'pago' || item.status_pagamento === 'bpi' ? (
                               <span className="text-neutral-300 font-normal">-</span>
                             ) : (
