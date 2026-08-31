@@ -100,7 +100,7 @@ export default function Lancamentos({
 
   // Preset state
   const [datePreset, setDatePreset] = useState<'15' | '30' | '90' | 'custom'>('15');
-  const [dateDirection, setDateDirection] = useState<'past' | 'future'>('past');
+  const [dateDirection, setDateDirection] = useState<'past' | 'future' | 'both'>('past');
 
   // Search & Period States
   const [startDate, setStartDate] = useState(() => {
@@ -112,7 +112,7 @@ export default function Lancamentos({
     return new Date().toISOString().split('T')[0];
   });
 
-  const handlePresetChange = (preset: '15' | '30' | '90' | 'custom', direction = dateDirection) => {
+  const handlePresetChange = (preset: '15' | '30' | '90' | 'custom', direction: 'past' | 'future' | 'both' = dateDirection) => {
     setDatePreset(preset);
     if (preset !== 'custom') {
       const today = new Date();
@@ -121,6 +121,9 @@ export default function Lancamentos({
 
       if (direction === 'future') {
         start.setDate(today.getDate() + 1);
+        end.setDate(today.getDate() + parseInt(preset));
+      } else if (direction === 'both') {
+        start.setDate(today.getDate() - parseInt(preset));
         end.setDate(today.getDate() + parseInt(preset));
       } else {
         start.setDate(today.getDate() - parseInt(preset));
@@ -132,7 +135,7 @@ export default function Lancamentos({
     }
   };
 
-  const handleDateDirectionChange = (direction: 'past' | 'future') => {
+  const handleDateDirectionChange = (direction: 'past' | 'future' | 'both') => {
     setDateDirection(direction);
     if (datePreset !== 'custom') {
       handlePresetChange(datePreset, direction);
@@ -757,7 +760,7 @@ export default function Lancamentos({
         </div>
 
         <div className="flex items-center gap-3 w-full lg:w-auto">
-          <div className="flex flex-col bg-neutral-100 p-1 rounded-xl h-12 w-16 shrink-0" aria-label="Direção do período">
+          <div className="flex flex-col bg-neutral-100 p-1 rounded-xl h-16 w-16 shrink-0" aria-label="Tempo" title="Tempo">
             <button
               type="button"
               disabled={datePreset === 'custom'}
@@ -766,7 +769,7 @@ export default function Lancamentos({
                 dateDirection === 'past' ? 'bg-white text-primary shadow-sm' : 'text-neutral-400 hover:text-neutral-600'
               }`}
             >
-              Passados
+              Passado
             </button>
             <button
               type="button"
@@ -776,7 +779,17 @@ export default function Lancamentos({
                 dateDirection === 'future' ? 'bg-white text-primary shadow-sm' : 'text-neutral-400 hover:text-neutral-600'
               }`}
             >
-              Futuros
+              Futuro
+            </button>
+            <button
+              type="button"
+              disabled={datePreset === 'custom'}
+              onClick={() => handleDateDirectionChange('both')}
+              className={`flex-1 px-1 rounded-lg text-[8px] font-black uppercase leading-none tracking-tighter transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                dateDirection === 'both' ? 'bg-white text-primary shadow-sm' : 'text-neutral-400 hover:text-neutral-600'
+              }`}
+            >
+              Ambos
             </button>
           </div>
 
