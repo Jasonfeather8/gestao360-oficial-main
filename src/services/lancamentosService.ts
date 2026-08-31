@@ -20,6 +20,7 @@ export interface LancamentoFilters {
   temAcrescimo?: string;
   motivoDescontoId?: string;
   motivoAcrescimoId?: string;
+  isFinanceiroView?: boolean;
   page?: number;
   pageSize?: number;
 }
@@ -119,6 +120,11 @@ export const lancamentosService = {
       query = query
         .order('codigo_sequencial', { ascending: true })
         .order('numero_parcela', { ascending: true })
+        .order('created_at', { ascending: false });
+    } else if (filters?.isFinanceiroView) {
+      query = query
+        .order('data_pagamento', { ascending: false, nullsFirst: false })
+        .order('hora_pagamento', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false });
     } else {
       query = query

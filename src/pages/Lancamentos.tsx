@@ -212,6 +212,7 @@ export default function Lancamentos({
     temAcrescimo: temAcrescimoFilter,
     motivoDescontoId: motivoDescontoFilter,
     motivoAcrescimoId: motivoAcrescimoFilter,
+    isFinanceiroView,
     page: currentPage,
     pageSize: pageSize === 'all' ? undefined : pageSize
   });
