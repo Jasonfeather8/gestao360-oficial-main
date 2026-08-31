@@ -72,8 +72,10 @@ export default function Lancamentos({
 
   const dragScrollTabs = useDragScroll();
   const tableScroll = useDragScroll();
+  const mainTableRef = useRef<HTMLTableElement>(null);
   const mirrorScrollRef = useRef<HTMLDivElement>(null);
   const [tableWidth, setTableWidth] = useState(0);
+  const [columnWidths, setColumnWidths] = useState<number[]>([]);
   const [searchParams] = useSearchParams();
 
   const isMaster = role === 'master';
@@ -220,8 +222,9 @@ export default function Lancamentos({
   // Sync scroll between mirror and table
   useEffect(() => {
     const table = tableScroll.ref.current;
+    const mainTable = mainTableRef.current;
     const mirror = mirrorScrollRef.current;
-    if (!table || !mirror) return;
+    if (!table || !mainTable || !mirror) return;
 
     const handleTableScroll = () => {
       if (Math.abs(mirror.scrollLeft - table.scrollLeft) > 1) {
@@ -235,23 +238,42 @@ export default function Lancamentos({
       }
     };
 
+    let frameId: number | null = null;
+    const measureTable = () => {
+      if (frameId !== null) return;
+
+      frameId = window.requestAnimationFrame(() => {
+        frameId = null;
+        const headerCells = Array.from(mainTable.querySelectorAll('thead th')) as HTMLTableCellElement[];
+        const widths = headerCells.map(cell => cell.getBoundingClientRect().width);
+
+        if (widths.length > 0) {
+          setColumnWidths(previousWidths => {
+            const widthsUnchanged = previousWidths.length === widths.length && previousWidths.every((width, index) => width === widths[index]);
+            return widthsUnchanged ? previousWidths : widths;
+          });
+        }
+        setTableWidth(table.scrollWidth);
+      });
+    };
+
     table.addEventListener('scroll', handleTableScroll);
     mirror.addEventListener('scroll', handleMirrorScroll);
 
-    // Initial width
-    setTableWidth(table.scrollWidth);
+    // Initial width and column measurements
+    measureTable();
 
-    const observer = new ResizeObserver(() => {
-      if (table) setTableWidth(table.scrollWidth);
-    });
+    const observer = new ResizeObserver(measureTable);
     observer.observe(table);
+    observer.observe(mainTable);
 
     return () => {
       table.removeEventListener('scroll', handleTableScroll);
       mirror.removeEventListener('scroll', handleMirrorScroll);
       observer.disconnect();
+      if (frameId !== null) window.cancelAnimationFrame(frameId);
     };
-  }, [allLancamentos, tableScroll.ref]);
+  }, [allLancamentos, typeOverride, tableScroll.ref]);
 
   const totalPages = pageSize === 'all' ? 1 : Math.max(Math.ceil(totalCount / pageSize), 1);
 
@@ -846,7 +868,7 @@ export default function Lancamentos({
           {...tableScroll.props}
           className="overflow-x-auto scrollbar-none select-none rounded-t-[32px]"
         >
-          <table className="w-full text-left border-collapse min-w-[1200px]">
+          <table ref={mainTableRef} className="w-full text-left border-collapse min-w-[1200px]">
             <thead>
               <tr className="bg-neutral-50/50 text-neutral-400 border-b border-neutral-100 text-[9px] font-black uppercase tracking-widest select-none">
                 <th className="py-5 px-4 w-10 text-center">
@@ -1130,6 +1152,11 @@ export default function Lancamentos({
         >
           {isOperationalView && selectedOperationalLancamentos.length > 0 ? (
             <table className="w-full text-left border-collapse min-w-[1200px]" style={{ width: tableWidth }}>
+              <colgroup>
+                {columnWidths.map((width, index) => (
+                  <col key={index} style={{ width }} />
+                ))}
+              </colgroup>
               <tbody>
                 <tr className="whitespace-nowrap">
                   <td className="py-3 px-4" />
