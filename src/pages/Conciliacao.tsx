@@ -584,7 +584,7 @@ export default function Conciliacao() {
                           <tbody className="font-bold text-neutral-700">
                             {csvPreviewRows.map((row, i) => (
                               <tr key={i} className="border-b border-neutral-50 last:border-none">
-                                {Object.values(columnMapping).filter(v=>v).map(h=><td key={h} className="p-4">{row[h]}</td>)}
+                                {Object.values(columnMapping).filter((value): value is string => Boolean(value)).map(h=><td key={h} className="p-4">{row[h]}</td>)}
                               </tr>
                             ))}
                           </tbody>
