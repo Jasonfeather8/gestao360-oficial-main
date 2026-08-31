@@ -9,12 +9,12 @@ export interface LancamentoFilters {
   startDate?: string;
   endDate?: string;
   approvalStatus?: string;
-  statusPagamento?: string;
-  type?: string;
-  authorId?: string;
-  categoryId?: string;
-  contaId?: string;
-  centroCustoId?: string;
+  statusPagamento?: string | string[];
+  type?: string | string[];
+  authorId?: string | string[];
+  categoryId?: string | string[];
+  contaId?: string | string[];
+  centroCustoId?: string | string[];
   condicao?: string;
   temDesconto?: string;
   temAcrescimo?: string;
@@ -23,6 +23,23 @@ export interface LancamentoFilters {
   page?: number;
   pageSize?: number;
 }
+
+const normalizeFilterValues = (value?: string | string[]): string[] => {
+  const values = Array.isArray(value) ? value : value ? [value] : [];
+  return values.includes('all') ? [] : Array.from(new Set(values.filter(Boolean)));
+};
+
+const combineOrGroups = (groups: string[][]): string => {
+  const nonEmptyGroups = groups.filter(group => group.length > 0);
+
+  if (nonEmptyGroups.length === 1) {
+    return nonEmptyGroups[0].join(',');
+  }
+
+  return `and(${nonEmptyGroups
+    .map(group => group.length === 1 ? group[0] : `or(${group.join(',')})`)
+    .join(',')})`;
+};
 
 export const lancamentosService = {
   getAll: async (filters?: LancamentoFilters, signal?: AbortSignal): Promise<{ data: LancamentoFinanceiro[], count: number }> => {
@@ -111,16 +128,19 @@ export const lancamentosService = {
     }
 
     if (filters) {
+      const orGroups: string[][] = [];
+
       if (filters.docCode === undefined) {
         if (filters.startDate) query = query.gte('data_vencimento', filters.startDate);
         if (filters.endDate) query = query.lte('data_vencimento', filters.endDate);
       }
       
       if (filters.docCode !== undefined) {
-        const recurrenceFilter = recurrenceIds.length > 0
-          ? `,recorrencia_id.in.(${recurrenceIds.join(',')})`
-          : '';
-        query = query.or(`codigo_sequencial.eq.${filters.docCode}${recurrenceFilter}`);
+        const documentClauses = [`codigo_sequencial.eq.${filters.docCode}`];
+        if (recurrenceIds.length > 0) {
+          documentClauses.push(`recorrencia_id.in.(${recurrenceIds.join(',')})`);
+        }
+        orGroups.push(documentClauses);
       }
       if (filters.docParcel) query = query.eq('numero_parcela', filters.docParcel);
 
@@ -134,40 +154,60 @@ export const lancamentosService = {
         }
       }
       
-      if (filters.statusPagamento && filters.statusPagamento !== 'all') {
-        if (filters.statusPagamento === 'atrasadas') {
-          const today = new Date().toISOString().split('T')[0];
-          query = query
-            .lt('data_vencimento', today)
-            .in('status_pagamento', ['aberto', 'pago_parcial', 'quitação_pendente']);
-        } else if (filters.statusPagamento === 'aberto') {
-          const today = new Date().toISOString().split('T')[0];
-          query = query
-            .eq('status_pagamento', 'aberto')
-            .gte('data_vencimento', today);
+      const statusPagamentoValues = normalizeFilterValues(filters.statusPagamento);
+      if (statusPagamentoValues.length > 0) {
+        const today = new Date().toISOString().split('T')[0];
+        const hasDateScopedStatus = statusPagamentoValues.some(status => status === 'aberto' || status === 'atrasadas');
+
+        if (!hasDateScopedStatus) {
+          query = query.in('status_pagamento', statusPagamentoValues);
+        } else if (statusPagamentoValues.length === 1) {
+          const [status] = statusPagamentoValues;
+          if (status === 'atrasadas') {
+            query = query
+              .lt('data_vencimento', today)
+              .in('status_pagamento', ['aberto', 'pago_parcial', 'quitação_pendente']);
+          } else {
+            query = query
+              .eq('status_pagamento', 'aberto')
+              .gte('data_vencimento', today);
+          }
         } else {
-          query = query.eq('status_pagamento', filters.statusPagamento);
+          orGroups.push(statusPagamentoValues.map(status => {
+            if (status === 'atrasadas') {
+              return `and(data_vencimento.lt.${today},status_pagamento.in.(aberto,pago_parcial,quitação_pendente))`;
+            }
+            if (status === 'aberto') {
+              return `and(status_pagamento.eq.aberto,data_vencimento.gte.${today})`;
+            }
+            return `status_pagamento.eq.${status}`;
+          }));
         }
       }
       
-      if (filters.type && filters.type !== 'all') {
-        query = query.eq('tipo', filters.type);
+      const typeValues = normalizeFilterValues(filters.type);
+      if (typeValues.length > 0) {
+        query = query.in('tipo', typeValues);
       }
 
-      if (filters.authorId && filters.authorId !== 'all') {
-        query = query.eq('usuario_criador_id', filters.authorId);
+      const authorValues = normalizeFilterValues(filters.authorId);
+      if (authorValues.length > 0) {
+        query = query.in('usuario_criador_id', authorValues);
       }
 
-      if (filters.categoryId && filters.categoryId !== 'all') {
-        query = query.eq('categoria_id', filters.categoryId);
+      const categoryValues = normalizeFilterValues(filters.categoryId);
+      if (categoryValues.length > 0) {
+        query = query.in('categoria_id', categoryValues);
       }
 
-      if (filters.contaId && filters.contaId !== 'all') {
-        query = query.eq('conta_bancaria_id', filters.contaId);
+      const contaValues = normalizeFilterValues(filters.contaId);
+      if (contaValues.length > 0) {
+        query = query.in('conta_bancaria_id', contaValues);
       }
 
-      if (filters.centroCustoId && filters.centroCustoId !== 'all') {
-        query = query.eq('centro_custo_id', filters.centroCustoId);
+      const centroCustoValues = normalizeFilterValues(filters.centroCustoId);
+      if (centroCustoValues.length > 0) {
+        query = query.in('centro_custo_id', centroCustoValues);
       }
 
       if (filters.condicao && filters.condicao !== 'all') {
@@ -177,13 +217,13 @@ export const lancamentosService = {
       if (filters.temDesconto === 'sim') {
         query = query.gt('desconto_valor', 0);
       } else if (filters.temDesconto === 'nao') {
-        query = query.or('desconto_valor.eq.0,desconto_valor.is.null');
+        orGroups.push(['desconto_valor.eq.0', 'desconto_valor.is.null']);
       }
 
       if (filters.temAcrescimo === 'sim') {
         query = query.gt('acrescimo_valor', 0);
       } else if (filters.temAcrescimo === 'nao') {
-        query = query.or('acrescimo_valor.eq.0,acrescimo_valor.is.null');
+        orGroups.push(['acrescimo_valor.eq.0', 'acrescimo_valor.is.null']);
       }
 
       if (filters.motivoDescontoId && filters.motivoDescontoId !== 'all') {
@@ -192,6 +232,10 @@ export const lancamentosService = {
 
       if (filters.motivoAcrescimoId && filters.motivoAcrescimoId !== 'all') {
         query = query.eq('motivo_acrescimo_id', filters.motivoAcrescimoId);
+      }
+
+      if (orGroups.length > 0) {
+        query = query.or(combineOrGroups(orGroups));
       }
 
       if (searchLancamentoIds) {

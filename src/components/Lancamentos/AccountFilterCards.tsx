@@ -7,8 +7,8 @@ import { useAuth } from '../../hooks/useAuth';
 
 interface AccountFilterCardsProps {
   accounts: any[];
-  selectedId: string | null;
-  onSelect: (id: string | null) => void;
+  selectedIds: string[];
+  onSelect: (ids: string[]) => void;
   dragScrollProps: any;
   dragScrollRef: any;
   valueFormatter: (val: number) => string;
@@ -16,7 +16,7 @@ interface AccountFilterCardsProps {
 
 export default function AccountFilterCards({
   accounts,
-  selectedId,
+  selectedIds,
   onSelect,
   dragScrollProps,
   dragScrollRef,
@@ -31,9 +31,9 @@ export default function AccountFilterCards({
         <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary flex items-center gap-2">
           <Building2 className="w-4 h-4" /> Filtrar por Conta
         </h4>
-        {selectedId && (
+        {selectedIds.length > 0 && (
           <button
-            onClick={() => onSelect(null)}
+            onClick={() => onSelect([])}
             className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline"
           >
             Limpar Filtro
@@ -46,11 +46,11 @@ export default function AccountFilterCards({
         className="flex gap-4 overflow-x-auto pb-2 scroll-smooth select-none no-scrollbar"
       >
         {accounts.map((acc) => {
-          const isSelected = selectedId === acc.id;
+          const isSelected = selectedIds.includes(acc.id);
           return (
             <div
               key={acc.id}
-              onClick={() => onSelect(isSelected ? null : acc.id)}
+              onClick={() => onSelect(isSelected ? selectedIds.filter(id => id !== acc.id) : [...selectedIds, acc.id])}
               className={`flex-shrink-0 w-64 bg-white p-4 border-2 rounded-2xl flex flex-col group cursor-pointer transition-all shadow-sm ${
                 isSelected ? 'border-primary bg-primary/5 ring-4 ring-primary/10' : 'border-neutral-100 hover:border-neutral-200'
               }`}

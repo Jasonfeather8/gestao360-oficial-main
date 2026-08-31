@@ -39,6 +39,7 @@ import { useDragScroll } from '../hooks/useDragScroll';
 import { LancamentoFinanceiro } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import Button from '../components/Button';
+import MultiSelectDropdown from '../components/MultiSelectDropdown';
 import AccountFilterCards from '../components/Lancamentos/AccountFilterCards';
 import LancamentoActionMenu from '../components/Lancamentos/LancamentoActionMenu';
 
@@ -146,21 +147,23 @@ export default function Lancamentos({
   const defaultStatusPagamento = initialStatusPagamento || statusPagamentoOverride || 'all';
   const defaultTypeFilter = initialTypeFilter || typeOverride || 'all';
   const [approvalStatus, setApprovalStatus] = useState('all');
-  const [statusPagamento, setStatusPagamento] = useState<string>(defaultStatusPagamento);
-  const [typeFilter, setTypeFilter] = useState<'all' | 'entrada' | 'saida'>(defaultTypeFilter);
+  const [statusPagamento, setStatusPagamento] = useState<string[]>(defaultStatusPagamento === 'all' ? [] : [defaultStatusPagamento]);
+  const [typeFilter, setTypeFilter] = useState<string[]>(defaultTypeFilter === 'all' ? [] : [defaultTypeFilter]);
 
   // Sincronizar o estado interno com as propriedades da rota ao navegar
   useEffect(() => {
-    setStatusPagamento(initialStatusPagamento || statusPagamentoOverride || 'all');
-    setTypeFilter(initialTypeFilter || typeOverride || 'all');
+    const nextStatus = initialStatusPagamento || statusPagamentoOverride || 'all';
+    const nextType = initialTypeFilter || typeOverride || 'all';
+    setStatusPagamento(nextStatus === 'all' ? [] : [nextStatus]);
+    setTypeFilter(nextType === 'all' ? [] : [nextType]);
     setSelectedLancamentoIdsForBatch([]);
   }, [initialStatusPagamento, initialTypeFilter, statusPagamentoOverride, typeOverride, titleOverride]);
 
-  const [authorIdFilter, setAuthorIdIdFilter] = useState('all');
+  const [authorIdFilter, setAuthorIdIdFilter] = useState<string[]>([]);
 
-  const [categoryIdFilter, setCategoryIdFilter] = useState('all');
-  const [contaIdFilter, setContaIdFilter] = useState('all');
-  const [centroCustoIdFilter, setCentroCustoIdFilter] = useState('all');
+  const [categoryIdFilter, setCategoryIdFilter] = useState<string[]>([]);
+  const [contaIdFilter, setContaIdFilter] = useState<string[]>([]);
+  const [centroCustoIdFilter, setCentroCustoIdFilter] = useState<string[]>([]);
   const [condicaoFilter, setCondicaoFilter] = useState('all');
   const [temDescontoFilter, setTemDescontoFilter] = useState('all');
   const [temAcrescimoFilter, setTemAcrescimoFilter] = useState('all');
@@ -168,7 +171,13 @@ export default function Lancamentos({
   const [motivoAcrescimoFilter, setMotivoAcrescimoFilter] = useState('all');
   const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(true);
 
-  const hasActiveFilters = debouncedSearchTerm !== '' || docSearchTerm !== '' || approvalStatus !== 'all' || typeFilter !== defaultTypeFilter || authorIdFilter !== 'all' || categoryIdFilter !== 'all' || contaIdFilter !== 'all' || centroCustoIdFilter !== 'all' || condicaoFilter !== 'all' || temDescontoFilter !== 'all' || temAcrescimoFilter !== 'all' || motivoDescontoFilter !== 'all' || motivoAcrescimoFilter !== 'all';
+  const selectionDiffersFromDefault = (selection: string[], defaultValue: string) => {
+    const normalizedSelection = selection.filter(value => value !== 'all' && value !== '');
+    const normalizedDefault = defaultValue === 'all' || defaultValue === '' ? [] : [defaultValue];
+    return normalizedSelection.length !== normalizedDefault.length || normalizedSelection.some((value, index) => value !== normalizedDefault[index]);
+  };
+
+  const hasActiveFilters = debouncedSearchTerm !== '' || docSearchTerm !== '' || approvalStatus !== 'all' || selectionDiffersFromDefault(statusPagamento, defaultStatusPagamento) || selectionDiffersFromDefault(typeFilter, defaultTypeFilter) || authorIdFilter.length > 0 || categoryIdFilter.length > 0 || contaIdFilter.length > 0 || centroCustoIdFilter.length > 0 || condicaoFilter !== 'all' || temDescontoFilter !== 'all' || temAcrescimoFilter !== 'all' || motivoDescontoFilter !== 'all' || motivoAcrescimoFilter !== 'all';
 
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [selectedLogItem, setSelectedLogItem] = useState<LancamentoFinanceiro | null>(null);
@@ -189,8 +198,8 @@ export default function Lancamentos({
     startDate,
     endDate,
     approvalStatus: approvalStatus,
-    statusPagamento: statusPagamento === 'all' && !isFinanceiroView && isColaborador ? 'quitação_pendente' : statusPagamento,
-    type: typeFilter === 'all' ? undefined : typeFilter,
+    statusPagamento: statusPagamento.length === 0 && !isFinanceiroView && isColaborador ? ['quitação_pendente'] : statusPagamento,
+    type: typeFilter,
     authorId: isColaborador ? useUIStore.getState().currentUserId : authorIdFilter,
     categoryId: categoryIdFilter,
     contaId: contaIdFilter,
@@ -250,7 +259,7 @@ export default function Lancamentos({
   const { categoriasAjuste = [] } = useCategoriasAjuste();
 
   const activeContas = useMemo(() => rawContas.filter((c: any) => c.status !== 'excluido'), [rawContas]);
-  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
+  const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
 
   useEffect(() => {
     const lancamentoId = searchParams.get('id');
@@ -261,8 +270,8 @@ export default function Lancamentos({
   }, [searchParams, setSelectedLancamentoIdForModal, setModalOpen]);
 
   const filteredLancamentos = useMemo(() => {
-    return allLancamentos.filter(l => selectedAccountId ? l.conta_bancaria_id === selectedAccountId : true);
-  }, [allLancamentos, selectedAccountId]);
+    return allLancamentos.filter(l => selectedAccountIds.length === 0 || selectedAccountIds.includes(l.conta_bancaria_id));
+  }, [allLancamentos, selectedAccountIds]);
 
   const valueFormatter = (val: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
@@ -314,19 +323,19 @@ export default function Lancamentos({
     setSearchTerm('');
     setDocSearchTerm('');
     setApprovalStatus('all');
-    setStatusPagamento(defaultStatusPagamento);
-    setTypeFilter(defaultTypeFilter);
-    setAuthorIdIdFilter('all');
-    setCategoryIdFilter('all');
-    setContaIdFilter('all');
-    setCentroCustoIdFilter('all');
+    setStatusPagamento(defaultStatusPagamento === 'all' ? [] : [defaultStatusPagamento]);
+    setTypeFilter(defaultTypeFilter === 'all' ? [] : [defaultTypeFilter]);
+    setAuthorIdIdFilter([]);
+    setCategoryIdFilter([]);
+    setContaIdFilter([]);
+    setCentroCustoIdFilter([]);
     setCondicaoFilter('all');
     setTemDescontoFilter('all');
     setTemAcrescimoFilter('all');
     setMotivoDescontoFilter('all');
     setMotivoAcrescimoFilter('all');
     setSelectedLancamentoIdsForBatch([]);
-    setSelectedAccountId(null);
+    setSelectedAccountIds([]);
     setDateDirection('past');
 
     handlePresetChange('15', 'past');
@@ -540,8 +549,8 @@ export default function Lancamentos({
       
       <AccountFilterCards
         accounts={accountCardsData}
-        selectedId={selectedAccountId}
-        onSelect={setSelectedAccountId}
+        selectedIds={selectedAccountIds}
+        onSelect={setSelectedAccountIds}
         dragScrollProps={dragScrollTabs.props}
         dragScrollRef={dragScrollTabs.ref}
         valueFormatter={valueFormatter}
@@ -618,9 +627,9 @@ export default function Lancamentos({
                 <Receipt className="w-4 h-4" /> Natureza do Fluxo
               </label>
               <div className="flex bg-neutral-100 p-1 rounded-xl h-11">
-                <button type="button" onClick={() => setTypeFilter('all')} className={`flex-1 rounded-lg text-[10px] font-black uppercase transition-all ${typeFilter === 'all' ? 'bg-white text-primary shadow-sm' : 'text-neutral-400'}`}>Todos</button>
-                <button type="button" onClick={() => setTypeFilter('entrada')} className={`flex-1 rounded-lg text-[10px] font-black uppercase transition-all ${typeFilter === 'entrada' ? 'bg-white text-bank-truth-green shadow-sm' : 'text-neutral-400'}`}>Entradas</button>
-                <button type="button" onClick={() => setTypeFilter('saida')} className={`flex-1 rounded-lg text-[10px] font-black uppercase transition-all ${typeFilter === 'saida' ? 'bg-white text-alert-red shadow-sm' : 'text-neutral-400'}`}>Saídas</button>
+                <button type="button" onClick={() => setTypeFilter([])} className={`flex-1 rounded-lg text-[10px] font-black uppercase transition-all ${typeFilter.length === 0 ? 'bg-white text-primary shadow-sm' : 'text-neutral-400'}`}>Todos</button>
+                <button type="button" onClick={() => setTypeFilter(current => current.includes('entrada') ? current.filter(value => value !== 'entrada') : [...current, 'entrada'])} className={`flex-1 rounded-lg text-[10px] font-black uppercase transition-all ${typeFilter.includes('entrada') ? 'bg-white text-bank-truth-green shadow-sm' : 'text-neutral-400'}`}>Entradas</button>
+                <button type="button" onClick={() => setTypeFilter(current => current.includes('saida') ? current.filter(value => value !== 'saida') : [...current, 'saida'])} className={`flex-1 rounded-lg text-[10px] font-black uppercase transition-all ${typeFilter.includes('saida') ? 'bg-white text-alert-red shadow-sm' : 'text-neutral-400'}`}>Saídas</button>
               </div>
             </div>
 
@@ -640,13 +649,15 @@ export default function Lancamentos({
                   <button
                     key={opt.id}
                     type="button"
-                    onClick={() => setStatusPagamento(opt.id)}
+                    onClick={() => opt.id === 'all'
+                      ? setStatusPagamento([])
+                      : setStatusPagamento(current => current.includes(opt.id) ? current.filter(value => value !== opt.id) : [...current, opt.id])}
                     className={`px-3 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest border-2 transition-all text-left flex items-center justify-between ${
-                      statusPagamento === opt.id ? 'border-primary bg-primary/5 text-primary' : 'border-neutral-100 bg-neutral-50 text-secondary hover:border-neutral-200'
+                      (opt.id === 'all' ? statusPagamento.length === 0 : statusPagamento.includes(opt.id)) ? 'border-primary bg-primary/5 text-primary' : 'border-neutral-100 bg-neutral-50 text-secondary hover:border-neutral-200'
                     }`}
                   >
                     {opt.label}
-                    {statusPagamento === opt.id && <div className="w-2 h-2 bg-primary rounded-full shrink-0" />}
+                    {((opt.id === 'all' && statusPagamento.length === 0) || (opt.id !== 'all' && statusPagamento.includes(opt.id))) && <div className="w-2 h-2 bg-primary rounded-full shrink-0" />}
                   </button>
                 ))}
               </div>
@@ -659,14 +670,12 @@ export default function Lancamentos({
                 <label className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary flex items-center gap-2">
                   <User className="w-4 h-4" /> Responsável
                 </label>
-                <select
+                <MultiSelectDropdown
                   value={authorIdFilter}
-                  onChange={(e) => setAuthorIdIdFilter(e.target.value)}
-                  className="w-full h-11 bg-neutral-50 border border-surface-border text-xs font-bold rounded-lg px-3 outline-none focus:border-primary"
-                >
-                  <option value="all">Todos os Usuários</option>
-                  {usuarios.map(u => <option key={u.id} value={u.id}>{u.nome || u.email}</option>)}
-                </select>
+                  onChange={setAuthorIdIdFilter}
+                  allLabel="Todos os Usuários"
+                  options={usuarios.map(u => ({ id: u.id, label: u.nome || u.email }))}
+                />
               </div>
             )}
 
@@ -674,42 +683,36 @@ export default function Lancamentos({
               <label className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary flex items-center gap-2">
                 <Tag className="w-4 h-4" /> Categoria
               </label>
-              <select
+              <MultiSelectDropdown
                 value={categoryIdFilter}
-                onChange={(e) => setCategoryIdFilter(e.target.value)}
-                className="w-full h-11 bg-neutral-50 border border-surface-border text-xs font-bold rounded-lg px-3 outline-none focus:border-primary"
-              >
-                <option value="all">Todas as Categorias</option>
-                {categorias.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
-              </select>
+                onChange={setCategoryIdFilter}
+                allLabel="Todas as Categorias"
+                options={categorias.map(c => ({ id: c.id, label: c.nome }))}
+              />
             </div>
 
             <div className="space-y-2">
               <label className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary flex items-center gap-2">
                 <CreditCard className="w-4 h-4" /> Conta Bancária
               </label>
-              <select
+              <MultiSelectDropdown
                 value={contaIdFilter}
-                onChange={(e) => setContaIdFilter(e.target.value)}
-                className="w-full h-11 bg-neutral-50 border border-surface-border text-xs font-bold rounded-lg px-3 outline-none focus:border-primary"
-              >
-                <option value="all">Todas as Contas</option>
-                {activeContas.map(c => <option key={c.id} value={c.id}>{c.nome_banco || c.nome}</option>)}
-              </select>
+                onChange={setContaIdFilter}
+                allLabel="Todas as Contas"
+                options={activeContas.map(c => ({ id: c.id, label: c.nome_banco || c.nome }))}
+              />
             </div>
 
             <div className="space-y-2">
               <label className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary flex items-center gap-2">
                 <Layers className="w-4 h-4" /> Centro de Custo
               </label>
-              <select
+              <MultiSelectDropdown
                 value={centroCustoIdFilter}
-                onChange={(e) => setCentroCustoIdFilter(e.target.value)}
-                className="w-full h-11 bg-neutral-50 border border-surface-border text-xs font-bold rounded-lg px-3 outline-none focus:border-primary"
-              >
-                <option value="all">Todos os Centros</option>
-                {centrosCusto.filter((cc: any) => cc.status !== 'excluido').map(cc => <option key={cc.id} value={cc.id}>{cc.nome}</option>)}
-              </select>
+                onChange={setCentroCustoIdFilter}
+                allLabel="Todos os Centros"
+                options={centrosCusto.filter((cc: any) => cc.status !== 'excluido').map(cc => ({ id: cc.id, label: cc.nome }))}
+              />
             </div>
           </div>
         </div>
