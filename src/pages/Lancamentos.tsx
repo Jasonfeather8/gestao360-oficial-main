@@ -989,7 +989,7 @@ export default function Lancamentos({
                               ) : days === 0 ? (
                                 <span className="text-alert-red font-black">Hoje</span>
                               ) : (
-                                <span className="text-neutral-300 font-normal">-</span>
+                                <span className="text-blue-600 font-black">{Math.abs(days)} dia(s)</span>
                               )
                             )}
                           </td>
