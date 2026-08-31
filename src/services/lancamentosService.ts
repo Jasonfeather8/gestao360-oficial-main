@@ -96,10 +96,19 @@ export const lancamentosService = {
 
     let query = supabase
       .from('lancamentos_financeiros')
-      .select('*, entidades_negocio!inner(nome_razao_social)', { count: 'exact' })
-      .order('data_vencimento', { ascending: true })
-      .order('codigo_sequencial', { ascending: true })
-      .order('created_at', { ascending: false });
+      .select('*, entidades_negocio!inner(nome_razao_social)', { count: 'exact' });
+
+    if (filters?.docCode !== undefined) {
+      query = query
+        .order('codigo_sequencial', { ascending: true })
+        .order('numero_parcela', { ascending: true })
+        .order('created_at', { ascending: false });
+    } else {
+      query = query
+        .order('data_vencimento', { ascending: true })
+        .order('codigo_sequencial', { ascending: true })
+        .order('created_at', { ascending: false });
+    }
 
     if (filters) {
       if (filters.docCode === undefined) {
