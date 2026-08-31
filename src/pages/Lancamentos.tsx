@@ -482,6 +482,15 @@ export default function Lancamentos({
     { valorPrevisto: 0, desconto: 0, acrescimo: 0, valorPago: 0, liquido: 0, aPagar: 0, entradas: 0, saidas: 0 }
   );
 
+  const mirrorColumnCount = isOperationalView ? 14 : 10;
+  const hasMeasuredMirrorColumns = columnWidths.length === mirrorColumnCount;
+  const mirrorGridWidth = hasMeasuredMirrorColumns
+    ? `${columnWidths.reduce((total, width) => total + width, 0)}px`
+    : `${Math.max(tableWidth, 1200)}px`;
+  const mirrorGridTemplateColumns = hasMeasuredMirrorColumns
+    ? columnWidths.map(width => `${width}px`).join(' ')
+    : `repeat(${mirrorColumnCount}, minmax(0, 1fr))`;
+
   const formatPrintDate = (dateStr: string | null | undefined) => dateStr ? dateStr.slice(0, 10).split('-').reverse().join('/') : '-';
   const isPartialPayment = (item: LancamentoFinanceiro) => item.status_pagamento === 'pago_parcial' || (item.status_pagamento === 'quitação_pendente' && Boolean((item as any).vinculo_residuo_id));
   const getPrintStatus = (item: LancamentoFinanceiro) => {
@@ -1144,50 +1153,65 @@ export default function Lancamentos({
         <div
           ref={mirrorScrollRef}
           className={
-            isOperationalView && selectedOperationalLancamentos.length > 0
+            selectedPrintLancamentos.length > 0
               ? 'sticky bottom-0 z-[60] overflow-x-auto scrollbar-thin bg-neutral-50 border-y-2 border-neutral-200 shadow-[0_-2px_6px_rgba(0,0,0,0.08)] flex min-h-[52px]'
               : 'sticky bottom-0 z-[60] overflow-x-auto scrollbar-thin bg-neutral-50/90 backdrop-blur-md border-y border-neutral-200 flex h-5'
           }
           style={{ marginBottom: '-1px' }}
         >
-          {isOperationalView && selectedOperationalLancamentos.length > 0 ? (
+          {selectedPrintLancamentos.length > 0 ? (
             <div
               className="grid min-w-[1200px] shrink-0 text-left"
               style={{
-                width: columnWidths.length === 14
-                  ? `${columnWidths.reduce((total, width) => total + width, 0)}px`
-                  : `${Math.max(tableWidth, 1200)}px`,
-                gridTemplateColumns: columnWidths.length === 14
-                  ? columnWidths.map(width => `${width}px`).join(' ')
-                  : 'repeat(14, minmax(0, 1fr))'
+                width: mirrorGridWidth,
+                gridTemplateColumns: mirrorGridTemplateColumns
               }}
             >
-              <div className="py-3 px-4" />
-              <div className="py-3 px-4 font-black uppercase tracking-widest text-neutral-900">TOTAL</div>
-              <div className="py-3 px-4" />
-              <div className="py-3 px-4" />
-              <div className="py-3 px-4" />
-              <div className="py-3 px-4 text-right font-black font-mono text-xs text-neutral-900">
-                {valueFormatter(operationalTotals.valorDocOriginal)}
-              </div>
-              <div className={`py-3 px-4 text-right font-black font-mono text-xs ${typeOverride === 'entrada' ? 'text-bank-truth-green' : 'text-neutral-950'}`}>
-                {valueFormatter(operationalTotals.valorParcOriginal)}
-              </div>
-              <div className="py-3 px-4 text-right font-black font-mono text-xs text-neutral-900">
-                {valueFormatter(operationalTotals.desconto)}
-              </div>
-              <div className="py-3 px-4 text-right font-black font-mono text-xs text-neutral-900">
-                {valueFormatter(operationalTotals.acrescimo)}
-              </div>
-              <div className="py-3 px-4 text-right font-black font-mono text-xs text-neutral-900">
-                {valueFormatter(operationalTotals.valorPago)}
-              </div>
-              <div className={`py-3 px-4 text-right font-black font-mono text-xs ${typeOverride === 'entrada' ? 'text-bank-truth-green' : 'text-neutral-950'}`}>
-                {valueFormatter(operationalTotals.aPagar)}
-              </div>
-              <div className="py-3 px-4" />
-              <div className="py-3 px-3" />
-              <div className="py-3 px-4" />
+              {isOperationalView ? (
+                <>
+                  <div className="py-3 px-4" />
+                  <div className="py-3 px-4 font-black uppercase tracking-widest text-neutral-900">TOTAL</div>
+                  <div className="py-3 px-4" />
+                  <div className="py-3 px-4" />
+                  <div className="py-3 px-4" />
+                  <div className="py-3 px-4 text-right font-black font-mono text-xs text-neutral-900">
+                    {valueFormatter(operationalTotals.valorDocOriginal)}
+                  </div>
+                  <div className={`py-3 px-4 text-right font-black font-mono text-xs ${typeOverride === 'entrada' ? 'text-bank-truth-green' : 'text-neutral-950'}`}>
+                    {valueFormatter(operationalTotals.valorParcOriginal)}
+                  </div>
+                  <div className="py-3 px-4 text-right font-black font-mono text-xs text-neutral-900">
+                    {valueFormatter(operationalTotals.desconto)}
+                  </div>
+                  <div className="py-3 px-4 text-right font-black font-mono text-xs text-neutral-900">
+                    {valueFormatter(operationalTotals.acrescimo)}
+                  </div>
+                  <div className="py-3 px-4 text-right font-black font-mono text-xs text-neutral-900">
+                    {valueFormatter(operationalTotals.valorPago)}
+                  </div>
+                  <div className={`py-3 px-4 text-right font-black font-mono text-xs ${typeOverride === 'entrada' ? 'text-bank-truth-green' : 'text-neutral-950'}`}>
+                    {valueFormatter(operationalTotals.aPagar)}
+                  </div>
+                  <div className="py-3 px-4" />
+                  <div className="py-3 px-3" />
+                  <div className="py-3 px-4" />
+                </>
+              ) : (
+                <>
+                  <div className="py-3 px-4" />
+                  <div className="py-3 px-4 font-black uppercase tracking-widest text-neutral-900">TOTAL</div>
+                  <div className="py-3 px-4" />
+                  <div className="py-3 px-4" />
+                  <div className="py-3 px-4" />
+                  <div className="py-3 px-4" />
+                  <div className="py-3 px-4 text-right font-black font-mono text-xs text-neutral-900">
+                    {valueFormatter(printTotals.liquido)}
+                  </div>
+                  <div className="py-3 px-4" />
+                  <div className="py-3 px-3" />
+                  <div className="py-3 px-4" />
+                </>
+              )}
             </div>
           ) : (
             <div style={{ width: tableWidth, height: 1 }} className="shrink-0" />
