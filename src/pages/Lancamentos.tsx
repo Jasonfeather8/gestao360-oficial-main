@@ -1151,43 +1151,44 @@ export default function Lancamentos({
           style={{ marginBottom: '-1px' }}
         >
           {isOperationalView && selectedOperationalLancamentos.length > 0 ? (
-            <table className="w-full text-left border-collapse min-w-[1200px]" style={{ width: tableWidth }}>
-              <colgroup>
-                {columnWidths.map((width, index) => (
-                  <col key={index} style={{ width }} />
-                ))}
-              </colgroup>
-              <tbody>
-                <tr className="whitespace-nowrap">
-                  <td className="py-3 px-4" />
-                  <td className="py-3 px-4 font-black uppercase tracking-widest text-neutral-900">TOTAL</td>
-                  <td className="py-3 px-4" />
-                  <td className="py-3 px-4" />
-                  <td className="py-3 px-4" />
-                  <td className="py-3 px-4 text-right font-black font-mono text-xs text-neutral-900">
-                    {valueFormatter(operationalTotals.valorDocOriginal)}
-                  </td>
-                  <td className={`py-3 px-4 text-right font-black font-mono text-xs ${typeOverride === 'entrada' ? 'text-bank-truth-green' : 'text-neutral-950'}`}>
-                    {valueFormatter(operationalTotals.valorParcOriginal)}
-                  </td>
-                  <td className="py-3 px-4 text-right font-black font-mono text-xs text-neutral-900">
-                    {valueFormatter(operationalTotals.desconto)}
-                  </td>
-                  <td className="py-3 px-4 text-right font-black font-mono text-xs text-neutral-900">
-                    {valueFormatter(operationalTotals.acrescimo)}
-                  </td>
-                  <td className="py-3 px-4 text-right font-black font-mono text-xs text-neutral-900">
-                    {valueFormatter(operationalTotals.valorPago)}
-                  </td>
-                  <td className={`py-3 px-4 text-right font-black font-mono text-xs ${typeOverride === 'entrada' ? 'text-bank-truth-green' : 'text-neutral-950'}`}>
-                    {valueFormatter(operationalTotals.aPagar)}
-                  </td>
-                  <td className="py-3 px-4" />
-                  <td className="py-3 px-3" />
-                  <td className="py-3 px-4" />
-                </tr>
-              </tbody>
-            </table>
+            <div
+              className="grid min-w-[1200px] shrink-0 text-left"
+              style={{
+                width: columnWidths.length === 14
+                  ? `${columnWidths.reduce((total, width) => total + width, 0)}px`
+                  : `${Math.max(tableWidth, 1200)}px`,
+                gridTemplateColumns: columnWidths.length === 14
+                  ? columnWidths.map(width => `${width}px`).join(' ')
+                  : 'repeat(14, minmax(0, 1fr))'
+              }}
+            >
+              <div className="py-3 px-4" />
+              <div className="py-3 px-4 font-black uppercase tracking-widest text-neutral-900">TOTAL</div>
+              <div className="py-3 px-4" />
+              <div className="py-3 px-4" />
+              <div className="py-3 px-4" />
+              <div className="py-3 px-4 text-right font-black font-mono text-xs text-neutral-900">
+                {valueFormatter(operationalTotals.valorDocOriginal)}
+              </div>
+              <div className={`py-3 px-4 text-right font-black font-mono text-xs ${typeOverride === 'entrada' ? 'text-bank-truth-green' : 'text-neutral-950'}`}>
+                {valueFormatter(operationalTotals.valorParcOriginal)}
+              </div>
+              <div className="py-3 px-4 text-right font-black font-mono text-xs text-neutral-900">
+                {valueFormatter(operationalTotals.desconto)}
+              </div>
+              <div className="py-3 px-4 text-right font-black font-mono text-xs text-neutral-900">
+                {valueFormatter(operationalTotals.acrescimo)}
+              </div>
+              <div className="py-3 px-4 text-right font-black font-mono text-xs text-neutral-900">
+                {valueFormatter(operationalTotals.valorPago)}
+              </div>
+              <div className={`py-3 px-4 text-right font-black font-mono text-xs ${typeOverride === 'entrada' ? 'text-bank-truth-green' : 'text-neutral-950'}`}>
+                {valueFormatter(operationalTotals.aPagar)}
+              </div>
+              <div className="py-3 px-4" />
+              <div className="py-3 px-3" />
+              <div className="py-3 px-4" />
+            </div>
           ) : (
             <div style={{ width: tableWidth, height: 1 }} className="shrink-0" />
           )}
