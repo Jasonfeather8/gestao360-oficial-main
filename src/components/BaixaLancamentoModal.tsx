@@ -67,7 +67,7 @@ export default function BaixaLancamentoModal() {
   } = useUIStore();
 
   const { role } = useAuth();
-  const { data: lancamentos = [], baixaLancamento } = useLancamentos();
+  const { data: lancamentos = [], baixaLancamento, updateLancamento } = useLancamentos();
   const { data: selectedLancamento } = useLancamento(selectedLancamentoIdForModal);
   const { data: rawContas = [] } = useContas();
 
@@ -150,12 +150,12 @@ export default function BaixaLancamentoModal() {
       setCategoriaId(lancamento.categoria_id || '');
       setCentroCustoId(lancamento.centro_custo_id || '');
       // Reset details
-      setDescontoValor('');
-      setDescontoTipo('valor');
-      setMotivoDescontoId('');
-      setAcrescimoValor('');
-      setAcrescimoTipo('valor');
-      setMotivoAcrescimoId('');
+      setDescontoValor(formatBRL(lancamento.desconto_valor || 0));
+      setDescontoTipo(lancamento.desconto_tipo === 'porcentagem' ? 'porcentagem' : 'valor');
+      setMotivoDescontoId(lancamento.motivo_desconto_id || '');
+      setAcrescimoValor(formatBRL(lancamento.acrescimo_valor || 0));
+      setAcrescimoTipo(lancamento.acrescimo_tipo === 'porcentagem' ? 'porcentagem' : 'valor');
+      setMotivoAcrescimoId(lancamento.motivo_acrescimo_id || '');
       setMotivoAVRId('');
       setObservacao('');
       setTaxaBancaria('');
@@ -289,6 +289,8 @@ export default function BaixaLancamentoModal() {
                   (!isAcrescimoReasonRequired || isAcrescimoReasonSelected) &&
                   (hasAnexo || dispensarComprovante) &&
                   !isOverpaid && (isBpi || valorDigitado > 0) && !saldoInsuficienteBaixa;
+  const canSaveRegistro = (!isDescontoReasonRequired || isDescontoReasonSelected) &&
+                          (!(calculatedAcrescimo + numericTaxa > 0) || isAcrescimoReasonSelected);
 
   const gerarParcelasAVR = () => {
     const total = Math.max(1, Math.min(120, parseInt(quantidadeParcelasAVR) || 1));
@@ -340,6 +342,35 @@ export default function BaixaLancamentoModal() {
       if (centroCustoId === bpiCC?.id) {
         setCentroCustoId(lancamento.centro_custo_id || '');
       }
+    }
+  };
+
+  const handleSaveRegistro = async () => {
+    if (!canSaveRegistro) return;
+
+    const acrescimoRegistroTipo = numericTaxa > 0 ? 'valor' : acrescimoTipo;
+    const acrescimoRegistroValor = numericTaxa > 0
+      ? calculatedAcrescimo + numericTaxa
+      : numericAcrescimo;
+
+    setLoading(true);
+    try {
+      await updateLancamento({
+        id: lancamento.id,
+        data: {
+          desconto_valor: numericDesconto,
+          desconto_tipo: descontoTipo,
+          motivo_desconto_id: motivoDescontoId || null,
+          acrescimo_valor: acrescimoRegistroValor,
+          acrescimo_tipo: acrescimoRegistroTipo,
+          motivo_acrescimo_id: motivoAcrescimoId || null
+        }
+      });
+      handleClose();
+    } catch (err: any) {
+      alert('Erro ao salvar registro: ' + err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -1151,6 +1182,20 @@ export default function BaixaLancamentoModal() {
                 Cancelar
               </button>
               <button
+                type="button"
+                onClick={handleSaveRegistro}
+                disabled={loading || !canSaveRegistro}
+                className={`px-6 py-3 text-[10px] font-black uppercase tracking-[0.2em] rounded-xl border-2 transition-all active:scale-[0.98] flex items-center gap-2 ${
+                  canSaveRegistro
+                    ? 'border-neutral-900 text-neutral-900 hover:bg-neutral-900 hover:text-white cursor-pointer'
+                    : 'border-neutral-200 text-neutral-300 cursor-not-allowed opacity-50'
+                }`}
+              >
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                Salvar Registro
+              </button>
+              <button
+                type="submit"
                 onClick={handleSubmit}
                 disabled={loading || !canSave}
                 className={`px-10 py-3 text-white text-[10px] font-black uppercase tracking-[0.2em] rounded-xl shadow-lg transition-all active:scale-[0.98] flex items-center gap-2 ${
