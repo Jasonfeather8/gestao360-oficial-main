@@ -697,7 +697,7 @@ export const lancamentosService = {
 
    const updatePayload: any = {
      status_pagamento: isPartial && !isBPI ? (isMaster ? 'pago_parcial' : 'quitação_pendente') : finalPaymentStatus,
-     ...(isBaixaFinanceira ? { status_aprovacao: isMaster ? 'confirmado_master' : 'digital' } : {}),
+     ...(isBaixaFinanceira ? { status_aprovacao: 'digital' } : {}),
      data_pagamento: dataPagamentoVal,
      hora_pagamento: isBPI ? null : horaPagamentoVal,
      conta_bancaria_id: contaBancariaVal,
