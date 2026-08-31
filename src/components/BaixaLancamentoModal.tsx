@@ -58,6 +58,15 @@ function parseMoney(value: string | number | undefined | null): number {
   return parseFloat(cleanStr) || 0;
 }
 
+function calculateAdjustmentAmount(
+  value: string | number | undefined | null,
+  type: string | undefined,
+  base: number
+): number {
+  const numericValue = parseMoney(value);
+  return type === 'porcentagem' ? (base * numericValue) / 100 : numericValue;
+}
+
 export default function BaixaLancamentoModal() {
   const { 
     isBaixaLancamentoOpen, 
@@ -136,7 +145,23 @@ export default function BaixaLancamentoModal() {
 
   useEffect(() => {
     if (lancamento) {
-      setValorPago(formatBRL(lancamento.valor_previsto));
+      const persistedDesconto = calculateAdjustmentAmount(
+        lancamento.desconto_valor,
+        lancamento.desconto_tipo,
+        lancamento.valor_previsto
+      );
+      const persistedAcrescimo = calculateAdjustmentAmount(
+        lancamento.acrescimo_valor,
+        lancamento.acrescimo_tipo,
+        lancamento.valor_previsto
+      );
+      const persistedSubtotal = Math.max(0, lancamento.valor_previsto - persistedDesconto + persistedAcrescimo);
+      const isOpen = lancamento.status_pagamento === 'aberto';
+      const initialValorPago = isOpen
+        ? persistedSubtotal
+        : (lancamento.valor_recebido ?? lancamento.valor_previsto);
+
+      setValorPago(formatBRL(initialValorPago));
       setQuantidadeParcelasAVR('1');
       setPeriodicidadeAVR('mensal');
       setDiasPersonalizadosAVR('30');
@@ -272,12 +297,20 @@ export default function BaixaLancamentoModal() {
   const isAcrescimoReasonSelected = !!motivoAcrescimoId;
   const isAVRReasonSelected = !!motivoAVRId;
 
+  const persistedDescontoTipo = lancamento.desconto_tipo === 'porcentagem' ? 'porcentagem' : 'valor';
+  const persistedAcrescimoTipo = lancamento.acrescimo_tipo === 'porcentagem' ? 'porcentagem' : 'valor';
+  const hasChangedAdjustment =
+    descontoTipo !== persistedDescontoTipo ||
+    Math.abs(numericDesconto - parseMoney(lancamento.desconto_valor)) > 0.005 ||
+    acrescimoTipo !== persistedAcrescimoTipo ||
+    Math.abs(numericAcrescimo - parseMoney(lancamento.acrescimo_valor)) > 0.005;
+
   // Logic for mandatory observation: BPI or manual divergence
   // Note: AVR now uses a dropdown instead of free text observation
-  const hasFinancialDivergence = calculatedDesconto > 0 || calculatedAcrescimo > 0 || numericTaxa > 0 || isPartial;
+  const hasFinancialDivergence = hasChangedAdjustment || numericTaxa > 0 || isPartial;
   const isObsRequired = isBpi || hasFinancialDivergence;
   const isObsFilled = observacao.trim().length > 0;
-  
+
   // Saldo Insuficiente validation (Item 1)
   const selectedContaSaldo = contas.find((c: any) => c.id === contaId)?.saldo_real || 0;
   const isSaida = lancamento?.tipo === 'saida';
