@@ -172,7 +172,7 @@ export const lancamentosService = {
           if (status === 'atrasadas') {
             query = query
               .lt('data_vencimento', today)
-              .in('status_pagamento', ['aberto', 'pago_parcial', 'quitação_pendente']);
+              .in('status_pagamento', ['aberto', 'pago_parcial']);
           } else {
             query = query
               .eq('status_pagamento', 'aberto')
@@ -181,7 +181,7 @@ export const lancamentosService = {
         } else {
           orGroups.push(statusPagamentoValues.map(status => {
             if (status === 'atrasadas') {
-              return `and(data_vencimento.lt.${today},status_pagamento.in.(aberto,pago_parcial,quitação_pendente))`;
+              return `and(data_vencimento.lt.${today},status_pagamento.in.(aberto,pago_parcial))`;
             }
             if (status === 'aberto') {
               return `and(status_pagamento.eq.aberto,data_vencimento.gte.${today})`;
