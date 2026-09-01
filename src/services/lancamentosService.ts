@@ -471,6 +471,7 @@ export const lancamentosService = {
 
     const isBPI = data.tipo_baixa === 'bpi';
     const isAVR = data.tipo_baixa === 'avr';
+    const isBaixaFinanceira = !isBPI && !isAVR;
     const valorPagoEfetivo = (isBPI || isAVR) ? (data.valor_pago > 0 ? data.valor_pago : (isBPI ? 0 : current.valor_previsto)) : (data.valor_pago > 0 ? data.valor_pago : current.valor_previsto);
     const valorTotalAVR = data.parcelas?.length
       ? data.parcelas.reduce((total, parcela) => total + (Number(parcela.valor.replace(/\./g, '').replace(',', '.')) || 0), 0)
@@ -482,10 +483,13 @@ export const lancamentosService = {
     const descontoAplicado = data.valor_desconto || current.desconto_valor || 0;
     const acrescimoAplicado = data.valor_acrescimo || current.acrescimo_valor || 0;
     const subtotal = Math.max(0, current.valor_previsto - descontoAplicado + acrescimoAplicado);
-    if (!isBPI && !isAVR && (data.valor_pago < 0 || data.valor_pago > subtotal + 0.005)) {
+    const valorRecebidoAnterior = Number(current.valor_recebido) || 0;
+    const saldoDisponivel = Math.max(0, subtotal - valorRecebidoAnterior);
+    const totalValorRecebido = valorRecebidoAnterior + valorPagoEfetivo;
+    if (isBaixaFinanceira && (data.valor_pago < 0 || data.valor_pago > saldoDisponivel + 0.005)) {
       throw new Error('O valor pago não pode ser maior que o saldo disponível do título.');
     }
-    const isPartial = valorPagoEfetivo < subtotal - 0.005;
+    const isPartial = isBaixaFinanceira && totalValorRecebido < subtotal - 0.005;
     const dataPagamentoVal = data.data_pagamento || new Date().toISOString().split('T')[0];
     const horaPagamentoVal = new Date().toTimeString().slice(0, 8);
    const contaBancariaVal = data.conta_bancaria_id || current.conta_bancaria_id;
@@ -502,7 +506,6 @@ export const lancamentosService = {
 
    // Define final payment status based on role
    const finalPaymentStatus = isBPI ? 'bpi' : (isMaster ? 'pago' : 'quitação_pendente');
-   const isBaixaFinanceira = !isBPI && !isAVR;
 
    // AVR logic: Skip financial movement and only update values
    if (isAVR) {
@@ -712,7 +715,7 @@ export const lancamentosService = {
      observacoes: isPartial && !isBPI
        ? observacaoOriginal + `\n[Pagamento parcial de R$ ${valorPagoEfetivo} em ${dataPagamentoVal.split('-').reverse().join('/')}]`
        : observacaoFinal,
-     valor_recebido: isBPI ? 0 : valorPagoEfetivo
+     valor_recebido: isBPI ? 0 : totalValorRecebido
    };
 
    if (isAVR) {
