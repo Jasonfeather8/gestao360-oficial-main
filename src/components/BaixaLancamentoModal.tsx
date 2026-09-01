@@ -58,15 +58,6 @@ function parseMoney(value: string | number | undefined | null): number {
   return parseFloat(cleanStr) || 0;
 }
 
-function calculateAdjustmentAmount(
-  value: string | number | undefined | null,
-  type: string | undefined,
-  base: number
-): number {
-  const numericValue = parseMoney(value);
-  return type === 'porcentagem' ? (base * numericValue) / 100 : numericValue;
-}
-
 export default function BaixaLancamentoModal() {
   const { 
     isBaixaLancamentoOpen, 
@@ -145,21 +136,7 @@ export default function BaixaLancamentoModal() {
 
   useEffect(() => {
     if (lancamento) {
-      const persistedDesconto = calculateAdjustmentAmount(
-        lancamento.desconto_valor,
-        lancamento.desconto_tipo,
-        lancamento.valor_previsto
-      );
-      const persistedAcrescimo = calculateAdjustmentAmount(
-        lancamento.acrescimo_valor,
-        lancamento.acrescimo_tipo,
-        lancamento.valor_previsto
-      );
-      const persistedSubtotal = Math.max(0, lancamento.valor_previsto - persistedDesconto + persistedAcrescimo);
-      const isOpen = lancamento.status_pagamento === 'aberto';
-      const initialValorPago = isOpen
-        ? persistedSubtotal
-        : (lancamento.valor_recebido ?? lancamento.valor_previsto);
+      const initialValorPago = Math.max(0, lancamento.valor_previsto - (Number(lancamento.desconto_valor) || 0) + (Number(lancamento.acrescimo_valor) || 0) - (Number(lancamento.valor_recebido) || 0));
 
       setValorPago(formatBRL(initialValorPago));
       setQuantidadeParcelasAVR('1');
@@ -369,7 +346,7 @@ export default function BaixaLancamentoModal() {
       setCentroCustoId(lancamento.centro_custo_id || '');
     } else {
       // Para financeira (Quitar), restaura o valor e também o centro de custo caso estivesse no BPI
-      setValorPago(formatBRL(lancamento.valor_previsto));
+      setValorPago(formatBRL(Math.max(0, lancamento.valor_previsto - (Number(lancamento.desconto_valor) || 0) + (Number(lancamento.acrescimo_valor) || 0) - (Number(lancamento.valor_recebido) || 0))));
       
       const bpiCC = rawCCs.find(cc => cc.nome === 'BPI');
       if (centroCustoId === bpiCC?.id) {
