@@ -446,13 +446,18 @@ export default function Lancamentos({
   const isOperationalView = !!typeOverride;
   const selectedPrintLancamentos = filteredLancamentos.filter(item => selectedLancamentoIdsForBatch.includes(item.id));
   const selectedOperationalLancamentos = isOperationalView ? selectedPrintLancamentos : [];
+  const operationalDocumentCodes = new Set<number>();
   const operationalTotals = selectedOperationalLancamentos.reduce(
     (totals, item) => {
       const desconto = item.desconto_valor || 0;
       const acrescimo = item.acrescimo_valor || 0;
       const valorPago = item.valor_recebido || 0;
+      const hasDocumentCode = item.codigo_sequencial != null;
 
-      totals.valorDocOriginal += item.valor_original || item.valor_previsto;
+      if (!hasDocumentCode || !operationalDocumentCodes.has(item.codigo_sequencial)) {
+        totals.valorDocOriginal += item.valor_original || item.valor_previsto;
+        if (hasDocumentCode) operationalDocumentCodes.add(item.codigo_sequencial);
+      }
       totals.valorParcOriginal += item.valor_previsto;
       totals.desconto += desconto;
       totals.acrescimo += acrescimo;
