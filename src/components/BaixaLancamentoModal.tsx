@@ -58,6 +58,11 @@ function parseMoney(value: string | number | undefined | null): number {
   return parseFloat(cleanStr) || 0;
 }
 
+function calculateAdjustmentAmount(value: string | number | undefined | null, type: 'valor' | 'porcentagem', base: number): number {
+  const numericValue = parseMoney(value);
+  return type === 'porcentagem' ? (base * numericValue) / 100 : numericValue;
+}
+
 export default function BaixaLancamentoModal() {
   const { 
     isBaixaLancamentoOpen, 
@@ -136,7 +141,12 @@ export default function BaixaLancamentoModal() {
 
   useEffect(() => {
     if (lancamento) {
-      const initialValorPago = Math.max(0, lancamento.valor_previsto - (Number(lancamento.desconto_valor) || 0) + (Number(lancamento.acrescimo_valor) || 0) - (Number(lancamento.valor_recebido) || 0));
+      const persistedDescontoTipo = lancamento.desconto_tipo === 'porcentagem' ? 'porcentagem' : 'valor';
+      const persistedAcrescimoTipo = lancamento.acrescimo_tipo === 'porcentagem' ? 'porcentagem' : 'valor';
+      const initialValorPago = Math.max(0, lancamento.valor_previsto
+        - calculateAdjustmentAmount(lancamento.desconto_valor, persistedDescontoTipo, lancamento.valor_previsto)
+        + calculateAdjustmentAmount(lancamento.acrescimo_valor, persistedAcrescimoTipo, lancamento.valor_previsto)
+        - (Number(lancamento.valor_recebido) || 0));
 
       setValorPago(formatBRL(initialValorPago));
       setQuantidadeParcelasAVR('1');
@@ -283,10 +293,11 @@ export default function BaixaLancamentoModal() {
     Math.abs(numericDesconto - parseMoney(lancamento.desconto_valor)) > 0.005 ||
     acrescimoTipo !== persistedAcrescimoTipo ||
     Math.abs(numericAcrescimo - parseMoney(lancamento.acrescimo_valor)) > 0.005;
+  const hasPendingAdjustmentForBaixa = !isAVR && !isBpi && hasChangedAdjustment;
 
   // Logic for mandatory observation: BPI or manual divergence
   // Note: AVR now uses a dropdown instead of free text observation
-  const hasFinancialDivergence = hasChangedAdjustment || numericTaxa > 0 || isPartial;
+  const hasFinancialDivergence = hasPendingAdjustmentForBaixa || numericTaxa > 0 || isPartial;
   const isObsRequired = isBpi || hasFinancialDivergence;
   const isObsFilled = observacao.trim().length > 0;
 
@@ -300,7 +311,8 @@ export default function BaixaLancamentoModal() {
                   (!isDescontoReasonRequired || isDescontoReasonSelected) &&
                   (!isAcrescimoReasonRequired || isAcrescimoReasonSelected) &&
                   (hasAnexo || dispensarComprovante) &&
-                  !isOverpaid && (isBpi || valorDigitado > 0) && !saldoInsuficienteBaixa;
+                  !isOverpaid && (isBpi || valorDigitado > 0) && !saldoInsuficienteBaixa &&
+                  !hasPendingAdjustmentForBaixa;
   const canSaveRegistro = (!isDescontoReasonRequired || isDescontoReasonSelected) &&
                           (!(calculatedAcrescimo + numericTaxa > 0) || isAcrescimoReasonSelected);
 
@@ -348,7 +360,10 @@ export default function BaixaLancamentoModal() {
       setCentroCustoId(lancamento.centro_custo_id || '');
     } else {
       // Para financeira (Quitar), restaura o valor e também o centro de custo caso estivesse no BPI
-      setValorPago(formatBRL(Math.max(0, lancamento.valor_previsto - (Number(lancamento.desconto_valor) || 0) + (Number(lancamento.acrescimo_valor) || 0) - (Number(lancamento.valor_recebido) || 0))));
+      setValorPago(formatBRL(Math.max(0, lancamento.valor_previsto
+        - calculateAdjustmentAmount(lancamento.desconto_valor, persistedDescontoTipo, lancamento.valor_previsto)
+        + calculateAdjustmentAmount(lancamento.acrescimo_valor, persistedAcrescimoTipo, lancamento.valor_previsto)
+        - (Number(lancamento.valor_recebido) || 0))));
       
       const bpiCC = rawCCs.find(cc => cc.nome === 'BPI');
       if (centroCustoId === bpiCC?.id) {
@@ -360,11 +375,6 @@ export default function BaixaLancamentoModal() {
   const handleSaveRegistro = async () => {
     if (!canSaveRegistro) return;
 
-    const acrescimoRegistroTipo = numericTaxa > 0 ? 'valor' : acrescimoTipo;
-    const acrescimoRegistroValor = numericTaxa > 0
-      ? calculatedAcrescimo + numericTaxa
-      : numericAcrescimo;
-
     setLoading(true);
     try {
       await updateLancamento({
@@ -373,8 +383,8 @@ export default function BaixaLancamentoModal() {
           desconto_valor: numericDesconto,
           desconto_tipo: descontoTipo,
           motivo_desconto_id: motivoDescontoId || null,
-          acrescimo_valor: acrescimoRegistroValor,
-          acrescimo_tipo: acrescimoRegistroTipo,
+          acrescimo_valor: numericAcrescimo,
+          acrescimo_tipo: acrescimoTipo,
           motivo_acrescimo_id: motivoAcrescimoId || null
         }
       });
@@ -388,7 +398,7 @@ export default function BaixaLancamentoModal() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canSave) return;
+    if (hasPendingAdjustmentForBaixa || !canSave) return;
 
     // Se for AVR e recorrente, precisamos de confirmação antes de prosseguir
     if (tipoBaixa === 'avr' && lancamento.recorrencia_id && !isAVRConfirmationOpen) {
@@ -432,8 +442,7 @@ export default function BaixaLancamentoModal() {
             periodicidade_customizada_dias: periodicidadeAVR === 'personalizado' ? parseInt(diasPersonalizadosAVR) || 30 : undefined,
             com_entrada: comEntradaAVR
           } : undefined,
-          valor_desconto: calculatedDesconto,
-          valor_acrescimo: calculatedAcrescimo + numericTaxa,
+          taxa_bancaria: numericTaxa,
           motivo_desconto_id: motivoDescontoId || undefined,
           motivo_acrescimo_id: motivoAcrescimoId || undefined,
           motivo_ajuste: isAVR ? avrReasonName : observacao,
@@ -1206,6 +1215,9 @@ export default function BaixaLancamentoModal() {
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                 Salvar Registro
               </button>
+              {hasPendingAdjustmentForBaixa && (
+                <span className="self-center text-[9px] font-bold text-alert-red uppercase">Salve o registro antes de baixar.</span>
+              )}
               <button
                 type="submit"
                 onClick={handleSubmit}

@@ -42,6 +42,17 @@ const combineOrGroups = (groups: string[][]): string => {
     .join(',')})`;
 };
 
+const normalizeAdjustmentType = (type: unknown): 'valor' | 'porcentagem' =>
+  type === 'porcentagem' ? 'porcentagem' : 'valor';
+
+const formatAdjustmentValue = (value: unknown, type: unknown, base: number): string => {
+  const numericValue = Number(value) || 0;
+  const formattedValue = numericValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (normalizeAdjustmentType(type) === 'porcentagem') return `${formattedValue}%`;
+  const percentage = base > 0 ? (numericValue / base) * 100 : 0;
+  return `R$ ${formattedValue} (${percentage.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%)`;
+};
+
 export const lancamentosService = {
   getAll: async (filters?: LancamentoFilters, signal?: AbortSignal): Promise<{ data: LancamentoFinanceiro[], count: number }> => {
     let recurrenceIds: string[] = [];
@@ -377,7 +388,7 @@ export const lancamentosService = {
 
     const { data: current } = await supabase
       .from('lancamentos_financeiros')
-      .select('recorrencia_id, valor_previsto, desconto_valor, desconto_tipo, acrescimo_valor, acrescimo_tipo, valor_recebido, status_pagamento, tipo_baixa')
+      .select('recorrencia_id, valor_previsto, desconto_valor, desconto_tipo, acrescimo_valor, acrescimo_tipo, valor_recebido, status_pagamento, tipo_baixa, observacoes')
       .eq('id', id)
       .single();
 
@@ -391,6 +402,37 @@ export const lancamentosService = {
     const acrescimo = acrescimoTipo === 'porcentagem' ? (valorPrevisto * acrescimoBase) / 100 : acrescimoBase;
     const saldoDisponivel = Math.max(0, valorPrevisto - desconto + acrescimo);
     const valorRecebido = Number(safeData.valor_recebido ?? current?.valor_recebido) || 0;
+    const persistedDescontoTipo = normalizeAdjustmentType(current?.desconto_tipo);
+    const persistedAcrescimoTipo = normalizeAdjustmentType(current?.acrescimo_tipo);
+    const nextDescontoTipo = normalizeAdjustmentType(safeData.desconto_tipo ?? current?.desconto_tipo);
+    const nextAcrescimoTipo = normalizeAdjustmentType(safeData.acrescimo_tipo ?? current?.acrescimo_tipo);
+    const nextDescontoValor = safeData.desconto_valor ?? current?.desconto_valor;
+    const nextAcrescimoValor = safeData.acrescimo_valor ?? current?.acrescimo_valor;
+    const descontoProvided = safeData.desconto_valor !== undefined || safeData.desconto_tipo !== undefined;
+    const acrescimoProvided = safeData.acrescimo_valor !== undefined || safeData.acrescimo_tipo !== undefined;
+    const descontoChanged = descontoProvided && (
+      Math.abs((Number(nextDescontoValor) || 0) - (Number(current?.desconto_valor) || 0)) > 0.005 ||
+      nextDescontoTipo !== persistedDescontoTipo
+    );
+    const acrescimoChanged = acrescimoProvided && (
+      Math.abs((Number(nextAcrescimoValor) || 0) - (Number(current?.acrescimo_valor) || 0)) > 0.005 ||
+      nextAcrescimoTipo !== persistedAcrescimoTipo
+    );
+    if (descontoChanged || acrescimoChanged) {
+      const historyLines = [
+        descontoChanged
+          ? `Desconto anterior: ${formatAdjustmentValue(current?.desconto_valor, persistedDescontoTipo, valorPrevisto)} | atual: ${formatAdjustmentValue(nextDescontoValor, nextDescontoTipo, valorPrevisto)}`
+          : null,
+        acrescimoChanged
+          ? `Acréscimo anterior: ${formatAdjustmentValue(current?.acrescimo_valor, persistedAcrescimoTipo, valorPrevisto)} | atual: ${formatAdjustmentValue(nextAcrescimoValor, nextAcrescimoTipo, valorPrevisto)}`
+          : null
+      ].filter(Boolean).join('\n');
+      const observacoesBase = safeData.observacoes ?? current?.observacoes ?? '';
+      const observacoesPreservadas = current?.observacoes && !observacoesBase.includes(current.observacoes)
+        ? `${current.observacoes}\n${observacoesBase}`
+        : observacoesBase;
+      safeData.observacoes = `${observacoesPreservadas}${observacoesPreservadas ? '\n' : ''}${historyLines}`;
+    }
     const hasReceivedPayment = safeData.ja_recebido === true || safeData.status_pagamento === 'pago' || safeData.status_pagamento === 'pago_parcial' || safeData.valor_recebido !== undefined || current?.status_pagamento === 'pago' || current?.status_pagamento === 'pago_parcial' || valorRecebido > 0;
 
     if (!isAVRUpdate && hasReceivedPayment && (valorRecebido < 0 || valorRecebido > saldoDisponivel + 0.005)) {
@@ -451,6 +493,7 @@ export const lancamentosService = {
    tipo_baixa?: 'financeira' | 'bpi' | 'avr',
    valor_desconto?: number,
    valor_acrescimo?: number,
+   taxa_bancaria?: number,
    motivo_ajuste?: string,
    motivo_desconto_id?: string,
    motivo_acrescimo_id?: string,
@@ -480,9 +523,18 @@ export const lancamentosService = {
     const valorParcelaSelecionadaAVR = parcelaSelecionadaAVR
       ? Number(parcelaSelecionadaAVR.valor.replace(/\./g, '').replace(',', '.')) || 0
       : valorTotalAVR;
-    const descontoAplicado = data.valor_desconto || current.desconto_valor || 0;
-    const acrescimoAplicado = data.valor_acrescimo || current.acrescimo_valor || 0;
-    const subtotal = Math.max(0, current.valor_previsto - descontoAplicado + acrescimoAplicado);
+    const descontoBase = Number(current.desconto_valor) || 0;
+    const acrescimoBase = Number(current.acrescimo_valor) || 0;
+    const descontoTipo = normalizeAdjustmentType(current.desconto_tipo);
+    const acrescimoTipo = normalizeAdjustmentType(current.acrescimo_tipo);
+    const descontoAplicado = descontoTipo === 'porcentagem'
+      ? (current.valor_previsto * descontoBase) / 100
+      : descontoBase;
+    const acrescimoAplicado = acrescimoTipo === 'porcentagem'
+      ? (current.valor_previsto * acrescimoBase) / 100
+      : acrescimoBase;
+    const taxaAplicada = Number(data.taxa_bancaria) || 0;
+    const subtotal = Math.max(0, current.valor_previsto - descontoAplicado + acrescimoAplicado + taxaAplicada);
     const valorRecebidoAnterior = Number(current.valor_recebido) || 0;
     const saldoDisponivel = Math.max(0, subtotal - valorRecebidoAnterior);
     const totalValorRecebido = valorRecebidoAnterior + valorPagoEfetivo;
@@ -707,8 +759,10 @@ export const lancamentosService = {
      centro_custo_id: data.centro_custo_id || current.centro_custo_id,
      categoria_id: data.categoria_id || current.categoria_id,
      tipo_baixa: data.tipo_baixa || 'financeira',
-     desconto_valor: descontoAplicado,
-     acrescimo_valor: acrescimoAplicado,
+     desconto_valor: descontoBase,
+     desconto_tipo: descontoTipo,
+     acrescimo_valor: acrescimoBase,
+     acrescimo_tipo: acrescimoTipo,
      motivo_ajuste: data.motivo_ajuste || null,
      motivo_desconto_id: data.motivo_desconto_id || current.motivo_desconto_id || null,
      motivo_acrescimo_id: data.motivo_acrescimo_id || current.motivo_acrescimo_id || null,

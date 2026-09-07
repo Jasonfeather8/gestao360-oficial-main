@@ -491,6 +491,14 @@ export default function NovoLancamentoDrawer() {
   const valorRecebido = parseMoney(lancamentoFormDraft.valor_recebido);
   const recebimentoAcimaSaldo = lancamentoFormDraft.ja_recebido && valorRecebido > saldoRecebimento + 0.005;
   const pagamentoParcial = lancamentoFormDraft.ja_recebido && valorRecebido > 0 && valorRecebido < saldoRecebimento - 0.005;
+  const persistedDescontoTipo = editingItem?.desconto_tipo === 'porcentagem' ? 'porcentagem' : 'valor';
+  const persistedAcrescimoTipo = editingItem?.acrescimo_tipo === 'porcentagem' ? 'porcentagem' : 'valor';
+  const hasPendingAdjustmentChanges = Boolean(editingItem) && (
+    lancamentoFormDraft.desconto_tipo !== persistedDescontoTipo ||
+    Math.abs(parseMoney(lancamentoFormDraft.desconto_valor) - (Number(editingItem?.desconto_valor) || 0)) > 0.005 ||
+    lancamentoFormDraft.acrescimo_tipo !== persistedAcrescimoTipo ||
+    Math.abs(parseMoney(lancamentoFormDraft.acrescimo_valor) - (Number(editingItem?.acrescimo_valor) || 0)) > 0.005
+  );
 
   const isApproved = editingItem?.status_aprovacao === 'confirmado_master';
   const isMaster = role === 'master';
@@ -595,6 +603,10 @@ export default function NovoLancamentoDrawer() {
           : 'Não foi possível carregar o lançamento selecionado.',
         'info'
       );
+      return;
+    }
+    if (editingItem && lancamentoFormDraft.ja_recebido && hasPendingAdjustmentChanges) {
+      showToast('Salve o registro antes de marcar como recebido/pago.', 'warning');
       return;
     }
     if (isAVREdit) {
@@ -1573,9 +1585,12 @@ export default function NovoLancamentoDrawer() {
                   Cancelar
                 </button>
                 
+                {editingItem && lancamentoFormDraft.ja_recebido && hasPendingAdjustmentChanges && (
+                  <span className="self-center text-[9px] font-bold text-alert-red uppercase">Salve os ajustes antes de receber/pagar.</span>
+                )}
                 <button
                   type="submit"
-                  disabled={isSubmitting || isCreating || isUpdating || saldoInsuficiente}
+                  disabled={isSubmitting || isCreating || isUpdating || saldoInsuficiente || (Boolean(editingItem) && lancamentoFormDraft.ja_recebido && hasPendingAdjustmentChanges)}
                   className={`px-8 py-3 font-black text-[10px] rounded-xl shadow-md transition-all active:scale-[0.98] flex items-center gap-2 uppercase tracking-widest ${
                     saldoInsuficiente
                       ? 'bg-neutral-300 text-neutral-400 cursor-not-allowed'
