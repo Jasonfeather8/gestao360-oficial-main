@@ -67,8 +67,9 @@ const SearchableSelect = ({
   required,
   onAddClick,
   onQuickAddClick,
-  quickAddLabel
-}: { 
+  quickAddLabel,
+  disabled
+}: {
   label: string;
   value: string;
   onChange: (val: string) => void;
@@ -78,6 +79,7 @@ const SearchableSelect = ({
   onAddClick?: () => void;
   onQuickAddClick?: () => void;
   quickAddLabel?: string;
+  disabled?: boolean;
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -128,6 +130,7 @@ const SearchableSelect = ({
 
       <button
         type="button"
+        disabled={disabled}
         onClick={() => setIsOpen(!isOpen)}
         className={`w-full h-12 bg-white border-2 border-neutral-200 rounded-xl px-4 flex items-center justify-between text-sm font-bold transition-all shadow-xs ${isOpen ? 'border-primary' : ''}`}
       >
@@ -237,6 +240,7 @@ export default function NovoLancamentoDrawer() {
   const [avrParcels, setAvrParcels] = useState<Array<{ id?: string; numero: number; data: string; valor: string; status: string }>>([]);
   const [avrPropagation, setAvrPropagation] = useState<'none' | 'open'>('none');
   const [isAVRConfirmationOpen, setIsAVRConfirmationOpen] = useState(false);
+  const [avrHasReceived, setAvrHasReceived] = useState(false);
 
   // Filter out soft-deleted items for new selection
   const centros = useMemo(() => rawCentros.filter((c: any) => c.status !== 'excluido'), [rawCentros]);
@@ -323,6 +327,7 @@ export default function NovoLancamentoDrawer() {
 
   useEffect(() => {
     if (!editingItem) {
+      setAvrHasReceived(false);
       if (!isEditing) {
         setIsAVREdit(false);
         setAvrReasonId('');
@@ -332,6 +337,7 @@ export default function NovoLancamentoDrawer() {
     }
 
     setIsAVREdit(true);
+    setAvrHasReceived(Number(editingItem.valor_recebido) > 0);
     const existingAvrReason = (categoriasAjuste as any[]).find(reason => reason.nome === (editingItem as any).motivo_ajuste);
     setAvrReasonId((editingItem as any).motivo_ajuste_id || existingAvrReason?.id || '');
     setAvrQuantity(String(editingItem.quantidade_total_parcelas || 1));
@@ -344,13 +350,16 @@ export default function NovoLancamentoDrawer() {
       if (!editingItem.recorrencia_id) return;
       const [{ data: recurrence }, { data: parcels }] = await Promise.all([
         supabase.from('recorrencias').select('quantidade_total_parcelas, periodicidade, periodicidade_customizada_dias').eq('id', editingItem.recorrencia_id).maybeSingle(),
-        supabase.from('lancamentos_financeiros').select('id, numero_parcela, data_vencimento, valor_previsto, status_pagamento').eq('recorrencia_id', editingItem.recorrencia_id).order('numero_parcela', { ascending: true })
+        supabase.from('lancamentos_financeiros').select('id, numero_parcela, data_vencimento, valor_previsto, valor_recebido, status_pagamento').eq('recorrencia_id', editingItem.recorrencia_id).order('numero_parcela', { ascending: true })
       ]);
       if (recurrence) {
         setAvrQuantity(String(recurrence.quantidade_total_parcelas || 1));
         setAvrPeriodicity(recurrence.periodicidade || 'mensal');
         setAvrCustomDays(String(recurrence.periodicidade_customizada_dias || 30));
       }
+      setAvrHasReceived(
+        Number(editingItem.valor_recebido) > 0 || (parcels || []).some((parcel: any) => Number(parcel.valor_recebido) > 0)
+      );
       const loadedParcels = (parcels || []).map((parcel: any) => ({
         id: parcel.id,
         numero: parcel.numero_parcela || 1,
@@ -502,7 +511,8 @@ export default function NovoLancamentoDrawer() {
 
   const isApproved = editingItem?.status_aprovacao === 'confirmado_master';
   const isMaster = role === 'master';
-  const shouldLockFields = isApproved && !isMaster;
+  const shouldLockFields = !isAVREdit && isApproved && !isMaster;
+  const shouldLockEntity = isAVREdit ? avrHasReceived : shouldLockFields;
 
   const handleClose = () => {
 
@@ -942,7 +952,7 @@ export default function NovoLancamentoDrawer() {
                 </div>
 
                 <div className="flex flex-col gap-2">
-                  <div className={shouldLockFields ? 'opacity-50 pointer-events-none' : ''}>
+                  <div className={shouldLockEntity ? 'opacity-50 pointer-events-none' : ''}>
                     <SearchableSelect
                       label="Entidade / Destinatário"
                       placeholder="Selecione um cliente / fornecedor"
@@ -956,7 +966,8 @@ export default function NovoLancamentoDrawer() {
                           sublabel: e.tipo.toUpperCase()
                         }))}
                       required
-                      onAddClick={shouldLockFields ? undefined : () => setModalOpen('isCadastroRapidoOpen', true)}
+                      disabled={shouldLockEntity}
+                      onAddClick={shouldLockEntity ? undefined : () => setModalOpen('isCadastroRapidoOpen', true)}
                     />
                   </div>
                 </div>
