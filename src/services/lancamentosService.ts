@@ -148,8 +148,9 @@ export const lancamentosService = {
       const orGroups: string[][] = [];
 
       if (filters.docCode === undefined) {
-        if (filters.startDate) query = query.gte('data_vencimento', filters.startDate);
-        if (filters.endDate) query = query.lte('data_vencimento', filters.endDate);
+        const dateField = filters.isFinanceiroView ? 'data_pagamento' : 'data_vencimento';
+        if (filters.startDate) query = query.gte(dateField, filters.startDate);
+        if (filters.endDate) query = query.lte(dateField, filters.endDate);
       }
       
       if (filters.docCode !== undefined) {

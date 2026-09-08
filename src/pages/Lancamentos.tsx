@@ -103,6 +103,7 @@ export default function Lancamentos({
   // Preset state
   const [datePreset, setDatePreset] = useState<'15' | '30' | '90' | 'custom'>('15');
   const [dateDirection, setDateDirection] = useState<'past' | 'future' | 'both'>('past');
+  const [dateFilterActive, setDateFilterActive] = useState(!isFinanceiroView);
 
   // Search & Period States
   const [startDate, setStartDate] = useState(() => {
@@ -116,6 +117,7 @@ export default function Lancamentos({
 
   const handlePresetChange = (preset: '15' | '30' | '90' | 'custom', direction: 'past' | 'future' | 'both' = dateDirection) => {
     setDatePreset(preset);
+    setDateFilterActive(true);
     if (preset !== 'custom') {
       const today = new Date();
       const start = new Date();
@@ -161,8 +163,9 @@ export default function Lancamentos({
     const nextType = initialTypeFilter || typeOverride || 'all';
     setStatusPagamento(nextStatus === 'all' ? [] : [nextStatus]);
     setTypeFilter(nextType === 'all' ? [] : [nextType]);
+    setDateFilterActive(!isFinanceiroView);
     setSelectedLancamentoIdsForBatch([]);
-  }, [initialStatusPagamento, initialTypeFilter, statusPagamentoOverride, typeOverride, titleOverride]);
+  }, [initialStatusPagamento, initialTypeFilter, statusPagamentoOverride, typeOverride, titleOverride, isFinanceiroView]);
 
   const [authorIdFilter, setAuthorIdIdFilter] = useState<string[]>([]);
 
@@ -200,8 +203,8 @@ export default function Lancamentos({
     searchTerm: debouncedSearchTerm,
     docCode: parseInt(docSearchTerm.split('-')[0]) || undefined,
     docParcel: parseInt(docSearchTerm.split('-')[1]) || undefined,
-    startDate,
-    endDate,
+    startDate: isFinanceiroView && !dateFilterActive ? undefined : startDate,
+    endDate: isFinanceiroView && !dateFilterActive ? undefined : endDate,
     approvalStatus: approvalStatus,
     statusPagamento: statusPagamento.length === 0 && !isFinanceiroView && isColaborador ? ['quitação_pendente'] : statusPagamento,
     type: typeFilter,
@@ -365,6 +368,7 @@ export default function Lancamentos({
     setDateDirection('past');
 
     handlePresetChange('15', 'past');
+    if (isFinanceiroView) setDateFilterActive(false);
     setCurrentPage(1);
   };
 
@@ -845,14 +849,14 @@ export default function Lancamentos({
             <input
               type="date"
               value={startDate}
-              onChange={(e) => { setStartDate(e.target.value); setDatePreset('custom'); }}
+              onChange={(e) => { setStartDate(e.target.value); setDatePreset('custom'); setDateFilterActive(true); }}
               className="bg-transparent border-none text-[10px] font-black uppercase px-2 outline-none"
             />
             <div className="w-px h-4 bg-neutral-200 self-center" />
             <input
               type="date"
               value={endDate}
-              onChange={(e) => { setEndDate(e.target.value); setDatePreset('custom'); }}
+              onChange={(e) => { setEndDate(e.target.value); setDatePreset('custom'); setDateFilterActive(true); }}
               className="bg-transparent border-none text-[10px] font-black uppercase px-2 outline-none"
             />
           </div>
