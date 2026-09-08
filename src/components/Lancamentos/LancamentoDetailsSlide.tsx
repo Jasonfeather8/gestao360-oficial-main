@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useSearchParams } from 'react-router-dom';
 import {
@@ -27,12 +27,27 @@ import {
   ClipboardCheck,
   CircleDollarSign,
   ArrowDownToLine,
-  ArrowUpFromLine
+  ArrowUpFromLine,
+  ExternalLink,
+  Percent,
+  BriefcaseBusiness,
+  FileCheck2
 } from 'lucide-react';
 import { useUIStore } from '../../store/uiStore';
-import { useLancamento, useEntidades, useCategorias, useUsuarios, useLancamentos, useContas } from '../../hooks/useData';
+import {
+  useLancamento,
+  useLancamentoParcelas,
+  useLancamentoAnexosByIds,
+  useAuditoriaLogsByRegistroIds,
+  useEntidades,
+  useCategorias,
+  useCategoriasAjuste,
+  useCentrosCusto,
+  useUsuarios,
+  useLancamentos,
+  useContas
+} from '../../hooks/useData';
 import { useAuth } from '../../hooks/useAuth';
-import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -49,10 +64,10 @@ export default function LancamentoDetailsSlide() {
   const { updateLancamento } = useLancamentos();
   const { data: entidades = [] } = useEntidades();
   const { data: categorias = [] } = useCategorias();
+  const { data: categoriasAjuste = [] } = useCategoriasAjuste();
+  const { data: centrosCusto = [] } = useCentrosCusto();
   const { data: usuarios = [] } = useUsuarios();
   const { data: contas = [] } = useContas();
-
-  const [parcelas, setParcelas] = useState<any[]>([]);
   const isMaster = role === 'master';
 
   useEffect(() => {
@@ -64,30 +79,14 @@ export default function LancamentoDetailsSlide() {
   }, [searchParams]);
 
   const { data: lancamento, isLoading: loadingItem } = useLancamento(selectedLancamentoIdForModal);
-
-  useEffect(() => {
-    if (!lancamento) {
-      setParcelas([]);
-      return;
-    }
-
-    const loadParcelas = async () => {
-      if (!lancamento.recorrencia_id) {
-        setParcelas([lancamento]);
-        return;
-      }
-
-      const { data } = await supabase
-        .from('lancamentos_financeiros')
-        .select('id, numero_parcela, quantidade_total_parcelas, valor_previsto, valor_recebido, data_vencimento, data_competencia, data_pagamento, hora_pagamento, created_at, status_pagamento, conta_bancaria_id, desconto_valor, desconto_tipo, acrescimo_valor, acrescimo_tipo')
-        .eq('recorrencia_id', lancamento.recorrencia_id)
-        .order('numero_parcela', { ascending: true });
-
-      setParcelas(data?.length ? data : [lancamento]);
-    };
-
-    loadParcelas();
-  }, [lancamento?.id, lancamento?.recorrencia_id]);
+  const { data: recurrenceParcelas = [], isLoading: loadingParcelas, isError: parcelasError } = useLancamentoParcelas(lancamento?.recorrencia_id || null);
+  const parcelas = useMemo(
+    () => recurrenceParcelas.length > 0 ? recurrenceParcelas : lancamento ? [lancamento] : [],
+    [lancamento, recurrenceParcelas]
+  );
+  const parcelaIds = useMemo(() => parcelas.map(parcela => parcela.id).filter(Boolean), [parcelas]);
+  const { data: anexos = [], isLoading: loadingAnexos, isError: anexosError } = useLancamentoAnexosByIds(parcelaIds);
+  const { data: auditoriaLogs = [], isLoading: loadingAuditoria, isError: auditoriaError } = useAuditoriaLogsByRegistroIds(parcelaIds);
 
   const handleClose = () => {
     const newParams = new URLSearchParams(searchParams);
@@ -99,9 +98,9 @@ export default function LancamentoDetailsSlide() {
 
   if (!isComprovanteOpen) return null;
 
-  const getEntidadeName = (id: string) => entidades.find(e => e.id === id)?.nome_razao_social || 'Desconhecido';
+  const getEntidadeName = (id: string) => entidades.find(e => e.id === id)?.nome_razao_social || 'Não informado';
   const getCategoriaName = (id: string) => categorias.find(c => c.id === id)?.nome || 'Sem categoria';
-  const getUsuarioName = (id: string) => usuarios.find(u => u.id === id)?.nome || 'Sistema / Desconhecido';
+  const getUsuarioName = (id: string) => usuarios.find(u => u.id === id)?.nome || 'Sistema / Não informado';
 
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
@@ -138,18 +137,59 @@ export default function LancamentoDetailsSlide() {
     return conta?.nome_banco || conta?.nome || 'Conta não encontrada';
   };
 
+  const getCentroCustoName = (id: string | null | undefined) => {
+    if (!id) return 'Não informado';
+    return centrosCusto.find(centro => centro.id === id)?.nome || 'Centro não encontrado';
+  };
+
+  const getAdjustmentReason = (id: string | null | undefined, fallback?: string | null) => {
+    if (fallback) return fallback;
+    if (!id) return 'Não informado';
+    return categoriasAjuste.find(motivo => motivo.id === id)?.nome || 'Motivo não encontrado';
+  };
+
+  const formatAdjustment = (value: number | null | undefined, type: string | null | undefined, base: number) => {
+    const numericValue = Number(value) || 0;
+    if (type === 'porcentagem') {
+      return `${numericValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}% (${formatCurrency(calculateAdjustmentAmount(numericValue, type, base))})`;
+    }
+    return formatCurrency(numericValue);
+  };
+
+  const isSafeAttachmentUrl = (url: unknown): url is string => {
+    if (typeof url !== 'string' || !url) return false;
+    try {
+      const parsed = new URL(url, window.location.origin);
+      return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    } catch {
+      return false;
+    }
+  };
+
+  const getParcelaAnexos = (parcelaId: string | null | undefined) => anexos.filter(anexo => anexo.lancamento_id === parcelaId);
+
   const handlePrintReceipt = () => {
     window.print();
   };
 
   const isQuitacaoPendente = lancamento?.status_pagamento === 'quitação_pendente';
-  const quantidadeParcelas = lancamento?.quantidade_total_parcelas || parcelas.length;
-  const valorAjustado = lancamento
-    ? lancamento.valor_previsto
-      - calculateAdjustmentAmount(lancamento.desconto_valor, lancamento.desconto_tipo, lancamento.valor_previsto)
-      + calculateAdjustmentAmount(lancamento.acrescimo_valor, lancamento.acrescimo_tipo, lancamento.valor_previsto)
-    : 0;
-  const saldoPagar = lancamento ? Math.max(0, valorAjustado - (lancamento.valor_recebido || 0)) : 0;
+  const quantidadeParcelas = lancamento?.quantidade_total_parcelas || parcelas.length || 1;
+  const valorBaseConsolidado = parcelas.reduce((total, parcela) => total + (Number(parcela.valor_previsto) || 0), 0);
+  const valorPrevistoConsolidado = valorBaseConsolidado || Number(lancamento?.valor_previsto) || 0;
+  const valorOriginalConsolidado = lancamento && !lancamento.recorrencia_id
+    ? Number(lancamento.valor_original) || valorPrevistoConsolidado
+    : valorPrevistoConsolidado;
+  const valorRecebidoConsolidado = parcelas.reduce((total, parcela) => total + (Number(parcela.valor_recebido) || 0), 0);
+  const descontoConsolidado = parcelas.reduce((total, parcela) => {
+    const base = Number(parcela.valor_previsto) || 0;
+    return total + calculateAdjustmentAmount(parcela.desconto_valor, parcela.desconto_tipo, base);
+  }, 0);
+  const acrescimoConsolidado = parcelas.reduce((total, parcela) => {
+    const base = Number(parcela.valor_previsto) || 0;
+    return total + calculateAdjustmentAmount(parcela.acrescimo_valor, parcela.acrescimo_tipo, base);
+  }, 0);
+  const valorAjustado = Math.max(0, valorPrevistoConsolidado - descontoConsolidado + acrescimoConsolidado);
+  const saldoPagar = Math.max(0, valorAjustado - valorRecebidoConsolidado);
 
   return (
     <AnimatePresence>
@@ -182,12 +222,12 @@ export default function LancamentoDetailsSlide() {
               <div>
                 <span className="font-bold uppercase text-gray-500 block text-[9px]">Valor Efetivo / Líquido:</span>
                 <span className="text-2xl font-black font-mono">
-                  {formatCurrency(lancamento.valor_recebido && lancamento.valor_recebido > 0 ? lancamento.valor_recebido : valorAjustado)}
+                  {formatCurrency(valorRecebidoConsolidado > 0 ? valorRecebidoConsolidado : valorAjustado)}
                 </span>
               </div>
               <div className="text-right">
-                <span className="font-bold uppercase text-gray-500 block text-[9px]">Valor Previsto Original:</span>
-                <span className="text-sm font-bold font-mono text-gray-700">{formatCurrency(lancamento.valor_previsto)}</span>
+                <span className="font-bold uppercase text-gray-500 block text-[9px]">Valor Original Consolidado:</span>
+                <span className="text-sm font-bold font-mono text-gray-700">{formatCurrency(valorOriginalConsolidado)}</span>
               </div>
             </div>
 
@@ -284,11 +324,20 @@ export default function LancamentoDetailsSlide() {
                     </div>
                   </div>
 
-                  <div className="flex shrink-0 items-start gap-3">
+                  <div className="flex shrink-0 items-start gap-2 sm:gap-3">
                     <div className="hidden rounded-2xl border border-neutral-100 bg-neutral-50 px-3 py-2 text-right sm:block">
                       <span className="block text-[8px] font-black uppercase tracking-[0.14em] text-secondary">Parcelamento</span>
                       <span className="mt-1 block text-xs font-black text-neutral-900">{quantidadeParcelas} {quantidadeParcelas === 1 ? 'parcela' : 'parcelas'}</span>
                     </div>
+                    <button
+                      type="button"
+                      onClick={handlePrintReceipt}
+                      aria-label="Gerar PDF"
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-neutral-200 px-2.5 py-2 text-[9px] font-black uppercase tracking-[0.1em] text-neutral-700 transition-colors hover:border-primary hover:text-primary sm:px-3"
+                    >
+                      <Printer className="h-4 w-4" /> <span className="hidden sm:inline">Gerar PDF</span>
+                    </button>
+                    <span role="checkbox" aria-checked="false" aria-label="Selecionar todas as parcelas" className="mt-2 h-4 w-4 rounded border border-neutral-300 bg-white" />
                     <button onClick={handleClose} aria-label="Fechar detalhes" className="rounded-xl p-2 text-secondary transition-colors hover:bg-neutral-100 hover:text-neutral-900">
                       <X className="h-5 w-5" />
                     </button>
@@ -310,9 +359,9 @@ export default function LancamentoDetailsSlide() {
                       <div className="relative flex items-start justify-between gap-4">
                         <div>
                           <span className="text-[9px] font-black uppercase tracking-[0.18em] text-secondary">Resumo financeiro</span>
-                          <p className="mt-3 text-[11px] font-bold text-secondary">{lancamento.tipo === 'entrada' ? 'Valor recebido / previsto' : 'Valor pago / previsto'}</p>
+                          <p className="mt-3 text-[11px] font-bold text-secondary">{lancamento.tipo === 'entrada' ? 'Total previsto / recebido' : 'Total previsto / pago'}</p>
                           <strong className={`mt-1 block text-3xl font-black tracking-tight sm:text-4xl ${lancamento.tipo === 'entrada' ? 'text-bank-truth-green' : 'text-alert-red'}`}>
-                            {formatCurrency(lancamento.valor_previsto)}
+                            {formatCurrency(valorPrevistoConsolidado)}
                           </strong>
                         </div>
                         <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/75 ${lancamento.tipo === 'entrada' ? 'text-bank-truth-green' : 'text-alert-red'}`}>
@@ -331,11 +380,11 @@ export default function LancamentoDetailsSlide() {
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">
-                      <SummaryMetric label="Valor original" value={formatCurrency(lancamento.valor_original || lancamento.valor_previsto)} icon={<Receipt className="h-4 w-4" />} />
-                      <SummaryMetric label="Valor liquidado" value={formatCurrency(lancamento.valor_recebido || 0)} icon={<CheckCircle2 className="h-4 w-4" />} accent="green" />
+                      <SummaryMetric label="Valor original consolidado" value={formatCurrency(valorOriginalConsolidado)} icon={<Receipt className="h-4 w-4" />} />
+                      <SummaryMetric label="Valor liquidado / recebido" value={formatCurrency(valorRecebidoConsolidado)} icon={<CheckCircle2 className="h-4 w-4" />} accent="green" />
                       <SummaryMetric label="Saldo a pagar" value={formatCurrency(saldoPagar)} icon={<Clock className="h-4 w-4" />} accent="amber" />
-                      <SummaryMetric label="Desconto" value={formatCurrency(calculateAdjustmentAmount(lancamento.desconto_valor, lancamento.desconto_tipo, lancamento.valor_previsto))} icon={<ArrowDownToLine className="h-4 w-4" />} accent="amber" />
-                      <SummaryMetric label="Acréscimo / juros" value={formatCurrency(calculateAdjustmentAmount(lancamento.acrescimo_valor, lancamento.acrescimo_tipo, lancamento.valor_previsto))} icon={<ArrowUpFromLine className="h-4 w-4" />} accent="amber" />
+                      <SummaryMetric label="Desconto calculado" value={formatCurrency(descontoConsolidado)} icon={<ArrowDownToLine className="h-4 w-4" />} accent="amber" />
+                      <SummaryMetric label="Acréscimo calculado" value={formatCurrency(acrescimoConsolidado)} icon={<ArrowUpFromLine className="h-4 w-4" />} accent="amber" />
                       <SummaryMetric label="Vencimento" value={formatDate(lancamento.data_vencimento)} icon={<Calendar className="h-4 w-4" />} />
                       <SummaryMetric label="Categoria" value={getCategoriaName(lancamento.categoria_id)} icon={<Tag className="h-4 w-4" />} />
                     </div>
@@ -346,41 +395,46 @@ export default function LancamentoDetailsSlide() {
                       <section className="rounded-3xl border border-neutral-100 bg-white p-5 sm:p-6">
                         <SectionHeading icon={<Info className="h-4 w-4" />} title="Informações do lançamento" />
                         <div className="mt-5 grid gap-x-6 gap-y-5 sm:grid-cols-2">
-                          <DetailItem icon={<User className="h-3.5 w-3.5" />} label="Responsável" value={getUsuarioName(lancamento.usuario_criador_id)} />
-                          <DetailItem icon={<Building2 className="h-3.5 w-3.5" />} label="Entidade" value={getEntidadeName(lancamento.entidade_id)} />
+                          <DetailItem icon={<User className="h-3.5 w-3.5" />} label="Responsável / colaborador" value={getUsuarioName(lancamento.usuario_criador_id)} />
+                          <DetailItem icon={<Building2 className="h-3.5 w-3.5" />} label="Entidade / cliente" value={getEntidadeName(lancamento.entidade_id)} />
                           <DetailItem icon={<FileText className="h-3.5 w-3.5" />} label="Categoria" value={getCategoriaName(lancamento.categoria_id)} />
-                          <DetailItem icon={<WalletCards className="h-3.5 w-3.5" />} label="Banco / Conta" value={getAccountName(lancamento.conta_bancaria_id)} />
-                          <DetailItem icon={<Hash className="h-3.5 w-3.5" />} label="Documento / parcela" value={lancamento.codigo_sequencial ? `${lancamento.codigo_sequencial}${lancamento.numero_parcela ? `-${lancamento.numero_parcela}` : ''}` : lancamento.id.slice(0, 8)} />
-                          <DetailItem icon={<CreditCard className="h-3.5 w-3.5" />} label="Tipo de operação" value={lancamento.tipo === 'entrada' ? 'Receita / Entrada' : 'Despesa / Saída'} />
+                          <DetailItem icon={<BriefcaseBusiness className="h-3.5 w-3.5" />} label="Centro de custo" value={getCentroCustoName(lancamento.centro_custo_id)} />
+                          <DetailItem icon={<WalletCards className="h-3.5 w-3.5" />} label="Banco / conta" value={getAccountName(lancamento.conta_bancaria_id)} />
+                          <DetailItem icon={<Hash className="h-3.5 w-3.5" />} label="Documento" value={(lancamento as any).documento_numero || (lancamento.codigo_sequencial ? String(lancamento.codigo_sequencial) : 'Não informado')} />
+                          <DetailItem icon={<CreditCard className="h-3.5 w-3.5" />} label="Condição" value={lancamento.condicao === 'a_vista' ? 'À vista' : lancamento.condicao === 'a_prazo' ? 'A prazo' : 'Não informado'} />
+                          <DetailItem icon={<ArrowDownToLine className="h-3.5 w-3.5" />} label="Motivo do desconto" value={getAdjustmentReason(lancamento.motivo_desconto_id)} />
+                          <DetailItem icon={<ArrowUpFromLine className="h-3.5 w-3.5" />} label="Motivo do acréscimo" value={getAdjustmentReason(lancamento.motivo_acrescimo_id)} />
+                          <DetailItem icon={<FileCheck2 className="h-3.5 w-3.5" />} label="Motivo do ajuste" value={getAdjustmentReason((lancamento as any).motivo_ajuste_id, lancamento.motivo_ajuste)} />
+                          <DetailItem icon={<FileCheck2 className="h-3.5 w-3.5" />} label="Tipo de operação" value={lancamento.tipo === 'entrada' ? 'Receita / Entrada' : 'Despesa / Saída'} />
                         </div>
                       </section>
 
                       <section className="rounded-3xl border border-neutral-100 bg-white p-5 sm:p-6">
                         <SectionHeading icon={<Banknote className="h-4 w-4" />} title="Valores e datas" />
                         <div className="mt-5 grid gap-4 sm:grid-cols-2">
-                          <DetailItem icon={<DollarSign className="h-3.5 w-3.5" />} label="Total original" value={formatCurrency(lancamento.valor_original || lancamento.valor_previsto)} highlight />
-                          {lancamento.status_pagamento !== 'pago' && lancamento.valor_original && (
-                            <DetailItem icon={<Clock className="h-3.5 w-3.5 text-orange-600" />} label="Saldo a pagar" value={formatCurrency(saldoPagar)} highlight />
-                          )}
-                          {lancamento.status_pagamento === 'pago' && lancamento.valor_recebido !== undefined && (
-                            <DetailItem icon={<CheckCircle2 className="h-3.5 w-3.5 text-bank-truth-green" />} label="Valor liquidado / recebido" value={formatCurrency(lancamento.valor_recebido)} highlight />
-                          )}
+                          <DetailItem icon={<DollarSign className="h-3.5 w-3.5" />} label="Valor original consolidado" value={formatCurrency(valorOriginalConsolidado)} highlight />
+                          <DetailItem icon={<Banknote className="h-3.5 w-3.5" />} label="Valor ajustado" value={formatCurrency(valorAjustado)} highlight />
+                          <DetailItem icon={<Clock className="h-3.5 w-3.5 text-orange-600" />} label="Saldo a pagar" value={formatCurrency(saldoPagar)} highlight />
+                          <DetailItem icon={<CheckCircle2 className="h-3.5 w-3.5 text-bank-truth-green" />} label="Valor liquidado / recebido" value={formatCurrency(valorRecebidoConsolidado)} highlight />
+                          <DetailItem icon={<Calendar className="h-3.5 w-3.5" />} label="Data de emissão" value={formatDate(lancamento.data_emissao)} />
                           <DetailItem icon={<Calendar className="h-3.5 w-3.5" />} label="Vencimento" value={formatDate(lancamento.data_vencimento)} />
                           <DetailItem icon={<Calendar className="h-3.5 w-3.5" />} label="Data competência" value={formatDate(lancamento.data_competencia)} />
                           <DetailItem icon={<Clock className="h-3.5 w-3.5" />} label="Registrado em" value={formatDateTime(lancamento.created_at)} />
                           <DetailItem icon={<CheckCircle2 className="h-3.5 w-3.5" />} label="Baixa realizada em" value={formatPaymentDateTime(lancamento.data_pagamento, lancamento.hora_pagamento)} />
+                          <DetailItem icon={<Percent className="h-3.5 w-3.5" />} label="Desconto (tipo / calculado)" value={`${formatAdjustment(lancamento.desconto_valor, lancamento.desconto_tipo, Number(lancamento.valor_previsto) || 0)}${lancamento.desconto_valor ? ` · ${getAdjustmentReason(lancamento.motivo_desconto_id)}` : ''}`} />
+                          <DetailItem icon={<Percent className="h-3.5 w-3.5" />} label="Acréscimo (tipo / calculado)" value={`${formatAdjustment(lancamento.acrescimo_valor, lancamento.acrescimo_tipo, Number(lancamento.valor_previsto) || 0)}${lancamento.acrescimo_valor ? ` · ${getAdjustmentReason(lancamento.motivo_acrescimo_id)}` : ''}`} />
                         </div>
 
-                        {lancamento.status_pagamento === 'pago' && lancamento.valor_original && lancamento.valor_original !== lancamento.valor_recebido && (
+                        {lancamento.status_pagamento === 'pago' && valorOriginalConsolidado !== valorRecebidoConsolidado && (
                           <div className="mt-5 rounded-2xl border border-primary/15 bg-primary/[0.045] p-4">
                             <div className="flex items-center justify-between gap-3 border-b border-primary/10 pb-3">
                               <span className="text-[9px] font-black uppercase tracking-[0.16em] text-secondary">Memória de cálculo (AVR)</span>
                               <span className="rounded bg-primary px-2 py-1 text-[8px] font-black uppercase text-white">Ajustado</span>
                             </div>
                             <div className="mt-3 space-y-2.5">
-                              <ValueLine label="Valor original" value={formatCurrency(lancamento.valor_original)} />
-                              <ValueLine label="Valor quitado" value={formatCurrency(lancamento.valor_recebido || 0)} valueClass="text-bank-truth-green" />
-                              <ValueLine label="Saldo aberto (diferença)" value={formatCurrency(Math.max(0, lancamento.valor_original - (lancamento.valor_recebido || 0)))} valueClass="text-alert-red" strong />
+                              <ValueLine label="Valor original consolidado" value={formatCurrency(valorOriginalConsolidado)} />
+                              <ValueLine label="Valor quitado" value={formatCurrency(valorRecebidoConsolidado)} valueClass="text-bank-truth-green" />
+                              <ValueLine label="Saldo aberto (diferença)" value={formatCurrency(Math.max(0, valorOriginalConsolidado - valorRecebidoConsolidado))} valueClass="text-alert-red" strong />
                             </div>
                           </div>
                         )}
@@ -391,17 +445,20 @@ export default function LancamentoDetailsSlide() {
                           <SectionHeading icon={<CreditCard className="h-4 w-4" />} title="Resumo do parcelamento" />
                           <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.13em] text-secondary">{quantidadeParcelas} {quantidadeParcelas === 1 ? 'parcela' : 'parcelas'}</span>
                         </div>
+                        {loadingParcelas && <p className="mt-3 text-[10px] font-bold text-secondary">Localizando as demais parcelas...</p>}
+                        {parcelasError && <p className="mt-3 rounded-xl bg-neutral-50 p-3 text-[10px] font-bold text-secondary">Não foi possível carregar as demais parcelas. Exibindo os dados disponíveis.</p>}
                         <div className="mt-5 overflow-x-auto rounded-2xl border border-neutral-100">
                           <table className="w-full min-w-[650px] text-left">
                             <thead className="bg-neutral-50">
                               <tr className="text-[8px] font-black uppercase tracking-[0.14em] text-secondary">
                                 <th className="px-4 py-3">Parcela</th>
+                                <th className="px-4 py-3">Entidade / cliente</th>
                                 <th className="px-4 py-3">Vencimento</th>
                                 <th className="px-4 py-3">Valor original</th>
                                 <th className="px-4 py-3">Valor pago</th>
-                                <th className="px-4 py-3">Valor a pagar</th>
-                                <th className="px-4 py-3">Conta</th>
-                                <th className="px-4 py-3 text-right">Status</th>
+                                <th className="px-4 py-3">Saldo a pagar</th>
+                                <th className="px-4 py-3">Conta / banco</th>
+                                <th className="px-4 py-3 text-right">Status / aprovação</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-neutral-100">
@@ -414,12 +471,13 @@ export default function LancamentoDetailsSlide() {
                                 return (
                                   <tr key={`parcela-resumo-${parcela.id || 'item'}-${index}`} className="text-[10px] font-bold text-neutral-900">
                                     <td className="px-4 py-3 font-black">{parcela.numero_parcela || index + 1}</td>
+                                    <td className="max-w-[170px] truncate px-4 py-3 text-secondary">{getEntidadeName(parcela.entidade_id || lancamento.entidade_id)}</td>
                                     <td className="px-4 py-3 text-secondary">{formatDate(parcela.data_vencimento)}</td>
                                     <td className="px-4 py-3 font-black">{formatCurrency(parcelaValorOriginal)}</td>
                                     <td className="px-4 py-3 font-black text-bank-truth-green">{formatCurrency(parcelaValorPago)}</td>
                                     <td className={`px-4 py-3 font-black ${parcelaValorAPagar > 0 ? 'text-alert-red' : 'text-bank-truth-green'}`}>{formatCurrency(parcelaValorAPagar)}</td>
-                                    <td className="max-w-[170px] truncate px-4 py-3 text-secondary">{getAccountName(parcela.conta_bancaria_id)}</td>
-                                    <td className="px-4 py-3 text-right"><PaymentStatusBadge status={parcela.status_pagamento} isMaster={isMaster} compact /></td>
+                                    <td className="max-w-[170px] truncate px-4 py-3 text-secondary">{getAccountName(parcela.conta_bancaria_id || lancamento.conta_bancaria_id)}</td>
+                                    <td className="px-4 py-3 text-right"><div className="flex min-w-[140px] flex-col items-end gap-1"><PaymentStatusBadge status={parcela.status_pagamento} isMaster={isMaster} compact /><ApprovalStatusBadge status={parcela.status_aprovacao} compact /></div></td>
                                   </tr>
                                 );
                               })}
@@ -438,25 +496,154 @@ export default function LancamentoDetailsSlide() {
                                     <span className="text-[8px] font-black uppercase tracking-[0.15em] text-secondary">Detalhe da parcela</span>
                                     <h4 className="mt-1 text-sm font-black text-neutral-900">Parcela {parcela.numero_parcela || index + 1}</h4>
                                   </div>
-                                  <PaymentStatusBadge status={parcela.status_pagamento} isMaster={isMaster} compact />
+                                  <div className="flex items-center gap-2">
+                                    <PaymentStatusBadge status={parcela.status_pagamento} isMaster={isMaster} compact />
+                                    <span role="checkbox" aria-checked="false" aria-label={`Selecionar parcela ${parcela.numero_parcela || index + 1}`} className="h-4 w-4 rounded border border-neutral-300 bg-white" />
+                                  </div>
                                 </div>
                                 <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3">
-                                  <MiniValue label="Valor previsto" value={formatCurrency(parcela.valor_previsto || 0)} />
-                                  {parcela.valor_recebido !== undefined && <MiniValue label="Valor recebido" value={formatCurrency(parcela.valor_recebido)} valueClass={pago ? 'text-bank-truth-green' : undefined} />}
+                                  <MiniValue label="Entidade / cliente" value={getEntidadeName(parcela.entidade_id || lancamento.entidade_id)} />
+                                  <MiniValue label="Valor previsto" value={formatCurrency(Number(parcela.valor_previsto) || 0)} />
+                                  <MiniValue label="Valor recebido / pago" value={formatCurrency(Number(parcela.valor_recebido) || 0)} valueClass={pago ? 'text-bank-truth-green' : undefined} />
                                   <MiniValue
-                                    label="Valor a pagar"
+                                    label="Saldo a pagar"
                                     value={formatCurrency(Math.max(0, (Number(parcela.valor_previsto) || 0) - calculateAdjustmentAmount(parcela.desconto_valor, parcela.desconto_tipo, Number(parcela.valor_previsto) || 0) + calculateAdjustmentAmount(parcela.acrescimo_valor, parcela.acrescimo_tipo, Number(parcela.valor_previsto) || 0) - (Number(parcela.valor_recebido) || 0)))}
                                     valueClass="text-alert-red"
                                   />
                                   <MiniValue label="Vencimento" value={formatDate(parcela.data_vencimento)} />
+                                  <MiniValue label="Data de emissão" value={formatDate(parcela.data_emissao)} />
                                   <MiniValue label="Data competência" value={formatDate(parcela.data_competencia)} />
-                                  <MiniValue label="Conta" value={getAccountName(parcela.conta_bancaria_id)} />
-                                  {parcela.created_at && <MiniValue label="Registrada" value={formatDateTime(parcela.created_at)} />}
-                                  {parcela.data_pagamento && <MiniValue label="Baixa" value={formatPaymentDateTime(parcela.data_pagamento, parcela.hora_pagamento)} valueClass={pago ? 'text-bank-truth-green' : pendente ? 'text-orange-600' : undefined} />}
+                                  <MiniValue label="Documento" value={(parcela as any).documento_numero || (parcela.codigo_sequencial ? String(parcela.codigo_sequencial) : 'Não informado')} />
+                                  <MiniValue label="Condição" value={parcela.condicao === 'a_vista' ? 'À vista' : parcela.condicao === 'a_prazo' ? 'A prazo' : 'Não informado'} />
+                                  <MiniValue label="Centro de custo" value={getCentroCustoName(parcela.centro_custo_id || lancamento.centro_custo_id)} />
+                                  <MiniValue label="Conta / banco" value={getAccountName(parcela.conta_bancaria_id || lancamento.conta_bancaria_id)} />
+                                  <MiniValue label="Desconto (tipo / calculado)" value={formatAdjustment(parcela.desconto_valor, parcela.desconto_tipo, Number(parcela.valor_previsto) || 0)} />
+                                  <MiniValue label="Acréscimo (tipo / calculado)" value={formatAdjustment(parcela.acrescimo_valor, parcela.acrescimo_tipo, Number(parcela.valor_previsto) || 0)} />
+                                  <MiniValue label="Motivo do desconto" value={getAdjustmentReason(parcela.motivo_desconto_id)} />
+                                  <MiniValue label="Motivo do acréscimo" value={getAdjustmentReason(parcela.motivo_acrescimo_id)} />
+                                  <MiniValue label="Motivo do ajuste" value={getAdjustmentReason((parcela as any).motivo_ajuste_id, parcela.motivo_ajuste)} />
+                                  <MiniValue label="Registrada" value={formatDateTime(parcela.created_at)} />
+                                  <MiniValue label="Baixa" value={formatPaymentDateTime(parcela.data_pagamento, parcela.hora_pagamento)} valueClass={pago ? 'text-bank-truth-green' : pendente ? 'text-orange-600' : undefined} />
                                 </div>
                               </article>
                             );
                           })}
+                        </div>
+                      </section>
+
+                      <section className="rounded-3xl border border-neutral-100 bg-white p-5 sm:p-6">
+                        <SectionHeading icon={<ClipboardCheck className="h-4 w-4" />} title="Auditoria detalhada por parcela" />
+                        <div className="mt-5 space-y-4">
+                          {loadingAuditoria ? (
+                            <div className="flex items-center gap-2 rounded-2xl bg-neutral-50 p-4 text-[10px] font-bold text-secondary"><Loader2 className="h-4 w-4 animate-spin" /> Consultando auditoria...</div>
+                          ) : auditoriaError ? (
+                            <p className="rounded-2xl bg-neutral-50 p-4 text-[10px] font-bold text-secondary">Auditoria indisponível para este perfil ou lançamento.</p>
+                          ) : parcelas.map((parcela, index) => {
+                            const logsDaParcela = auditoriaLogs.filter(log => log.registro_id === parcela.id);
+                            return (
+                              <article key={`auditoria-parcela-${parcela.id || index}`} className="rounded-2xl border border-neutral-100 bg-[#fcfcfb] p-4">
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                  <div>
+                                    <span className="text-[8px] font-black uppercase tracking-[0.15em] text-secondary">Rastreabilidade</span>
+                                    <h4 className="mt-1 text-sm font-black text-neutral-900">Parcela {parcela.numero_parcela || index + 1}</h4>
+                                  </div>
+                                  <div className="flex flex-wrap justify-end gap-1.5">
+                                    <PaymentStatusBadge status={parcela.status_pagamento} isMaster={isMaster} compact />
+                                    <ApprovalStatusBadge status={parcela.status_aprovacao} compact />
+                                  </div>
+                                </div>
+                                <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
+                                  <MiniValue label="Registrada" value={formatDateTime(parcela.created_at)} />
+                                  <MiniValue label="Colaborador" value={getUsuarioName(parcela.usuario_criador_id)} />
+                                  <MiniValue label="Valor" value={formatCurrency(Number(parcela.valor_previsto) || 0)} />
+                                  <MiniValue label="Comprovante" value={parcela.comprovante_url || getParcelaAnexos(parcela.id).length > 0 ? 'Disponível' : 'Não informado'} />
+                                  <MiniValue label="Status da conta" value={parcela.status_pagamento === 'pago' ? 'Liquidada' : parcela.status_pagamento === 'pago_parcial' ? 'Pago parcial' : 'Em aberto'} />
+                                  <MiniValue label="Banco / conta" value={getAccountName(parcela.conta_bancaria_id || lancamento.conta_bancaria_id)} />
+                                  <MiniValue label="Status Master" value={parcela.status_aprovacao === 'confirmado_master' ? 'Confirmado Master' : 'Pendente'} />
+                                  <MiniValue label="Aprovado por" value={(parcela as any).usuario_aprovador_id ? getUsuarioName((parcela as any).usuario_aprovador_id) : 'Não informado'} />
+                                  <MiniValue label="Aprovado em" value={formatDateTime((parcela as any).data_aprovacao)} />
+                                  <MiniValue label="Baixa" value={formatPaymentDateTime(parcela.data_pagamento, parcela.hora_pagamento)} />
+                                </div>
+                                <div className="mt-4 border-t border-neutral-100 pt-3">
+                                  <span className="text-[8px] font-black uppercase tracking-[0.12em] text-secondary">Eventos registrados</span>
+                                  {logsDaParcela.length > 0 ? (
+                                    <div className="mt-3 overflow-x-auto rounded-xl border border-neutral-100">
+                                      <div className="min-w-[760px]">
+                                        <div className="grid grid-cols-[1.2fr_1.1fr_0.9fr_0.9fr_1fr_1.1fr_1fr_1.1fr] gap-3 bg-neutral-50 px-3 py-2 text-[8px] font-black uppercase tracking-[0.1em] text-secondary">
+                                          <span>Registrada</span><span>Colaborador</span><span>Valor</span><span>Comprovante</span><span>Status da conta</span><span>Banco</span><span>Status Master</span><span>Baixa</span>
+                                        </div>
+                                        <div className="divide-y divide-neutral-100">
+                                          {logsDaParcela.map((log, logIndex) => {
+                                            const dadosEvento = (log.dados_novos || log.dados_anteriores || {}) as Record<string, any>;
+                                            const valorEvento = dadosEvento.valor_recebido ?? dadosEvento.valor_pago ?? dadosEvento.valor_previsto;
+                                            const comprovanteEvento = Boolean(dadosEvento.comprovante_url) || getParcelaAnexos(parcela.id).length > 0;
+                                            const statusEvento = dadosEvento.status_pagamento || parcela.status_pagamento;
+                                            const statusMasterEvento = dadosEvento.status_aprovacao || parcela.status_aprovacao;
+                                            return (
+                                              <div key={`audit-${parcela.id}-${log.id || logIndex}`} className="grid grid-cols-[1.2fr_1.1fr_0.9fr_0.9fr_1fr_1.1fr_1fr_1.1fr] gap-3 px-3 py-2.5 text-[9px] font-bold text-neutral-700">
+                                                <span>{formatDateTime(log.data_hora)}</span>
+                                                <span className="font-black">{log.profiles?.nome || getUsuarioName(log.usuario_id)}</span>
+                                                <span>{valorEvento !== undefined && valorEvento !== null ? formatCurrency(Number(valorEvento) || 0) : '-'}</span>
+                                                <span className={comprovanteEvento ? 'text-bank-truth-green' : 'text-secondary'}>{comprovanteEvento ? 'Disponível' : 'Não informado'}</span>
+                                                <span>{statusEvento === 'pago' ? 'Liquidada' : statusEvento === 'pago_parcial' ? 'Pago parcial' : statusEvento === 'quitação_pendente' ? 'Pendente' : 'Em aberto'}</span>
+                                                <span className="truncate">{getAccountName(dadosEvento.conta_bancaria_id || parcela.conta_bancaria_id || lancamento.conta_bancaria_id)}</span>
+                                                <span>{statusMasterEvento === 'confirmado_master' ? 'Confirmado' : statusMasterEvento === 'reprovado' ? 'Reprovado' : 'Pendente'}</span>
+                                                <span>{formatPaymentDateTime(dadosEvento.data_pagamento || parcela.data_pagamento, dadosEvento.hora_pagamento || parcela.hora_pagamento)}</span>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <p className="mt-2 text-[10px] font-bold text-secondary">Nenhum evento de auditoria disponível para esta parcela.</p>
+                                  )}
+                                </div>
+                              </article>
+                            );
+                          })}
+                        </div>
+                      </section>
+
+                      <section className="rounded-3xl border border-neutral-100 bg-white p-5 sm:p-6">
+                        <div className="flex items-center justify-between gap-3">
+                          <SectionHeading icon={<ExternalLink className="h-4 w-4" />} title="Anexos e comprovantes" />
+                          <span className="text-[9px] font-black uppercase tracking-[0.12em] text-secondary">{anexos.length} arquivo{anexos.length === 1 ? '' : 's'}</span>
+                        </div>
+                        <div className="mt-4 space-y-3">
+                          {loadingAnexos ? (
+                            <div className="flex items-center gap-2 rounded-2xl bg-neutral-50 p-4 text-[10px] font-bold text-secondary"><Loader2 className="h-4 w-4 animate-spin" /> Consultando anexos...</div>
+                          ) : anexosError ? (
+                            <p className="rounded-2xl bg-neutral-50 p-4 text-[10px] font-bold text-secondary">Não foi possível consultar os anexos deste lançamento.</p>
+                          ) : anexos.length > 0 ? (
+                            anexos.map((anexo, index) => (
+                              <div key={`anexo-${anexo.id || index}`} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-neutral-100 bg-neutral-50 p-3">
+                                <div className="flex min-w-0 items-center gap-2">
+                                  <FileText className="h-4 w-4 shrink-0 text-primary" />
+                                  <div className="min-w-0">
+                                    <span className="block truncate text-[10px] font-black text-neutral-900">{anexo.nome || anexo.file_name || anexo.name || `Comprovante ${index + 1}`}</span>
+                                    <span className="block text-[9px] font-bold text-secondary">Parcela {parcelas.find(parcela => parcela.id === anexo.lancamento_id)?.numero_parcela || 'única'}</span>
+                                  </div>
+                                </div>
+                                {isSafeAttachmentUrl(anexo.url) ? (
+                                  <a href={anexo.url} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-[9px] font-black uppercase text-primary hover:border-primary"><ExternalLink className="h-3 w-3" /> Abrir</a>
+                                ) : <span className="text-[9px] font-bold text-secondary">Arquivo sem link disponível</span>}
+                              </div>
+                            ))
+                          ) : (
+                            <p className="rounded-2xl bg-neutral-50 p-4 text-[10px] font-bold text-secondary">Nenhum anexo ou comprovante registrado.</p>
+                          )}
+                          {parcelas.some(parcela => Boolean(parcela.comprovante_url)) && (
+                            <div className="space-y-2 border-t border-neutral-100 pt-3">
+                              <span className="text-[8px] font-black uppercase tracking-[0.12em] text-secondary">Comprovantes vinculados ao lançamento</span>
+                              {parcelas.filter(parcela => Boolean(parcela.comprovante_url)).map((parcela, index) => (
+                                <div key={`comprovante-url-${parcela.id || index}`} className="flex items-center justify-between gap-3 rounded-xl bg-neutral-50 p-3">
+                                  <span className="text-[10px] font-black text-neutral-900">Parcela {parcela.numero_parcela || index + 1}</span>
+                                  {isSafeAttachmentUrl(parcela.comprovante_url) ? <a href={parcela.comprovante_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[9px] font-black uppercase text-primary"><ExternalLink className="h-3 w-3" /> Abrir comprovante</a> : <span className="text-[9px] font-bold text-secondary">Link indisponível</span>}
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </section>
 
@@ -501,7 +688,7 @@ export default function LancamentoDetailsSlide() {
                             <span className="text-[9px] font-black uppercase tracking-[0.15em] text-secondary">{isQuitacaoPendente ? 'Impacto no saldo real' : 'Impacto no saldo confirmado'}</span>
                           </div>
                           <p className={`mt-4 text-2xl font-black font-mono ${lancamento.tipo === 'entrada' ? 'text-bank-truth-green' : 'text-alert-red'}`}>
-                            {lancamento.tipo === 'entrada' ? '+' : '-'} {formatCurrency((lancamento as any).tipo_baixa === 'avr' ? (lancamento.valor_original || lancamento.valor_previsto) : lancamento.valor_previsto)}
+                            {lancamento.tipo === 'entrada' ? '+' : '-'} {formatCurrency((lancamento as any).tipo_baixa === 'avr' ? valorOriginalConsolidado : valorPrevistoConsolidado)}
                           </p>
                         </section>
                       )}
@@ -528,8 +715,8 @@ export default function LancamentoDetailsSlide() {
 function PaymentStatusBadge({ status, isMaster, hasResidual = false, contextualPending = false, compact = false }: { status?: string | null, isMaster: boolean, hasResidual?: boolean, contextualPending?: boolean, compact?: boolean }) {
   const baseClass = compact ? 'px-1.5 py-1 text-[8px]' : 'px-2.5 py-1.5 text-[9px]';
   if (compact) {
-    const label = status === 'pago' ? 'Paga' : status === 'quitação_pendente' ? 'Pendente' : 'Em aberto';
-    const color = status === 'pago' ? 'bg-bank-truth-green/10 text-bank-truth-green' : status === 'quitação_pendente' ? 'bg-amber-100 text-amber-700' : 'bg-neutral-100 text-secondary';
+    const label = status === 'pago' ? 'Paga' : status === 'pago_parcial' ? 'Pago parcial' : status === 'bpi' ? 'BPI' : status === 'quitação_pendente' ? 'Pendente' : 'Em aberto';
+    const color = status === 'pago' ? 'bg-bank-truth-green/10 text-bank-truth-green' : status === 'pago_parcial' ? 'bg-orange-50 text-orange-600' : status === 'quitação_pendente' ? 'bg-amber-100 text-amber-700' : 'bg-neutral-100 text-secondary';
     return <span className={`inline-flex items-center rounded font-black uppercase ${color} ${baseClass}`}>{label}</span>;
   }
   if (status === 'bpi') {
@@ -547,11 +734,19 @@ function PaymentStatusBadge({ status, isMaster, hasResidual = false, contextualP
   return <span className={`inline-flex items-center gap-1 rounded-full bg-alert-red/10 font-black uppercase tracking-[0.08em] text-alert-red ${baseClass}`}><Clock className="h-3 w-3" /> Em Aberto</span>;
 }
 
-function ApprovalStatusBadge({ status }: { status?: string | null }) {
-  return status === 'confirmado_master' ? (
-    <span className="inline-flex items-center gap-1.5 rounded-full bg-neutral-900 px-2.5 py-1.5 text-[9px] font-black uppercase tracking-[0.08em] text-white"><ShieldCheck className="h-3 w-3" /> Lançamento aprovado</span>
-  ) : (
-    <span className="inline-flex items-center gap-1.5 rounded-full bg-neutral-100 px-2.5 py-1.5 text-[9px] font-black uppercase tracking-[0.08em] text-secondary"><Info className="h-3 w-3" /> Lançamento pendente</span>
+function ApprovalStatusBadge({ status, compact = false }: { status?: string | null, compact?: boolean }) {
+  const className = compact ? 'gap-1 rounded px-1.5 py-1 text-[8px]' : 'gap-1.5 rounded-full px-2.5 py-1.5 text-[9px]';
+  if (status === 'confirmado_master') {
+    return <span className={`inline-flex items-center font-black uppercase tracking-[0.08em] text-white ${className} bg-neutral-900`}><ShieldCheck className="h-3 w-3" /> {compact ? 'Master' : 'Lançamento aprovado'}</span>;
+  }
+  if (status === 'reprovado') {
+    return <span className={`inline-flex items-center font-black uppercase tracking-[0.08em] text-alert-red ${className} bg-alert-red/10`}><AlertTriangle className="h-3 w-3" /> Reprovado</span>;
+  }
+  if (status === 'digital') {
+    return <span className={`inline-flex items-center font-black uppercase tracking-[0.08em] text-primary ${className} bg-primary/10`}><ShieldCheck className="h-3 w-3" /> Digital</span>;
+  }
+  return (
+    <span className={`inline-flex items-center font-black uppercase tracking-[0.08em] text-secondary ${className} bg-neutral-100`}><Info className="h-3 w-3" /> {compact ? 'Pendente' : 'Lançamento pendente'}</span>
   );
 }
 

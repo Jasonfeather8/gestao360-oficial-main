@@ -287,6 +287,17 @@ export const lancamentosService = {
     return data as LancamentoFinanceiro;
   },
 
+  getParcelasByRecorrenciaId: async (recorrenciaId: string): Promise<LancamentoFinanceiro[]> => {
+    const { data, error } = await supabase
+      .from('lancamentos_financeiros')
+      .select('*')
+      .eq('recorrencia_id', recorrenciaId)
+      .order('numero_parcela', { ascending: true });
+
+    if (error) throw error;
+    return (data || []) as LancamentoFinanceiro[];
+  },
+
   create: async (item: any, recorrencia?: any): Promise<LancamentoFinanceiro> => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Usuário não autenticado');
@@ -918,16 +929,24 @@ export const lancamentosService = {
   },
 
   getAnexos: async (lancamentoId: string): Promise<any[]> => {
-    diagnosticLogger.info('lancamento-anexos', 'Iniciando leitura dos anexos no banco', { lancamentoId });
+    const anexos = await lancamentosService.getAnexosByLancamentoIds([lancamentoId]);
+    return anexos;
+  },
+
+  getAnexosByLancamentoIds: async (lancamentoIds: string[]): Promise<any[]> => {
+    const ids = Array.from(new Set(lancamentoIds.filter(Boolean)));
+    if (ids.length === 0) return [];
+
+    diagnosticLogger.info('lancamento-anexos', 'Iniciando leitura dos anexos no banco', { lancamentoIds: ids });
     const { data, error } = await supabase
       .from('lancamento_anexos')
       .select('*')
-      .eq('lancamento_id', lancamentoId);
+      .in('lancamento_id', ids);
     if (error) {
-      diagnosticLogger.error('lancamento-anexos', 'Erro na leitura dos anexos no banco', { lancamentoId, error });
+      diagnosticLogger.error('lancamento-anexos', 'Erro na leitura dos anexos no banco', { lancamentoIds: ids, error });
       throw error;
     }
-    diagnosticLogger.info('lancamento-anexos', 'Leitura dos anexos concluída', { lancamentoId, count: data?.length || 0, rows: data });
+    diagnosticLogger.info('lancamento-anexos', 'Leitura dos anexos concluída', { lancamentoIds: ids, count: data?.length || 0 });
     return data || [];
   },
 

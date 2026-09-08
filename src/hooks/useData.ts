@@ -210,6 +210,32 @@ export function useLancamento(id: string | null) {
   return useQuery({ queryKey: ['lancamento', id], queryFn: () => id ? lancamentosService.getById(id) : Promise.resolve(null), enabled: !!id });
 }
 
+export function useLancamentoParcelas(recorrenciaId: string | null) {
+  return useQuery({
+    queryKey: ['lancamentoParcelas', recorrenciaId],
+    queryFn: () => recorrenciaId ? lancamentosService.getParcelasByRecorrenciaId(recorrenciaId) : Promise.resolve([]),
+    enabled: !!recorrenciaId,
+  });
+}
+
+export function useLancamentoAnexosByIds(lancamentoIds: string[]) {
+  const ids = Array.from(new Set(lancamentoIds.filter(Boolean))).sort();
+  return useQuery({
+    queryKey: ['lancamentoAnexosByIds', ids],
+    queryFn: () => lancamentosService.getAnexosByLancamentoIds(ids),
+    enabled: ids.length > 0,
+  });
+}
+
+export function useAuditoriaLogsByRegistroIds(registroIds: string[]) {
+  const ids = Array.from(new Set(registroIds.filter(Boolean))).sort();
+  return useQuery({
+    queryKey: ['auditoriaLogs', 'registros', ids],
+    queryFn: () => auditoriaService.getByRegistroIds(ids),
+    enabled: ids.length > 0,
+  });
+}
+
 export function useLancamentoAnexos(lancamentoId: string | null) {
   const queryClient = useQueryClient();
   const query = useQuery({
