@@ -33,6 +33,7 @@ export default function CadastroRapidoModal() {
     setModalOpen,
     entidadeFormDraft,
     setEntidadeFormDraft,
+    lancamentoFormDraft,
     setLancamentoFormDraft,
     resetAllDrafts
   } = useUIStore();
@@ -161,12 +162,16 @@ export default function CadastroRapidoModal() {
         }
       }
 
+      resetAllDrafts();
+
       // Auto-select in the launch form
       if (newEntity) {
-        setLancamentoFormDraft({ entidade_id: (newEntity as any).id });
+        setLancamentoFormDraft({
+          tipo: lancamentoFormDraft.tipo,
+          entidade_id: (newEntity as any).id
+        });
       }
 
-      resetAllDrafts();
       setFiles([]);
       setActiveTab('dados');
       setModalOpen('isCadastroRapidoOpen', false);

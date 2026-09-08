@@ -208,6 +208,7 @@ export default function NovoLancamentoDrawer() {
     setSelectedRecorrenciaAction,
     lancamentoFormDraft,
     setLancamentoFormDraft,
+    setEntidadeFormDraft,
     resetAllDrafts
   } = useUIStore();
 
@@ -378,6 +379,25 @@ export default function NovoLancamentoDrawer() {
   const filteredCategorias = useMemo(() => {
     return categorias.filter(c => c.tipo === lancamentoFormDraft.tipo);
   }, [categorias, lancamentoFormDraft.tipo]);
+
+  const entidadesCompativeis = useMemo(() => {
+    const tipoPermitido = lancamentoFormDraft.tipo === 'saida' ? 'fornecedor' : 'cliente';
+    return entidades.filter(e =>
+      e.status_base !== 'inativo' &&
+      e.status_base !== 'bpi' &&
+      (e.tipo === tipoPermitido || e.tipo === 'ambos')
+    );
+  }, [entidades, lancamentoFormDraft.tipo]);
+
+  useEffect(() => {
+    if (
+      lancamentoFormDraft.entidade_id &&
+      entidades.length > 0 &&
+      !entidadesCompativeis.some(entidade => entidade.id === lancamentoFormDraft.entidade_id)
+    ) {
+      setLancamentoFormDraft({ entidade_id: '' });
+    }
+  }, [entidades, entidadesCompativeis, lancamentoFormDraft.entidade_id]);
 
   useEffect(() => {
     if (filteredCategorias.length > 0 && !isEditing && !lancamentoFormDraft.categoria_id) {
@@ -969,16 +989,17 @@ export default function NovoLancamentoDrawer() {
                       placeholder="Selecione um cliente / fornecedor"
                       value={lancamentoFormDraft.entidade_id}
                       onChange={(val) => setLancamentoFormDraft({ entidade_id: val })}
-                      options={entidades
-                        .filter(e => e.status_base !== 'inativo' && e.status_base !== 'bpi')
-                        .map(e => ({
-                          id: e.id,
-                          label: e.nome_razao_social,
-                          sublabel: e.tipo.toUpperCase()
-                        }))}
+                      options={entidadesCompativeis.map(e => ({
+                        id: e.id,
+                        label: e.nome_razao_social,
+                        sublabel: e.tipo.toUpperCase()
+                      }))}
                       required
                       disabled={shouldLockEntity}
-                      onAddClick={shouldLockEntity ? undefined : () => setModalOpen('isCadastroRapidoOpen', true)}
+                      onAddClick={shouldLockEntity ? undefined : () => {
+                        setEntidadeFormDraft({ tipo: lancamentoFormDraft.tipo === 'saida' ? 'fornecedor' : 'cliente' });
+                        setModalOpen('isCadastroRapidoOpen', true);
+                      }}
                     />
                   </div>
                 </div>
