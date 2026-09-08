@@ -24,7 +24,7 @@ import {
   Shield
 } from 'lucide-react';
 import { useUIStore } from '../store/uiStore';
-import { useLancamentos, useLancamento, useEntidades, useCentrosCusto, useCategorias, useContas, useLancamentoAnexos, useCategoriasAjuste } from '../hooks/useData';
+import { useLancamentos, useLancamento, useEntidades, useCentrosCusto, useCategorias, useContas, useContasSaldos, useLancamentoAnexos, useCategoriasAjuste } from '../hooks/useData';
 import { useAuth } from '../hooks/useAuth';
 import MoneyInput from './MoneyInput';
 
@@ -222,11 +222,9 @@ export default function NovoLancamentoDrawer() {
   const { createCategory } = useCategorias();
   const { createAccount } = useContas();
   const { categoriasAjuste, createCategoriaAjuste } = useCategoriasAjuste();
+  const { data: contasSaldos = [] } = useContasSaldos();
 
   const { anexos: existingAnexos, deleteAnexo } = useLancamentoAnexos(selectedLancamentoIdForModal);
-
-  // Financial data for real balance calculation
-  const { data: allLancamentos = [] } = useLancamentos();
 
   const [attachments, setAttachments] = useState<LocalFile[]>([]);
 
@@ -247,29 +245,20 @@ export default function NovoLancamentoDrawer() {
   const centros = useMemo(() => rawCentros.filter((c: any) => c.status !== 'excluido'), [rawCentros]);
   const categorias = useMemo(() => rawCategorias.filter((c: any) => c.status !== 'excluido'), [rawCategorias]);
   
-  // Calculate Real Balance for each account
+  // Use the operational balance returned by the database RPC for each account.
   const contas = useMemo(() => {
     const activeRawContas = rawContas.filter((c: any) => c.status !== 'excluido');
     
     return activeRawContas.map(conta => {
-      const lancamentosDaConta = allLancamentos.filter(l => l.conta_bancaria_id === conta.id && l.status_pagamento === 'pago');
-      
-      const totalEntradas = lancamentosDaConta
-        .filter(l => l.tipo === 'entrada')
-        .reduce((sum, l) => sum + (l.valor_recebido || 0), 0);
-        
-      const totalSaidas = lancamentosDaConta
-        .filter(l => l.tipo === 'saida')
-        .reduce((sum, l) => sum + (l.valor_recebido || 0), 0);
-        
-      const saldoReal = conta.saldo_inicial + totalEntradas - totalSaidas;
+      const saldoObj = contasSaldos.find(saldo => saldo.conta_id === conta.id);
+      const saldoReal = saldoObj ? Number(saldoObj.saldo_operacional) : (conta.saldo_inicial || 0);
       
       return {
         ...conta,
         saldo_real: saldoReal
       };
     });
-  }, [rawContas, allLancamentos]);
+  }, [rawContas, contasSaldos]);
 
   // Toasts state
 
@@ -490,11 +479,13 @@ export default function NovoLancamentoDrawer() {
 
   // Saldo Insuficiente validation (Item 1)
   const selectedConta = contas.find(c => c.id === lancamentoFormDraft.conta_bancaria_id);
-  const isSaidaImediata = lancamentoFormDraft.tipo === 'saida' && lancamentoFormDraft.ja_recebido;
-  const valorOperacaoSaida = isSaidaImediata ? calculations.subtotal : 0;
-  const saldoInsuficiente = isSaidaImediata && selectedConta ? valorOperacaoSaida > (selectedConta as any).saldo_real : false;
+  const isSaidaImediata = lancamentoFormDraft.tipo === 'saida' && lancamentoFormDraft.ja_recebido && !isAVREdit;
   const saldoRecebimento = Math.max(0, calculations.subtotal);
   const valorRecebido = parseMoney(lancamentoFormDraft.valor_recebido);
+  const valorOperacaoSaida = isSaidaImediata && valorRecebido > 0 ? valorRecebido : 0;
+  const saldoInsuficiente = isSaidaImediata && selectedConta
+    ? valorOperacaoSaida > (selectedConta as any).saldo_real + 0.005
+    : false;
   const recebimentoAcimaSaldo = lancamentoFormDraft.ja_recebido && valorRecebido > saldoRecebimento + 0.005;
   const pagamentoParcial = lancamentoFormDraft.ja_recebido && valorRecebido > 0 && valorRecebido < saldoRecebimento - 0.005;
   const persistedDescontoTipo = editingItem?.desconto_tipo === 'porcentagem' ? 'porcentagem' : 'valor';
@@ -1606,7 +1597,7 @@ export default function NovoLancamentoDrawer() {
                   <AlertCircle className="w-5 h-5 text-alert-red shrink-0" />
                   <div>
                     <span className="text-[10px] font-black uppercase text-alert-red tracking-widest block">Saldo Insuficiente</span>
-                    <span className="text-[9px] font-bold text-alert-red/80">A conta selecionada possui R$ {formatBRL((selectedConta as any)?.saldo_real)} de saldo real. Operação não permitida.</span>
+                    <span className="text-[9px] font-bold text-alert-red/80">Saldo insuficiente na conta selecionada. Saldo disponível: R$ {formatBRL((selectedConta as any)?.saldo_real)}. Valor necessário: R$ {formatBRL(valorOperacaoSaida)}.</span>
                   </div>
                 </div>
               )}

@@ -59,6 +59,40 @@ const formatAdjustmentValue = (value: unknown, type: unknown, base: number): str
   return `R$ ${formattedValue} (${percentage.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%)`;
 };
 
+const formatBRL = (value: number): string => value.toLocaleString('pt-BR', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2
+});
+
+const getOperationalBalance = async (contaId: string): Promise<number> => {
+  const { data, error } = await supabase.rpc('get_contas_saldos_reais');
+  if (error) throw error;
+  const saldo = (data || []).find((item: { conta_id: string }) => item.conta_id === contaId);
+  return saldo ? Number(saldo.saldo_operacional) || 0 : 0;
+};
+
+const assertOperationalBalance = async ({
+  tipo,
+  tipoBaixa,
+  contaId,
+  amount,
+  saldoAdicionado = 0
+}: {
+  tipo?: string;
+  tipoBaixa?: string;
+  contaId?: string | null;
+  amount: number;
+  saldoAdicionado?: number;
+}): Promise<void> => {
+  if (tipo !== 'saida' || tipoBaixa === 'avr' || tipoBaixa === 'bpi' || amount <= 0) return;
+  if (!contaId) throw new Error('Selecione uma conta bancária para realizar a saída.');
+
+  const saldoDisponivel = await getOperationalBalance(contaId) + saldoAdicionado;
+  if (amount > saldoDisponivel + 0.005) {
+    throw new Error(`Saldo insuficiente na conta selecionada. Saldo disponível: R$ ${formatBRL(saldoDisponivel)}. Valor necessário: R$ ${formatBRL(amount)}.`);
+  }
+};
+
 export const lancamentosService = {
   getAll: async (filters?: LancamentoFilters, signal?: AbortSignal): Promise<{ data: LancamentoFinanceiro[], count: number }> => {
     let recurrenceIds: string[] = [];
@@ -328,6 +362,12 @@ export const lancamentosService = {
     if (hasReceivedPayment && (valorRecebido < 0 || valorRecebido > saldoDisponivel + 0.005)) {
       throw new Error('O valor recebido não pode ser maior que o saldo disponível do lançamento.');
     }
+    await assertOperationalBalance({
+      tipo: item.tipo,
+      tipoBaixa: item.tipo_baixa,
+      contaId: item.conta_bancaria_id,
+      amount: valorRecebido
+    });
 
     const lancamentoData = {
       ...item,
@@ -413,7 +453,7 @@ export const lancamentosService = {
 
     const { data: current } = await supabase
       .from('lancamentos_financeiros')
-      .select('recorrencia_id, valor_previsto, desconto_valor, desconto_tipo, acrescimo_valor, acrescimo_tipo, valor_recebido, status_pagamento, tipo_baixa, observacoes')
+      .select('recorrencia_id, tipo, conta_bancaria_id, valor_previsto, desconto_valor, desconto_tipo, acrescimo_valor, acrescimo_tipo, valor_recebido, status_pagamento, tipo_baixa, observacoes')
       .eq('id', id)
       .single();
 
@@ -463,6 +503,21 @@ export const lancamentosService = {
     if (!isAVRUpdate && hasReceivedPayment && (valorRecebido < 0 || valorRecebido > saldoDisponivel + 0.005)) {
       throw new Error('O valor recebido não pode ser maior que o saldo disponível do lançamento.');
     }
+
+    const contaBancariaEfetiva = safeData.conta_bancaria_id ?? current?.conta_bancaria_id;
+    const currentIsFinancialDebit = current?.tipo === 'saida' && current?.tipo_baixa !== 'avr' && current?.tipo_baixa !== 'bpi' && (
+      current?.status_pagamento === 'pago' || current?.status_pagamento === 'pago_parcial' || current?.status_pagamento === 'quitação_pendente' || Number(current?.valor_recebido) > 0
+    );
+    const saldoAtualDoLancamento = currentIsFinancialDebit && contaBancariaEfetiva === current?.conta_bancaria_id
+      ? Number(current?.valor_recebido) || 0
+      : 0;
+    await assertOperationalBalance({
+      tipo: safeData.tipo ?? current?.tipo,
+      tipoBaixa: safeData.tipo_baixa ?? current?.tipo_baixa,
+      contaId: contaBancariaEfetiva,
+      amount: valorRecebido,
+      saldoAdicionado: saldoAtualDoLancamento
+    });
 
     if (mode === 'all' && current?.recorrencia_id) {
       const { data: updated, error } = await supabase
@@ -590,7 +645,13 @@ export const lancamentosService = {
     const isPartial = isBaixaFinanceira && totalValorRecebido < subtotal - 0.005;
     const dataPagamentoVal = data.data_pagamento || new Date().toISOString().split('T')[0];
     const horaPagamentoVal = new Date().toTimeString().slice(0, 8);
-   const contaBancariaVal = data.conta_bancaria_id || current.conta_bancaria_id;
+    const contaBancariaVal = data.conta_bancaria_id || current.conta_bancaria_id;
+    await assertOperationalBalance({
+      tipo: current.tipo,
+      tipoBaixa: data.tipo_baixa || current.tipo_baixa,
+      contaId: contaBancariaVal,
+      amount: valorPagoEfetivo
+    });
 
    // AVR logic: Update history and handle original value
    const observacaoOriginal = current.observacoes || '';

@@ -304,7 +304,7 @@ export default function BaixaLancamentoModal() {
   // Saldo Insuficiente validation (Item 1)
   const selectedContaSaldo = contas.find((c: any) => c.id === contaId)?.saldo_real || 0;
   const isSaida = lancamento?.tipo === 'saida';
-  const saldoInsuficienteBaixa = !isBpi && isSaida && valorDigitado > selectedContaSaldo;
+  const saldoInsuficienteBaixa = !isBpi && !isAVR && isSaida && valorDigitado > 0 && valorDigitado > selectedContaSaldo + 0.005;
 
   const canSave = (!isObsRequired || isObsFilled) &&
                   (!isAVRReasonRequired || isAVRReasonSelected) &&
@@ -776,6 +776,12 @@ export default function BaixaLancamentoModal() {
                     <div className="p-3 bg-red-50 border border-red-200 rounded-2xl flex items-center gap-2 text-alert-red h-12">
                       <AlertTriangle className="w-4 h-4 shrink-0" />
                       <span className="text-[10px] font-black uppercase tracking-tight">Excede o Subtotal!</span>
+                    </div>
+                  )}
+                  {saldoInsuficienteBaixa && (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-2xl flex items-center gap-2 text-alert-red min-h-12">
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      <span className="text-[10px] font-black uppercase tracking-tight">Saldo insuficiente na conta selecionada. Saldo disponível: R$ {formatBRL(selectedContaSaldo)}. Valor necessário: R$ {formatBRL(valorDigitado)}.</span>
                     </div>
                   )}
                   {isAVR && (
