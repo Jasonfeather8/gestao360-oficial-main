@@ -412,10 +412,6 @@ export default function NovoLancamentoDrawer() {
     const valorTotal = parseMoney(lancamentoFormDraft.valor_previsto);
     const novasParcelas = [];
     let currentDate = new Date(lancamentoFormDraft.data_vencimento + 'T00:00:00');
-    
-    if (lancamentoFormDraft.recorrencia_com_entrada) {
-      currentDate = new Date(lancamentoFormDraft.data_emissao + 'T00:00:00');
-    }
 
     const valorPorParcela = isRepeat
       ? valorTotal
@@ -452,8 +448,6 @@ export default function NovoLancamentoDrawer() {
     lancamentoFormDraft.periodicidade,
     lancamentoFormDraft.periodicidade_customizada_dias,
     lancamentoFormDraft.data_vencimento,
-    lancamentoFormDraft.data_emissao,
-    lancamentoFormDraft.recorrencia_com_entrada,
     editingItem,
     isEditing
   ]);
@@ -1405,12 +1399,18 @@ export default function NovoLancamentoDrawer() {
                           <tbody className="divide-y divide-neutral-100">
                             {parcelasManuais.map((parc, idx) => (
                               <tr key={idx} className="hover:bg-neutral-50/50 transition-colors">
-                                <td className="px-3 py-2 text-xs font-black text-neutral-400">#{parc.numero}</td>
+                                <td className="px-3 py-2 text-xs font-black text-neutral-400">
+                                  {lancamentoFormDraft.recorrencia_com_entrada && idx === 0 ? 'ENTRADA' : `#${parc.numero}`}
+                                </td>
                                 <td className="px-2 py-1.5">
                                   <input
                                     type="date"
-                                    value={parc.data}
+                                    value={idx === 0 ? lancamentoFormDraft.data_vencimento : parc.data}
                                     onChange={(e) => {
+                                      if (idx === 0) {
+                                        setLancamentoFormDraft({ data_vencimento: e.target.value });
+                                        return;
+                                      }
                                       const newParcels = [...parcelasManuais];
                                       newParcels[idx].data = e.target.value;
                                       setParcelasManuais(newParcels);

@@ -137,7 +137,7 @@ const initialDrafts = {
     categoria_id: '',
     conta_bancaria_id: '',
     recorrencia: false,
-    recorrencia_com_entrada: true,
+    recorrencia_com_entrada: false,
     recorrencia_repeat: false,
     periodicidade: 'mensal' as const,
     periodicidade_customizada_dias: '30',

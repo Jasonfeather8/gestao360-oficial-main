@@ -358,9 +358,16 @@ export const lancamentosService = {
         (total: number, parcela: any) => total + (Number(parcela.valor_previsto) || 0),
         0
       );
+      const recorrenciaRecebida = item.ja_recebido === true || item.status_pagamento === 'pago' || item.status_pagamento === 'pago_parcial';
       const parcelas = recorrencia.parcelas.map((p: any, index: number) => ({
         ...lancamentoData,
-        data_vencimento: p.data_vencimento,
+        ...(recorrenciaRecebida && index === 0 ? {} : {
+          status_pagamento: 'aberto',
+          valor_recebido: 0,
+          ja_recebido: false,
+          data_pagamento: null
+        }),
+        data_vencimento: index === 0 ? item.data_vencimento : p.data_vencimento,
         valor_previsto: p.valor_previsto,
         valor_original: valorTotalRecorrencia,
         recorrencia_id: recData.id,
