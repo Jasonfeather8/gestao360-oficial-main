@@ -45,6 +45,12 @@ const combineOrGroups = (groups: string[][]): string => {
 const normalizeAdjustmentType = (type: unknown): 'valor' | 'porcentagem' =>
   type === 'porcentagem' ? 'porcentagem' : 'valor';
 
+const parseAVRValue = (value: string | number | null | undefined): number => {
+  if (typeof value === 'number') return value;
+  if (value === null || value === undefined) return 0;
+  return Number(value.replace(/\./g, '').replace(',', '.')) || 0;
+};
+
 const formatAdjustmentValue = (value: unknown, type: unknown, base: number): string => {
   const numericValue = Number(value) || 0;
   const formattedValue = numericValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -519,7 +525,8 @@ export const lancamentosService = {
    condicao?: 'a_vista' | 'a_prazo',
    data_competencia?: string,
    data_emissao?: string,
-   parcelas?: Array<{ id?: string; numero: number; data: string; valor: string; status: string }>,
+   parcela_valor?: string | number,
+   parcelas?: Array<{ id?: string; numero: number; data: string; valor: string; status: string; valor_recebido?: number | null }>,
    parcela_config?: { quantidade: number; periodicidade: string; periodicidade_customizada_dias?: number; com_entrada: boolean },
    propagate_avr?: 'none' | 'open' | 'all'
  }, isMaster: boolean = false): Promise<LancamentoFinanceiro> => {
@@ -534,14 +541,34 @@ export const lancamentosService = {
     const isBPI = data.tipo_baixa === 'bpi';
     const isAVR = data.tipo_baixa === 'avr';
     const isBaixaFinanceira = !isBPI && !isAVR;
+    if (isAVR && (current.status_pagamento !== 'aberto' || Number(current.valor_recebido) > 0)) {
+      throw new Error('Somente parcelas abertas e sem valor recebido podem ser ajustadas.');
+    }
     const valorPagoEfetivo = (isBPI || isAVR) ? (data.valor_pago > 0 ? data.valor_pago : (isBPI ? 0 : current.valor_previsto)) : (data.valor_pago > 0 ? data.valor_pago : current.valor_previsto);
-    const valorTotalAVR = data.parcelas?.length
-      ? data.parcelas.reduce((total, parcela) => total + (Number(parcela.valor.replace(/\./g, '').replace(',', '.')) || 0), 0)
-      : valorPagoEfetivo;
-    const parcelaSelecionadaAVR = data.parcelas?.find(parcela => parcela.id === id) || data.parcelas?.[0];
+    const parcelaSelecionadaAVR = data.parcelas?.find(parcela => parcela.id === id);
+    if (isAVR && current.recorrencia_id && !parcelaSelecionadaAVR) {
+      throw new Error('A parcela selecionada não foi encontrada na grade AVR.');
+    }
     const valorParcelaSelecionadaAVR = parcelaSelecionadaAVR
-      ? Number(parcelaSelecionadaAVR.valor.replace(/\./g, '').replace(',', '.')) || 0
-      : valorTotalAVR;
+      ? parseAVRValue(parcelaSelecionadaAVR.valor)
+      : parseAVRValue(data.parcela_valor ?? valorPagoEfetivo);
+    let valorTotalAVR = valorParcelaSelecionadaAVR;
+    if (isAVR && current.recorrencia_id) {
+      const { data: recurrenceRows, error: recurrenceRowsError } = await supabase
+        .from('lancamentos_financeiros')
+        .select('id, status_pagamento, valor_recebido, valor_previsto')
+        .eq('recorrencia_id', current.recorrencia_id);
+      if (recurrenceRowsError) throw recurrenceRowsError;
+
+      const rows = recurrenceRows || [];
+      const isOpenWithoutReceipt = (row: any) => row.status_pagamento === 'aberto' && Number(row.valor_recebido) <= 0;
+      valorTotalAVR = rows.reduce((total, row) => {
+        const shouldUseSelectedValue = data.propagate_avr === 'open'
+          ? isOpenWithoutReceipt(row)
+          : row.id === id;
+        return total + (shouldUseSelectedValue ? valorParcelaSelecionadaAVR : Number(row.valor_previsto) || 0);
+      }, 0);
+    }
     const descontoBase = Number(current.desconto_valor) || 0;
     const acrescimoBase = Number(current.acrescimo_valor) || 0;
     const descontoTipo = normalizeAdjustmentType(current.desconto_tipo);
@@ -634,6 +661,7 @@ export const lancamentosService = {
        ...(data.conta_bancaria_id ? { conta_bancaria_id: data.conta_bancaria_id } : {}),
        ...(data.centro_custo_id ? { centro_custo_id: data.centro_custo_id } : {}),
        ...(data.categoria_id ? { categoria_id: data.categoria_id } : {}),
+       ...(parcelaSelecionadaAVR?.data ? { data_vencimento: parcelaSelecionadaAVR.data } : {}),
        observacoes: (current.observacoes || '') + `\n[AVR - Ajuste Realizado em ${timestampStr}] Valor alterado de R$ ${current.valor_original || current.valor_previsto} para R$ ${valorTotalAVR}. Motivo: ${data.motivo_ajuste || 'Não informado'}`,
      };
 
@@ -642,128 +670,55 @@ export const lancamentosService = {
        updatePayload.status_aprovacao = 'digital';
      }
 
-     const { data: updated, error: updateError } = await supabase
-       .from('lancamentos_financeiros')
-       .update(updatePayload)
-       .eq('id', id)
-       .select()
-       .single();
-
-     if (updateError) throw updateError;
-
-     if (data.parcelas?.length && recurrenceId) {
-       const submittedIds = data.parcelas.map(parcela => parcela.id).filter(Boolean);
-       const { data: openParcelas, error: openParcelasError } = await supabase
+     let updated: LancamentoFinanceiro;
+     if (data.propagate_avr === 'open' && current.recorrencia_id) {
+       updated = current as LancamentoFinanceiro;
+     } else {
+       const { data: selectedUpdated, error: updateError } = await supabase
          .from('lancamentos_financeiros')
-         .select('id')
-         .eq('recorrencia_id', recurrenceId)
-         .eq('status_pagamento', 'aberto');
-       if (openParcelasError) throw openParcelasError;
-
-       const idsToRemove = (openParcelas || [])
-         .map(parcela => parcela.id)
-         .filter(parcelId => !submittedIds.includes(parcelId) && parcelId !== id);
-       if (idsToRemove.length) {
-         const { error: deleteError } = await supabase
-           .from('lancamentos_financeiros')
-           .delete()
-           .in('id', idsToRemove);
-         if (deleteError) throw deleteError;
-       }
-
-       for (const parcela of data.parcelas) {
-         if (parcela.status !== 'aberto' && parcela.id !== id) continue;
-
-         const parcelaValor = Number(parcela.valor.replace(/\./g, '').replace(',', '.')) || 0;
-         const parcelaPayload: any = {
-           data_vencimento: parcela.data,
-           valor_previsto: parcelaValor,
-           valor_original: valorTotalAVR,
-           numero_parcela: parcela.numero,
-           recorrencia_id: recurrenceId,
-           quantidade_total_parcelas: data.parcela_config?.quantidade || data.parcelas.length,
-           tipo_baixa: 'avr',
-           motivo_ajuste: data.motivo_ajuste || current.motivo_ajuste || null,
-           conta_bancaria_id: data.conta_bancaria_id || current.conta_bancaria_id,
-           centro_custo_id: data.centro_custo_id || current.centro_custo_id,
-           categoria_id: data.categoria_id || current.categoria_id,
-           ...(data.condicao ? { condicao: data.condicao } : {}),
-           ...(data.data_competencia ? { data_competencia: data.data_competencia } : {}),
-           ...(data.data_emissao ? { data_emissao: data.data_emissao } : {})
-         };
-
-         if (parcela.id) {
-           const { error: parcelaError } = await supabase
-             .from('lancamentos_financeiros')
-             .update(parcelaPayload)
-             .eq('id', parcela.id);
-           if (parcelaError) throw parcelaError;
-         } else {
-           const { id: _id, created_at: _createdAt, updated_at: _updatedAt, ...base } = current;
-           const { error: parcelaError } = await supabase
-             .from('lancamentos_financeiros')
-             .insert([{
-               ...base,
-               ...parcelaPayload,
-               status_pagamento: 'aberto',
-               status_aprovacao: current.status_aprovacao,
-               valor_recebido: 0,
-               data_pagamento: null,
-               tipo_baixa: 'financeira'
-             }]);
-           if (parcelaError) throw parcelaError;
-         }
-       }
+         .update(updatePayload)
+         .eq('id', id)
+         .eq('status_pagamento', 'aberto')
+         .or('valor_recebido.is.null,valor_recebido.eq.0')
+         .select()
+         .single();
+       if (updateError) throw updateError;
+       updated = selectedUpdated as LancamentoFinanceiro;
      }
 
-     // Propagação do AVR se solicitado e for recorrente
-     if (data.propagate_avr !== 'none' && current.recorrencia_id) {
+
+     // Propagação do AVR atualiza somente parcelas abertas da mesma recorrência.
+     if (data.propagate_avr === 'open' && current.recorrencia_id) {
        const { data: openParcels, error: openParcelsError } = await supabase
          .from('lancamentos_financeiros')
-         .select('id, numero_parcela')
+         .select('id, observacoes')
          .eq('recorrencia_id', current.recorrencia_id)
-         .eq('status_pagamento', 'aberto');
+         .eq('status_pagamento', 'aberto')
+         .or('valor_recebido.is.null,valor_recebido.eq.0');
        if (openParcelsError) throw openParcelsError;
 
        for (const openParcel of openParcels || []) {
-         const submittedParcel = data.parcelas?.find(parcel => parcel.numero === openParcel.numero_parcela);
-         const parcelValue = submittedParcel
-           ? Number(submittedParcel.valor.replace(/\./g, '').replace(',', '.')) || 0
-           : valorPagoEfetivo;
          const { error: propagationError } = await supabase
            .from('lancamentos_financeiros')
            .update({
-             valor_previsto: parcelValue,
+             valor_previsto: valorParcelaSelecionadaAVR,
              valor_original: valorTotalAVR,
              tipo_baixa: 'avr',
-             motivo_ajuste: data.motivo_ajuste || current.motivo_ajuste || null,
-             ...(data.conta_bancaria_id ? { conta_bancaria_id: data.conta_bancaria_id } : {}),
-             ...(data.centro_custo_id ? { centro_custo_id: data.centro_custo_id } : {}),
-             ...(data.categoria_id ? { categoria_id: data.categoria_id } : {}),
-             ...(data.condicao ? { condicao: data.condicao } : {}),
-             ...(data.data_competencia ? { data_competencia: data.data_competencia } : {}),
-             ...(data.data_emissao ? { data_emissao: data.data_emissao } : {}),
-             observacoes: (current.observacoes || '') + `\\n[AVR Propagado (${data.propagate_avr}) em ${timestampStr}]`
-           })
-           .eq('id', openParcel.id);
+           ...(!isMaster ? { status_aprovacao: 'digital' } : {}),
+           motivo_ajuste: data.motivo_ajuste || current.motivo_ajuste || null,
+           ...(data.conta_bancaria_id ? { conta_bancaria_id: data.conta_bancaria_id } : {}),
+           ...(data.centro_custo_id ? { centro_custo_id: data.centro_custo_id } : {}),
+           ...(data.categoria_id ? { categoria_id: data.categoria_id } : {}),
+           ...(data.condicao ? { condicao: data.condicao } : {}),
+           ...(data.data_competencia ? { data_competencia: data.data_competencia } : {}),
+           ...(data.data_emissao ? { data_emissao: data.data_emissao } : {}),
+           observacoes: (openParcel.observacoes || '') + `\\n[AVR Propagado em ${timestampStr}]`
+         })
+           .eq('id', openParcel.id)
+           .eq('status_pagamento', 'aberto')
+           .or('valor_recebido.is.null,valor_recebido.eq.0');
          if (propagationError) throw propagationError;
        }
-     }
-
-     // Mantém o total do título no registro exibido pela listagem, sem alterar o valor individual da parcela.
-     if (data.parcelas?.length) {
-       const totalQuery = supabase
-         .from('lancamentos_financeiros')
-         .update({ valor_original: valorTotalAVR });
-
-       if (recurrenceId) {
-         totalQuery.eq('recorrencia_id', recurrenceId);
-       } else {
-         totalQuery.eq('id', id);
-       }
-
-       const { error: totalError } = await totalQuery;
-       if (totalError) throw totalError;
      }
 
      return updated as LancamentoFinanceiro;
@@ -791,14 +746,6 @@ export const lancamentosService = {
      valor_recebido: isBPI ? 0 : totalValorRecebido
    };
 
-   if (isAVR) {
-     updatePayload.valor_previsto = valorPagoEfetivo;
-     updatePayload.valor_original = valorTotalAVR;
-     if (!isMaster) {
-       updatePayload.status_aprovacao = 'digital';
-     }
-   }
-   
    if (isBPI) {
      updatePayload.bpi_em = new Date().toISOString();
    }
@@ -811,24 +758,6 @@ export const lancamentosService = {
      .single();
 
    if (updateError) throw updateError;
-
-   // Propagação do AVR se solicitado e for recorrente
-   if (isAVR && data.propagate_avr !== 'none' && current.recorrencia_id) {
-     const propagationQuery = supabase
-       .from('lancamentos_financeiros')
-       .update({
-         valor_previsto: valorPagoEfetivo,
-         valor_original: valorTotalAVR,
-         observacoes: (current.observacoes || '') + `\n[Valor ajustado via AVR propagado (${data.propagate_avr}) em ${new Date().toLocaleDateString('pt-BR')}]`
-       })
-       .eq('recorrencia_id', current.recorrencia_id);
-
-     if (data.propagate_avr === 'open') {
-       propagationQuery.eq('status_pagamento', 'aberto');
-     }
-
-     await propagationQuery;
-   }
 
    return updated as LancamentoFinanceiro;
  },

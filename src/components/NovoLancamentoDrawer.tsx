@@ -237,7 +237,8 @@ export default function NovoLancamentoDrawer() {
   const [avrPeriodicity, setAvrPeriodicity] = useState('mensal');
   const [avrCustomDays, setAvrCustomDays] = useState('30');
   const [avrWithEntry, setAvrWithEntry] = useState(false);
-  const [avrParcels, setAvrParcels] = useState<Array<{ id?: string; numero: number; data: string; valor: string; status: string }>>([]);
+  const [avrParcels, setAvrParcels] = useState<Array<{ id?: string; numero: number; data: string; valor: string; status: string; valor_recebido?: number | null }>>([]);
+  const [avrSingleParcelValue, setAvrSingleParcelValue] = useState('');
   const [avrPropagation, setAvrPropagation] = useState<'none' | 'open'>('none');
   const [isAVRConfirmationOpen, setIsAVRConfirmationOpen] = useState(false);
   const [avrHasReceived, setAvrHasReceived] = useState(false);
@@ -344,6 +345,7 @@ export default function NovoLancamentoDrawer() {
     setAvrPeriodicity('mensal');
     setAvrCustomDays('30');
     setAvrWithEntry(false);
+    setAvrSingleParcelValue(formatBRL(editingItem.valor_previsto));
     setAvrParcels([]);
 
     const loadAVRData = async () => {
@@ -365,7 +367,8 @@ export default function NovoLancamentoDrawer() {
         numero: parcel.numero_parcela || 1,
         data: parcel.data_vencimento,
         valor: formatBRL(parcel.valor_previsto),
-        status: parcel.status_pagamento
+        status: parcel.status_pagamento,
+        valor_recebido: parcel.valor_recebido
       }));
       setAvrWithEntry(loadedParcels[0]?.data === editingItem.data_emissao);
       setAvrParcels(loadedParcels);
@@ -526,9 +529,10 @@ export default function NovoLancamentoDrawer() {
       nextParcels.push({
         id: existing?.id,
         numero: index + 1,
-        data: currentDate.toISOString().split('T')[0],
-        valor: formatBRL(amount),
-        status: existing?.status || 'aberto'
+        data: existing?.data || currentDate.toISOString().split('T')[0],
+        valor: existing?.valor || formatBRL(amount),
+        status: existing?.status || 'aberto',
+        valor_recebido: existing?.valor_recebido
       });
       if (avrPeriodicity === 'diario') currentDate.setDate(currentDate.getDate() + 1);
       else if (avrPeriodicity === 'semanal') currentDate.setDate(currentDate.getDate() + 7);
@@ -557,18 +561,40 @@ export default function NovoLancamentoDrawer() {
       showToast('Selecione um motivo para o AVR.', 'warning');
       return;
     }
-    if (lancamentoFormDraft.condicao === 'a_prazo' && avrParcels.length === 0) {
+
+    const selectedParcel = editingItem.recorrencia_id
+      ? avrParcels.find(parcel => parcel.id === editingItem.id)
+      : undefined;
+    const selectedValue = editingItem.recorrencia_id
+      ? parseMoney(selectedParcel?.valor)
+      : parseMoney(avrSingleParcelValue);
+    const selectedStatus = selectedParcel?.status ?? editingItem.status_pagamento;
+    const selectedReceived = Number(selectedParcel?.valor_recebido ?? editingItem.valor_recebido ?? 0);
+
+    if (selectedStatus !== 'aberto' || selectedReceived > 0) {
+      showToast('Somente parcelas abertas e sem valor recebido podem ser ajustadas.', 'warning');
+      setIsAVRConfirmationOpen(false);
+      return;
+    }
+    if (selectedValue <= 0) {
+      showToast('Informe um valor válido para a parcela.', 'warning');
+      setIsAVRConfirmationOpen(false);
+      return;
+    }
+    if (editingItem.recorrencia_id && avrParcels.length === 0) {
       showToast('Gere as parcelas do AVR antes de salvar.', 'warning');
       setIsAVRConfirmationOpen(false);
       return;
     }
+
     setIsSubmitting(true);
     try {
       await baixaLancamento({
         id: editingItem.id,
         data: {
           tipo_baixa: 'avr',
-          valor_pago: parseMoney(lancamentoFormDraft.valor_previsto),
+          valor_pago: selectedValue,
+          parcela_valor: selectedValue,
           data_pagamento: lancamentoFormDraft.data_pagamento,
           conta_bancaria_id: lancamentoFormDraft.conta_bancaria_id,
           centro_custo_id: lancamentoFormDraft.centro_custo_id,
@@ -576,15 +602,15 @@ export default function NovoLancamentoDrawer() {
           condicao: lancamentoFormDraft.condicao,
           data_competencia: lancamentoFormDraft.data_competencia,
           data_emissao: lancamentoFormDraft.data_emissao,
-          parcelas: lancamentoFormDraft.condicao === 'a_prazo' ? avrParcels : undefined,
-          parcela_config: lancamentoFormDraft.condicao === 'a_prazo' ? {
+          parcelas: editingItem.recorrencia_id ? avrParcels : undefined,
+          parcela_config: editingItem.recorrencia_id ? {
             quantidade: Math.max(1, parseInt(avrQuantity) || avrParcels.length || 1),
             periodicidade: avrPeriodicity,
             periodicidade_customizada_dias: avrPeriodicity === 'personalizado' ? parseInt(avrCustomDays) || 30 : undefined,
             com_entrada: avrWithEntry
           } : undefined,
           motivo_ajuste: (categoriasAjuste as any[]).find(reason => reason.id === avrReasonId)?.nome,
-          propagate_avr: propagationOverride || avrPropagation
+          propagate_avr: propagationOverride ?? avrPropagation
         }
       });
       showToast('AVR atualizado com sucesso!', 'success');
@@ -1464,12 +1490,19 @@ export default function NovoLancamentoDrawer() {
                             </select>
                           </div>
                           <div className="space-y-2">
-                            <label className="text-[9px] font-black uppercase text-primary tracking-widest">Novo valor original *</label>
-                            <MoneyInput value={lancamentoFormDraft.valor_previsto} onChange={(value) => setLancamentoFormDraft({ valor_previsto: value })} className="w-full h-10 bg-white border-2 border-primary/10 rounded-xl px-3 text-xs font-black outline-none focus:border-primary" />
+                            <label className="text-[9px] font-black uppercase text-primary tracking-widest">Novo valor original</label>
+                            <MoneyInput value={lancamentoFormDraft.valor_previsto} onChange={() => undefined} disabled className="w-full h-10 bg-neutral-100 border-2 border-primary/10 rounded-xl px-3 text-xs font-black outline-none cursor-not-allowed" />
                           </div>
                         </div>
 
-                        {lancamentoFormDraft.condicao === 'a_prazo' && (
+                        {!editingItem.recorrencia_id && (
+                          <div className="space-y-2 border-t border-primary/10 pt-4">
+                            <label className="text-[9px] font-black uppercase text-primary tracking-widest">Novo valor da parcela *</label>
+                            <MoneyInput value={avrSingleParcelValue} onChange={setAvrSingleParcelValue} className="w-full h-10 bg-white border-2 border-primary/10 rounded-xl px-3 text-xs font-black outline-none focus:border-primary" />
+                          </div>
+                        )}
+
+                        {lancamentoFormDraft.condicao === 'a_prazo' && editingItem.recorrencia_id && (
                           <div className="space-y-3 border-t border-primary/10 pt-4">
                             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                               <label className="space-y-1.5"><span className="text-[9px] font-black uppercase text-secondary">Nº vezes</span><input type="number" min="1" max="120" value={avrQuantity} onChange={(e) => setAvrQuantity(e.target.value)} className="w-full h-10 bg-white border-2 border-primary/10 rounded-xl px-3 text-xs font-bold" /></label>
@@ -1478,7 +1511,7 @@ export default function NovoLancamentoDrawer() {
                             </div>
                             <label className="flex items-center gap-2 text-[9px] font-black uppercase text-secondary"><input type="checkbox" checked={avrWithEntry} onChange={(e) => setAvrWithEntry(e.target.checked)} className="rounded text-primary" /> Com entrada</label>
                             <button type="button" onClick={generateAVRParcels} className="w-full h-10 bg-primary/10 text-primary rounded-xl text-[9px] font-black uppercase tracking-widest">Gerar / Atualizar Parcelas</button>
-                            {avrParcels.length > 0 && <div className="border-2 border-primary/10 rounded-xl overflow-hidden bg-white"><table className="w-full"><tbody>{avrParcels.map((parcel, index) => <tr key={`${parcel.id || 'new'}-${parcel.numero}`} className="border-b border-primary/10"><td className="px-2 py-2 text-[10px] font-black">#{parcel.numero}</td><td className="px-1 py-1"><input type="date" disabled={parcel.status !== 'aberto'} value={parcel.data} onChange={(e) => setAvrParcels(prev => prev.map((item, itemIndex) => itemIndex === index ? { ...item, data: e.target.value } : item))} className="w-full border-none text-[10px]" /></td><td className="px-1 py-1"><MoneyInput disabled={parcel.status !== 'aberto'} value={parcel.valor} onChange={(value) => setAvrParcels(prev => prev.map((item, itemIndex) => itemIndex === index ? { ...item, valor: value } : item))} className="w-full border-none text-[10px] font-black" /></td></tr>)}</tbody></table></div>}
+                            {avrParcels.length > 0 && <div className="border-2 border-primary/10 rounded-xl overflow-hidden bg-white"><table className="w-full"><tbody>{avrParcels.map((parcel, index) => { const parcelLocked = parcel.status !== 'aberto' || Number(parcel.valor_recebido) > 0; return <tr key={`${parcel.id || 'new'}-${parcel.numero}`} className="border-b border-primary/10"><td className="px-2 py-2 text-[10px] font-black">#{parcel.numero}</td><td className="px-1 py-1"><input type="date" disabled={parcelLocked} value={parcel.data} onChange={(e) => setAvrParcels(prev => prev.map((item, itemIndex) => itemIndex === index ? { ...item, data: e.target.value } : item))} className="w-full border-none text-[10px]" /></td><td className="px-1 py-1"><MoneyInput disabled={parcelLocked} value={parcel.valor} onChange={(value) => setAvrParcels(prev => prev.map((item, itemIndex) => itemIndex === index ? { ...item, valor: value } : item))} className="w-full border-none text-[10px] font-black" /></td></tr>; })}</tbody></table></div>}
                           </div>
                         )}
                       </>
