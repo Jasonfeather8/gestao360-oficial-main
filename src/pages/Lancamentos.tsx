@@ -665,31 +665,39 @@ export default function Lancamentos({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary flex items-center gap-2">
-                <Receipt className="w-4 h-4" /> Natureza do Fluxo
-              </label>
-              <div className="flex bg-neutral-100 p-1 rounded-xl h-11">
-                <button type="button" onClick={() => setTypeFilter([])} className={`flex-1 rounded-lg text-[10px] font-black uppercase transition-all ${typeFilter.length === 0 ? 'bg-white text-primary shadow-sm' : 'text-neutral-400'}`}>Todos</button>
-                <button type="button" onClick={() => setTypeFilter(current => current.includes('entrada') ? current.filter(value => value !== 'entrada') : [...current, 'entrada'])} className={`flex-1 rounded-lg text-[10px] font-black uppercase transition-all ${typeFilter.includes('entrada') ? 'bg-white text-bank-truth-green shadow-sm' : 'text-neutral-400'}`}>Entradas</button>
-                <button type="button" onClick={() => setTypeFilter(current => current.includes('saida') ? current.filter(value => value !== 'saida') : [...current, 'saida'])} className={`flex-1 rounded-lg text-[10px] font-black uppercase transition-all ${typeFilter.includes('saida') ? 'bg-white text-alert-red shadow-sm' : 'text-neutral-400'}`}>Saídas</button>
+          <div className={typeOverride === 'entrada' ? 'grid grid-cols-1 gap-4' : 'grid grid-cols-1 xl:grid-cols-2 gap-4'}>
+            {typeOverride !== 'entrada' && (
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary flex items-center gap-2">
+                  <Receipt className="w-4 h-4" /> Natureza do Fluxo
+                </label>
+                <div className="flex bg-neutral-100 p-1 rounded-xl h-11">
+                  <button type="button" onClick={() => setTypeFilter([])} className={`flex-1 rounded-lg text-[10px] font-black uppercase transition-all ${typeFilter.length === 0 ? 'bg-white text-primary shadow-sm' : 'text-neutral-400'}`}>Todos</button>
+                  <button type="button" onClick={() => setTypeFilter(current => current.includes('entrada') ? current.filter(value => value !== 'entrada') : [...current, 'entrada'])} className={`flex-1 rounded-lg text-[10px] font-black uppercase transition-all ${typeFilter.includes('entrada') ? 'bg-white text-bank-truth-green shadow-sm' : 'text-neutral-400'}`}>Entradas</button>
+                  <button type="button" onClick={() => setTypeFilter(current => current.includes('saida') ? current.filter(value => value !== 'saida') : [...current, 'saida'])} className={`flex-1 rounded-lg text-[10px] font-black uppercase transition-all ${typeFilter.includes('saida') ? 'bg-white text-alert-red shadow-sm' : 'text-neutral-400'}`}>Saídas</button>
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="space-y-2">
               <label className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary flex items-center gap-2">
                 <CreditCard className="w-4 h-4" /> Status de Pagamento
               </label>
-              <div className="grid grid-cols-2 sm:grid-cols-5 xl:grid-cols-3 gap-2">
-                {[
-                  { id: 'all', label: 'Todos' },
-                  { id: 'pago', label: 'Liquidados' },
-                  { id: 'aberto', label: 'Contas em Aberto' },
-                  { id: 'atrasadas', label: 'Atrasadas' },
-                  { id: 'quitação_pendente', label: 'Pend. Gestor' },
-                  { id: 'bpi', label: 'BPI (Inatividade)' },
-                ].map(opt => (
+              <div className={typeOverride === 'entrada' ? 'grid grid-cols-3 gap-2' : 'grid grid-cols-2 sm:grid-cols-5 xl:grid-cols-3 gap-2'}>
+                {(typeOverride === 'entrada'
+                  ? [
+                      { id: 'all', label: 'Todos' },
+                      { id: 'atrasadas', label: 'Atrasadas' },
+                      { id: 'aberto', label: 'À Vencer' },
+                    ]
+                  : [
+                      { id: 'all', label: 'Todos' },
+                      { id: 'pago', label: 'Liquidados' },
+                      { id: 'aberto', label: 'Contas em Aberto' },
+                      { id: 'atrasadas', label: 'Atrasadas' },
+                      { id: 'quitação_pendente', label: 'Pend. Gestor' },
+                      { id: 'bpi', label: 'BPI (Inatividade)' },
+                    ]).map(opt => (
                   <button
                     key={opt.id}
                     type="button"
