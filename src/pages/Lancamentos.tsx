@@ -665,8 +665,8 @@ export default function Lancamentos({
             </div>
           </div>
 
-          <div className={typeOverride === 'entrada' ? 'grid grid-cols-1 gap-4' : 'grid grid-cols-1 xl:grid-cols-2 gap-4'}>
-            {typeOverride !== 'entrada' && (
+          <div className={typeOverride === 'entrada' || typeOverride === 'saida' ? 'grid grid-cols-1 gap-4' : 'grid grid-cols-1 xl:grid-cols-2 gap-4'}>
+            {typeOverride !== 'entrada' && typeOverride !== 'saida' && (
               <div className="space-y-2">
                 <label className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary flex items-center gap-2">
                   <Receipt className="w-4 h-4" /> Natureza do Fluxo
@@ -683,8 +683,8 @@ export default function Lancamentos({
               <label className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary flex items-center gap-2">
                 <CreditCard className="w-4 h-4" /> Status de Pagamento
               </label>
-              <div className={typeOverride === 'entrada' ? 'grid grid-cols-3 gap-2' : 'grid grid-cols-2 sm:grid-cols-5 xl:grid-cols-3 gap-2'}>
-                {(typeOverride === 'entrada'
+              <div className={typeOverride === 'entrada' || typeOverride === 'saida' ? 'grid grid-cols-3 gap-2' : 'grid grid-cols-2 sm:grid-cols-5 xl:grid-cols-3 gap-2'}>
+                {(typeOverride === 'entrada' || typeOverride === 'saida'
                   ? [
                       { id: 'all', label: 'Todos' },
                       { id: 'atrasadas', label: 'Atrasadas' },
