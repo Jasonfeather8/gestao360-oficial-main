@@ -86,13 +86,11 @@ export default function FinanceiroStatusFilter({ value, onChange, filters }: Fin
       <label className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary flex items-center gap-2">
         <CreditCard className="w-4 h-4" /> Status de Pagamento
       </label>
-      <div className="grid grid-cols-1 gap-2 md:grid-cols-[minmax(120px,auto)_minmax(0,1fr)_minmax(106px,auto)] md:gap-x-3 md:gap-y-2">
-        <div className="hidden md:block md:col-span-2" aria-hidden="true" />
-        <div className="px-3 text-right text-[8px] font-black uppercase tracking-widest text-neutral-400 md:col-start-3">Valor</div>
+      <div className="grid grid-cols-1 gap-2 md:grid-cols-[minmax(120px,auto)_minmax(0,1fr)_minmax(106px,auto)] md:items-start md:gap-x-3">
         <button
           type="button"
           onClick={() => toggleStatus(options[0].id)}
-          className={`w-full md:w-fit md:min-w-[120px] min-h-[39px] px-3 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest border-2 transition-all text-left flex items-center justify-between gap-3 md:col-start-1 md:row-start-2 md:self-start ${
+          className={`w-full md:w-fit md:min-w-[120px] min-h-[39px] px-3 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest border-2 transition-all text-left flex items-center justify-between gap-3 md:col-start-1 md:self-start ${
             value.length === 0
               ? 'border-primary bg-primary/5 text-primary'
               : 'border-neutral-100 bg-neutral-50 text-secondary hover:border-neutral-200'
@@ -102,7 +100,7 @@ export default function FinanceiroStatusFilter({ value, onChange, filters }: Fin
           {value.length === 0 && <div className="w-2 h-2 bg-primary rounded-full shrink-0" />}
         </button>
         <div className="grid grid-cols-[minmax(0,1fr)_minmax(106px,auto)] gap-2 md:contents">
-          <div className="flex flex-col gap-2 md:col-start-2 md:row-start-2">
+          <div className="flex flex-col gap-2 md:col-start-2">
             {options.slice(1).map(option => (
               <button
                 key={option.id}
@@ -119,7 +117,7 @@ export default function FinanceiroStatusFilter({ value, onChange, filters }: Fin
               </button>
             ))}
           </div>
-          <div className="flex flex-col gap-2 md:col-start-3 md:row-start-2">
+          <div className="flex flex-col gap-2 md:col-start-3">
             {options.slice(1).map(option => (
               <div key={option.id} className="min-h-[39px] min-w-[106px] px-3 py-2.5 rounded-xl bg-neutral-50 border-2 border-neutral-100 text-right font-mono text-[10px] font-black text-neutral-700 flex items-center justify-end">
                 {option.isLoading ? '...' : valueFormatter(option.total || 0)}
