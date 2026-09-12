@@ -567,6 +567,13 @@ export default function Lancamentos({
        </span>
      );
    }
+   if (item.status_aprovacao === 'confirmado_master' && item.status_pagamento === 'pago') {
+     return (
+       <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-emerald-50 text-bank-truth-green font-black border border-emerald-200 text-[9px] uppercase tracking-tighter">
+         Confirmado
+       </span>
+     );
+   }
    if (item.status_pagamento === 'pago') {
      return (
        <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-emerald-50 text-bank-truth-green font-black border border-emerald-200 text-[9px] uppercase tracking-tighter">
