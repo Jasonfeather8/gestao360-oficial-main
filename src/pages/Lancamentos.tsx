@@ -42,6 +42,7 @@ import Button from '../components/Button';
 import MultiSelectDropdown from '../components/MultiSelectDropdown';
 import AccountFilterCards from '../components/Lancamentos/AccountFilterCards';
 import LancamentoActionMenu from '../components/Lancamentos/LancamentoActionMenu';
+import FinanceiroStatusFilter from '../components/Lancamentos/FinanceiroStatusFilter';
 
 interface LancamentosProps {
   typeOverride?: 'entrada' | 'saida';
@@ -172,6 +173,7 @@ export default function Lancamentos({
   const [categoryIdFilter, setCategoryIdFilter] = useState<string[]>([]);
   const [contaIdFilter, setContaIdFilter] = useState<string[]>([]);
   const [centroCustoIdFilter, setCentroCustoIdFilter] = useState<string[]>([]);
+  const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
   const [condicaoFilter, setCondicaoFilter] = useState('all');
   const [temDescontoFilter, setTemDescontoFilter] = useState('all');
   const [temAcrescimoFilter, setTemAcrescimoFilter] = useState('all');
@@ -190,6 +192,9 @@ export default function Lancamentos({
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [selectedLogItem, setSelectedLogItem] = useState<LancamentoFinanceiro | null>(null);
 
+  const financeiroConfirmedSelected = isFinanceiroView && statusPagamento.includes('confirmado_master');
+  const financeiroPaymentStatuses = statusPagamento.filter(status => status !== 'confirmado_master');
+
   const {
     data: allLancamentos = [],
     totalCount = 0,
@@ -205,8 +210,8 @@ export default function Lancamentos({
     docParcel: parseInt(docSearchTerm.split('-')[1]) || undefined,
     startDate: isFinanceiroView && !dateFilterActive ? undefined : startDate,
     endDate: isFinanceiroView && !dateFilterActive ? undefined : endDate,
-    approvalStatus: approvalStatus,
-    statusPagamento: statusPagamento.length === 0 && !isFinanceiroView && isColaborador ? ['quitação_pendente'] : statusPagamento,
+    approvalStatus: financeiroConfirmedSelected ? 'confirmado_master' : approvalStatus,
+    statusPagamento: statusPagamento.length === 0 && !isFinanceiroView && isColaborador ? ['quitação_pendente'] : isFinanceiroView ? financeiroPaymentStatuses : statusPagamento,
     type: typeFilter,
     authorId: isColaborador ? useUIStore.getState().currentUserId : authorIdFilter,
     categoryId: categoryIdFilter,
@@ -288,7 +293,6 @@ export default function Lancamentos({
   const { categoriasAjuste = [] } = useCategoriasAjuste();
 
   const activeContas = useMemo(() => rawContas.filter((c: any) => c.status !== 'excluido'), [rawContas]);
-  const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
 
   useEffect(() => {
     const lancamentoId = searchParams.get('id');
@@ -301,6 +305,33 @@ export default function Lancamentos({
   const filteredLancamentos = useMemo(() => {
     return allLancamentos.filter(l => selectedAccountIds.length === 0 || selectedAccountIds.includes(l.conta_bancaria_id));
   }, [allLancamentos, selectedAccountIds]);
+
+  const resolvedFinanceiroContaIds = useMemo(() => {
+    if (selectedAccountIds.length === 0) return contaIdFilter;
+    if (contaIdFilter.length === 0) return selectedAccountIds;
+    const matchingAccountIds = selectedAccountIds.filter(id => contaIdFilter.includes(id));
+    return matchingAccountIds.length > 0 ? matchingAccountIds : ['00000000-0000-0000-0000-000000000000'];
+  }, [contaIdFilter, selectedAccountIds]);
+
+  const financeiroStatusFilters = useMemo(() => ({
+    searchTerm: debouncedSearchTerm,
+    docCode: parseInt(docSearchTerm.split('-')[0]) || undefined,
+    docParcel: parseInt(docSearchTerm.split('-')[1]) || undefined,
+    startDate: dateFilterActive ? startDate : undefined,
+    endDate: dateFilterActive ? endDate : undefined,
+    approvalStatus,
+    type: typeFilter,
+    authorId: isColaborador ? useUIStore.getState().currentUserId : authorIdFilter,
+    categoryId: categoryIdFilter,
+    contaId: resolvedFinanceiroContaIds,
+    centroCustoId: centroCustoIdFilter,
+    condicao: condicaoFilter,
+    temDesconto: temDescontoFilter,
+    temAcrescimo: temAcrescimoFilter,
+    motivoDescontoId: motivoDescontoFilter,
+    motivoAcrescimoId: motivoAcrescimoFilter,
+    isFinanceiroView: true
+  }), [approvalStatus, authorIdFilter, categoryIdFilter, centroCustoIdFilter, condicaoFilter, dateFilterActive, debouncedSearchTerm, docSearchTerm, endDate, isColaborador, motivoAcrescimoFilter, motivoDescontoFilter, resolvedFinanceiroContaIds, startDate, temAcrescimoFilter, temDescontoFilter, typeFilter]);
 
   const valueFormatter = (val: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
@@ -679,41 +710,49 @@ export default function Lancamentos({
               </div>
             )}
 
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary flex items-center gap-2">
-                <CreditCard className="w-4 h-4" /> Status de Pagamento
-              </label>
-              <div className={isFinanceiroView ? 'grid grid-cols-2 sm:grid-cols-3 gap-2' : 'grid grid-cols-3 gap-2'}>
-                {(typeOverride === 'entrada' || typeOverride === 'saida'
-                  ? [
-                      { id: 'all', label: 'Todos' },
-                      { id: 'atrasadas', label: 'Atrasadas' },
-                      { id: 'aberto', label: 'À Vencer' },
-                    ]
-                  : [
-                      { id: 'all', label: 'Todos' },
-                      { id: 'pago', label: 'Liquidados' },
-                      { id: 'aberto', label: 'Contas em Aberto' },
-                      { id: 'atrasadas', label: 'Atrasadas' },
-                      { id: 'quitação_pendente', label: 'Pend. Gestor' },
-                      { id: 'bpi', label: 'BPI (Inatividade)' },
-                    ]).map(opt => (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => opt.id === 'all'
-                      ? setStatusPagamento([])
-                      : setStatusPagamento(current => current.includes(opt.id) ? current.filter(value => value !== opt.id) : [...current, opt.id])}
-                    className={`px-3 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest border-2 transition-all text-left flex items-center justify-between ${
-                      (opt.id === 'all' ? statusPagamento.length === 0 : statusPagamento.includes(opt.id)) ? 'border-primary bg-primary/5 text-primary' : 'border-neutral-100 bg-neutral-50 text-secondary hover:border-neutral-200'
-                    }`}
-                  >
-                    {opt.label}
-                    {((opt.id === 'all' && statusPagamento.length === 0) || (opt.id !== 'all' && statusPagamento.includes(opt.id))) && <div className="w-2 h-2 bg-primary rounded-full shrink-0" />}
-                  </button>
-                ))}
+            {isFinanceiroView ? (
+              <FinanceiroStatusFilter
+                value={statusPagamento}
+                onChange={setStatusPagamento}
+                filters={financeiroStatusFilters}
+              />
+            ) : (
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary flex items-center gap-2">
+                  <CreditCard className="w-4 h-4" /> Status de Pagamento
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(typeOverride === 'entrada' || typeOverride === 'saida'
+                    ? [
+                        { id: 'all', label: 'Todos' },
+                        { id: 'atrasadas', label: 'Atrasadas' },
+                        { id: 'aberto', label: 'À Vencer' },
+                      ]
+                    : [
+                        { id: 'all', label: 'Todos' },
+                        { id: 'pago', label: 'Liquidados' },
+                        { id: 'aberto', label: 'Contas em Aberto' },
+                        { id: 'atrasadas', label: 'Atrasadas' },
+                        { id: 'quitação_pendente', label: 'Pend. Gestor' },
+                        { id: 'bpi', label: 'BPI (Inatividade)' },
+                      ]).map(opt => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => opt.id === 'all'
+                        ? setStatusPagamento([])
+                        : setStatusPagamento(current => current.includes(opt.id) ? current.filter(value => value !== opt.id) : [...current, opt.id])}
+                      className={`px-3 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest border-2 transition-all text-left flex items-center justify-between ${
+                        (opt.id === 'all' ? statusPagamento.length === 0 : statusPagamento.includes(opt.id)) ? 'border-primary bg-primary/5 text-primary' : 'border-neutral-100 bg-neutral-50 text-secondary hover:border-neutral-200'
+                      }`}
+                    >
+                      {opt.label}
+                      {((opt.id === 'all' && statusPagamento.length === 0) || (opt.id !== 'all' && statusPagamento.includes(opt.id))) && <div className="w-2 h-2 bg-primary rounded-full shrink-0" />}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           <div className={isFinanceiroView ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4' : 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4'}>
