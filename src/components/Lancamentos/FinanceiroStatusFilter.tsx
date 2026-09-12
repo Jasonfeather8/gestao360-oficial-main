@@ -92,7 +92,7 @@ export default function FinanceiroStatusFilter({ value, onChange, filters }: Fin
         <button
           type="button"
           onClick={() => toggleStatus(options[0].id)}
-          className={`px-3 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest border-2 transition-all text-left flex items-center justify-between gap-3 md:row-start-2 ${
+          className={`px-3 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest border-2 transition-all text-left flex items-center justify-between gap-3 md:row-start-2 md:h-full ${
             value.length === 0
               ? 'border-primary bg-primary/5 text-primary'
               : 'border-neutral-100 bg-neutral-50 text-secondary hover:border-neutral-200'
