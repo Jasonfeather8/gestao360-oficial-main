@@ -27,6 +27,8 @@ import { useUIStore } from '../store/uiStore';
 import { useLancamentos, useLancamento, useEntidades, useCentrosCusto, useCategorias, useContas, useContasSaldos, useLancamentoAnexos, useCategoriasAjuste } from '../hooks/useData';
 import { useAuth } from '../hooks/useAuth';
 import MoneyInput from './MoneyInput';
+import { PrintDocumentSelector } from './printing/PrintDocumentSelector';
+import type { PrintableDocumentData } from './printing/types';
 
 import { supabase } from '@/integrations/supabase/client';
 import Button from './Button';
@@ -197,7 +199,7 @@ interface LocalFile {
 }
 
 export default function NovoLancamentoDrawer() {
-  const { role } = useAuth();
+  const { role, user } = useAuth();
   const {
     isNovoLancamentoOpen,
 
@@ -228,6 +230,7 @@ export default function NovoLancamentoDrawer() {
   const { anexos: existingAnexos, deleteAnexo } = useLancamentoAnexos(selectedLancamentoIdForModal);
 
   const [attachments, setAttachments] = useState<LocalFile[]>([]);
+  const [isPrintOpen, setIsPrintOpen] = useState(false);
 
   const [parcelasManuais, setParcelasManuais] = useState<Array<{ numero: number; data: string; valor: string }>>([]);
   const [isAVREdit, setIsAVREdit] = useState(false);
@@ -496,6 +499,52 @@ export default function NovoLancamentoDrawer() {
     lancamentoFormDraft.acrescimo_tipo,
     lancamentoFormDraft.valor_recebido
   ]);
+
+  const printableDraftData: PrintableDocumentData = useMemo(() => {
+    const draftParcels = parcelasManuais.length > 0
+      ? parcelasManuais.map(parcel => ({
+        number: parcel.numero,
+        dueDate: parcel.data,
+        amount: parseMoney(parcel.valor),
+        paidAmount: 0,
+        status: lancamentoFormDraft.ja_recebido ? 'pago' : 'aberto'
+      }))
+      : [{
+        number: 1,
+        dueDate: lancamentoFormDraft.data_vencimento,
+        amount: parseMoney(lancamentoFormDraft.valor_previsto),
+        paidAmount: parseMoney(lancamentoFormDraft.valor_recebido),
+        status: lancamentoFormDraft.ja_recebido ? 'pago' : 'aberto'
+      }];
+    const recipient = entidades.find(entity => entity.id === lancamentoFormDraft.entidade_id)?.nome_razao_social || 'Não informado';
+    const category = categorias.find(categoryItem => categoryItem.id === lancamentoFormDraft.categoria_id)?.nome;
+    const account = contas.find(accountItem => accountItem.id === lancamentoFormDraft.conta_bancaria_id);
+    const baseAmount = parseMoney(lancamentoFormDraft.valor_previsto);
+    return {
+      id: editingItem?.id,
+      documentNumber: editingItem?.documento_numero || (editingItem?.codigo_sequencial ? String(editingItem.codigo_sequencial) : undefined),
+      recipient,
+      operation: lancamentoFormDraft.tipo,
+      category,
+      account: account?.nome_banco || account?.nome,
+      issuer: user?.email || 'Sistema / Não informado',
+      description: lancamentoFormDraft.observacoes,
+      issueDate: lancamentoFormDraft.data_emissao,
+      dueDate: lancamentoFormDraft.data_vencimento,
+      paymentDate: lancamentoFormDraft.ja_recebido ? lancamentoFormDraft.data_pagamento : undefined,
+      amount: baseAmount,
+      receivedAmount: parseMoney(lancamentoFormDraft.valor_recebido),
+      adjustedAmount: calculations.subtotal,
+      adjustments: [
+        { label: 'Desconto', value: `${lancamentoFormDraft.desconto_valor || '0,00'} ${lancamentoFormDraft.desconto_tipo === 'porcentagem' ? '%' : ''}`.trim() },
+        { label: 'Acréscimo', value: `${lancamentoFormDraft.acrescimo_valor || '0,00'} ${lancamentoFormDraft.acrescimo_tipo === 'porcentagem' ? '%' : ''}`.trim() }
+      ],
+      parcels: draftParcels,
+      status: lancamentoFormDraft.ja_recebido ? 'pago' : 'aberto',
+      approvalStatus: editingItem?.status_aprovacao || 'Rascunho não salvo',
+      provisional: true
+    };
+  }, [contas, categorias, calculations.subtotal, editingItem, entidades, lancamentoFormDraft, parcelasManuais, user?.email]);
 
   // Saldo Insuficiente validation (Item 1)
   const selectedConta = contas.find(c => c.id === lancamentoFormDraft.conta_bancaria_id);
@@ -888,6 +937,7 @@ export default function NovoLancamentoDrawer() {
 
   return (
     <>
+      <PrintDocumentSelector data={printableDraftData} open={isPrintOpen} onClose={() => setIsPrintOpen(false)} />
       <AnimatePresence>
         {isNovoLancamentoOpen && (
           <div className="fixed inset-0 z-[250] flex justify-end overflow-hidden">
@@ -1633,6 +1683,13 @@ export default function NovoLancamentoDrawer() {
               )}
 
               <footer className="p-6 border-t border-surface-border bg-neutral-50 flex justify-end gap-4 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsPrintOpen(true)}
+                  className="px-6 py-3 font-black text-[10px] text-neutral-700 border-2 border-neutral-200 rounded-xl hover:bg-neutral-100 hover:border-primary transition-all uppercase tracking-widest"
+                >
+                  Pré-visualizar / Imprimir
+                </button>
                 <button
                   type="button"
                   onClick={handleClose}

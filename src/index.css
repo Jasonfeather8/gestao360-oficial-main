@@ -514,4 +514,281 @@ body {
   body.printing-lancamentos-report .lancamentos-print-report__grid--financial-summary {
     grid-template-columns: repeat(7, minmax(0, 1fr));
   }
+
+  @page new-document-a4 {
+    size: A4 portrait;
+    margin: 0;
+  }
+  @page new-document-58mm {
+    size: 58mm auto;
+    margin: 0;
+  }
+  @page new-document-80mm {
+    size: 80mm auto;
+    margin: 0;
+  }
+
+  body.printing-new-document {
+    margin: 0 !important;
+    padding: 0 !important;
+    min-width: 0 !important;
+    background: #fff !important;
+    overflow: visible !important;
+  }
+
+  body.printing-new-document * {
+    visibility: hidden !important;
+  }
+
+  body.printing-new-document .new-print-document,
+  body.printing-new-document .new-print-document * {
+    visibility: visible !important;
+  }
+
+  body.printing-new-document .new-print-document {
+    display: block !important;
+    position: absolute !important;
+    top: 0;
+    left: 0;
+    box-sizing: border-box;
+    min-height: 0;
+    background: #fff !important;
+    color: #171717 !important;
+    page: new-document-a4;
+  }
+
+  body.printing-new-document .new-print-document.paper-58mm {
+    page: new-document-58mm;
+  }
+
+  body.printing-new-document .new-print-document.paper-80mm {
+    page: new-document-80mm;
+  }
+}
+
+.new-print-document,
+.new-print-preview {
+  width: 210mm;
+  min-height: 297mm;
+  box-sizing: border-box;
+  background: #fff;
+  color: #171717;
+  padding: 16mm;
+  font-family: Arial, sans-serif;
+  font-size: 10pt;
+}
+
+.new-print-document {
+  display: none;
+}
+
+.new-print-preview {
+  width: 210mm;
+  min-height: 297mm;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  background: #fff;
+  color: #171717;
+  padding: 16mm;
+  font-family: Arial, sans-serif;
+  font-size: 10pt;
+}
+
+.new-print-preview.paper-58mm,
+.new-print-document.paper-58mm {
+  width: 58mm;
+  padding: 5mm;
+  font-size: 8pt;
+}
+
+.new-print-preview.paper-80mm,
+.new-print-document.paper-80mm {
+  width: 80mm;
+  padding: 6mm;
+  font-size: 8.5pt;
+}
+
+.new-print-header,
+.new-print-recipient,
+.new-print-details,
+.new-print-signature,
+.new-print-parcel,
+.new-print-adjustments > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.new-print-header {
+  align-items: flex-start;
+  border-bottom: 2px solid #171717;
+  padding-bottom: 10px;
+}
+
+.new-print-header strong,
+.new-print-title strong {
+  display: block;
+  font-size: 15pt;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.new-print-header span,
+.new-print-title span,
+.new-print-details small,
+.new-print-recipient small,
+.new-print-main-value small,
+.new-print-description small,
+.new-print-section-label,
+.new-print-signature small {
+  display: block;
+  color: #626262;
+  font-size: 7pt;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.new-print-title {
+  text-align: right;
+}
+
+.new-print-title strong {
+  font-size: 12pt;
+}
+
+.new-print-title span {
+  color: #9b1c1c;
+  margin-top: 4px;
+}
+
+.new-print-recipient {
+  border-bottom: 1px solid #cfcfcf;
+  padding: 13px 0;
+}
+
+.new-print-recipient > div:first-child {
+  min-width: 0;
+}
+
+.new-print-recipient strong,
+.new-print-details strong {
+  display: block;
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+  font-size: 9pt;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.new-print-main-value {
+  margin: 14px 0;
+  border: 1px solid #cfcfcf;
+  background: #f5f5f5;
+  padding: 14px;
+}
+
+.new-print-main-value strong {
+  display: block;
+  margin: 5px 0;
+  font-family: monospace;
+  font-size: 22pt;
+  font-weight: 800;
+}
+
+.new-print-main-value span {
+  color: #555;
+  font-size: 8pt;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.new-print-details {
+  flex-wrap: wrap;
+  border-bottom: 1px solid #cfcfcf;
+  padding-bottom: 12px;
+}
+
+.new-print-details > div {
+  min-width: 28%;
+  flex: 1 1 28%;
+}
+
+.new-print-adjustments,
+.new-print-parcels,
+.new-print-description {
+  margin-top: 13px;
+}
+
+.new-print-section-label {
+  border-bottom: 1px solid #171717;
+  padding-bottom: 4px;
+  color: #171717;
+}
+
+.new-print-adjustments > div,
+.new-print-parcel {
+  border-bottom: 1px solid #e0e0e0;
+  padding: 5px 0;
+  font-size: 8pt;
+}
+
+.new-print-parcel span:last-child {
+  color: #626262;
+  text-transform: capitalize;
+}
+
+.new-print-description p {
+  margin: 5px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: #444;
+  font-size: 8.5pt;
+}
+
+.new-print-warning {
+  margin-top: 14px;
+  border: 2px solid #9b1c1c;
+  padding: 8px;
+  color: #9b1c1c;
+  font-size: 9pt;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-align: center;
+}
+
+.new-print-signature {
+  margin-top: 42px;
+  align-items: flex-end;
+  text-align: center;
+}
+
+.new-print-signature > div {
+  width: 45%;
+  border-top: 1px solid #171717;
+  padding-top: 5px;
+}
+
+.new-print-signature span {
+  display: block;
+  min-height: 14px;
+  overflow-wrap: anywhere;
+  font-size: 8pt;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+@media print {
+  body.printing-new-document .new-print-document {
+    page: new-document-a4;
+  }
+
+  body.printing-new-document .new-print-document.paper-58mm {
+    page: new-document-58mm;
+  }
+
+  body.printing-new-document .new-print-document.paper-80mm {
+    page: new-document-80mm;
+  }
 }

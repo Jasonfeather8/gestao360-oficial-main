@@ -50,6 +50,8 @@ import {
 import { useAuth } from '../../hooks/useAuth';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { PrintDocumentSelector } from '../printing/PrintDocumentSelector';
+import type { PrintableDocumentData } from '../printing/types';
 
 export default function LancamentoDetailsSlide() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -68,6 +70,7 @@ export default function LancamentoDetailsSlide() {
   const { data: centrosCusto = [] } = useCentrosCusto();
   const { data: usuarios = [] } = useUsuarios();
   const { data: contas = [] } = useContas();
+  const [isPrintOpen, setIsPrintOpen] = React.useState(false);
   const isMaster = role === 'master';
 
   useEffect(() => {
@@ -169,7 +172,7 @@ export default function LancamentoDetailsSlide() {
   const getParcelaAnexos = (parcelaId: string | null | undefined) => anexos.filter(anexo => anexo.lancamento_id === parcelaId);
 
   const handlePrintReceipt = () => {
-    window.print();
+    setIsPrintOpen(true);
   };
 
   const isQuitacaoPendente = lancamento?.status_pagamento === 'quitação_pendente';
@@ -190,9 +193,39 @@ export default function LancamentoDetailsSlide() {
   }, 0);
   const valorAjustado = Math.max(0, valorPrevistoConsolidado - descontoConsolidado + acrescimoConsolidado);
   const saldoPagar = Math.max(0, valorAjustado - valorRecebidoConsolidado);
+  const printableData: PrintableDocumentData | null = lancamento ? {
+    id: lancamento.id,
+    documentNumber: lancamento.documento_numero || (lancamento.codigo_sequencial ? String(lancamento.codigo_sequencial) : undefined),
+    recipient: getEntidadeName(lancamento.entidade_id),
+    operation: lancamento.tipo,
+    category: getCategoriaName(lancamento.categoria_id),
+    account: getAccountName(lancamento.conta_bancaria_id),
+    issuer: getUsuarioName(lancamento.usuario_criador_id),
+    description: lancamento.observacoes,
+    issueDate: lancamento.data_emissao,
+    dueDate: lancamento.data_vencimento,
+    paymentDate: lancamento.data_pagamento,
+    amount: valorPrevistoConsolidado,
+    receivedAmount: valorRecebidoConsolidado,
+    adjustedAmount: valorAjustado,
+    adjustments: [
+      { label: 'Desconto', value: formatCurrency(descontoConsolidado) },
+      { label: 'Acréscimo', value: formatCurrency(acrescimoConsolidado) }
+    ],
+    parcels: parcelas.map(parcela => ({
+      number: parcela.numero_parcela || 1,
+      dueDate: parcela.data_vencimento,
+      amount: Number(parcela.valor_previsto) || 0,
+      paidAmount: Number(parcela.valor_recebido) || 0,
+      status: parcela.status_pagamento
+    })),
+    status: lancamento.status_pagamento,
+    approvalStatus: lancamento.status_aprovacao === 'confirmado_master' ? 'Aprovado por Master' : 'Pendente de validação'
+  } : null;
 
   return (
     <AnimatePresence>
+      {printableData && <PrintDocumentSelector data={printableData} open={isPrintOpen} onClose={() => setIsPrintOpen(false)} />}
       {lancamento && (
         <div key="printable-receipt" className="hidden print:block print:fixed print:inset-0 print:bg-white print:p-8 print:z-[99999] text-black font-sans">
           <div className="max-w-2xl mx-auto border-2 border-black p-8 rounded-xl space-y-6">
