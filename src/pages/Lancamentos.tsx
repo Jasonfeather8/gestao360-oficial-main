@@ -560,6 +560,13 @@ export default function Lancamentos({
   };
 
   const renderStatusBadge = (item: LancamentoFinanceiro) => {
+   if (isFinanceiroView && item.status_aprovacao !== 'confirmado_master') {
+     return (
+       <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-orange-50 text-orange-600 font-black border border-orange-200 text-[9px] uppercase tracking-tighter animate-pulse">
+         Pend. Gestor
+       </span>
+     );
+   }
    if (item.status_pagamento === 'bpi') {
      return (
        <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-neutral-900 text-white font-black border border-neutral-950 text-[9px] uppercase tracking-tighter">
