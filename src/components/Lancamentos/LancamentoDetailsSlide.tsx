@@ -731,7 +731,7 @@ export default function LancamentoDetailsSlide() {
                         onClick={handlePrintReceipt}
                         className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl border border-neutral-200 bg-white text-[10px] font-black uppercase tracking-[0.15em] text-neutral-900 shadow-sm transition-all hover:border-primary hover:text-primary"
                       >
-                        <Printer className="h-4 w-4" /> Imprimir / PDF
+                        <Printer className="h-4 w-4" /> Pré-visualizar / Imprimir
                       </button>
                     </aside>
                   </div>
