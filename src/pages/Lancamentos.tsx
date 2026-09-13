@@ -192,9 +192,6 @@ export default function Lancamentos({
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [selectedLogItem, setSelectedLogItem] = useState<LancamentoFinanceiro | null>(null);
 
-  const financeiroConfirmedSelected = isFinanceiroView && statusPagamento.includes('confirmado_master');
-  const financeiroPaymentStatuses = statusPagamento.filter(status => status !== 'confirmado_master');
-
   const {
     data: allLancamentos = [],
     totalCount = 0,
@@ -210,8 +207,9 @@ export default function Lancamentos({
     docParcel: parseInt(docSearchTerm.split('-')[1]) || undefined,
     startDate: isFinanceiroView && !dateFilterActive ? undefined : startDate,
     endDate: isFinanceiroView && !dateFilterActive ? undefined : endDate,
-    approvalStatus: financeiroConfirmedSelected ? 'confirmado_master' : approvalStatus,
-    statusPagamento: statusPagamento.length === 0 && !isFinanceiroView && isColaborador ? ['quitação_pendente'] : isFinanceiroView ? financeiroPaymentStatuses : statusPagamento,
+    approvalStatus,
+    financialStatus: isFinanceiroView ? statusPagamento : undefined,
+    statusPagamento: statusPagamento.length === 0 && !isFinanceiroView && isColaborador ? ['quitação_pendente'] : isFinanceiroView ? [] : statusPagamento,
     type: typeFilter,
     authorId: isColaborador ? useUIStore.getState().currentUserId : authorIdFilter,
     categoryId: categoryIdFilter,

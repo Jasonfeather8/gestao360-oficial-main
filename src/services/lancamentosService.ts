@@ -10,6 +10,7 @@ export interface LancamentoFilters {
   endDate?: string;
   approvalStatus?: string;
   statusPagamento?: string | string[];
+  financialStatus?: string | string[];
   type?: string | string[];
   authorId?: string | string[];
   categoryId?: string | string[];
@@ -211,7 +212,20 @@ export const lancamentosService = {
           query = query.eq('status_aprovacao', filters.approvalStatus);
         }
       }
-      
+
+      if (filters.isFinanceiroView) {
+        const financialStatusValues = normalizeFilterValues(filters.financialStatus);
+        if (financialStatusValues.length > 0) {
+          const financialStatusClauses = financialStatusValues.flatMap(status => {
+            if (status === 'confirmado_master') return ['status_aprovacao.eq.confirmado_master'];
+            if (status === 'quitação_pendente') return ['status_aprovacao.neq.confirmado_master', 'status_aprovacao.is.null'];
+            if (status === 'bpi') return ['status_pagamento.eq.bpi'];
+            return [];
+          });
+          if (financialStatusClauses.length > 0) orGroups.push(financialStatusClauses);
+        }
+      }
+
       const statusPagamentoValues = normalizeFilterValues(filters.statusPagamento);
       if (statusPagamentoValues.length > 0) {
         const today = new Date().toISOString().split('T')[0];

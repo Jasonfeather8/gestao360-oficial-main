@@ -48,16 +48,18 @@ const sumValues = (items: LancamentoFinanceiro[]) => items.reduce((sum, item) =>
 export default function FinanceiroStatusFilter({ value, onChange, filters }: FinanceiroStatusFilterProps) {
   const confirmedQuery = useLancamentos({
     ...filters,
-    approvalStatus: 'confirmado_master',
+    financialStatus: ['confirmado_master'],
     statusPagamento: []
   });
   const pendingQuery = useLancamentos({
     ...filters,
-    statusPagamento: ['quitação_pendente']
+    financialStatus: ['quitação_pendente'],
+    statusPagamento: []
   });
   const bpiQuery = useLancamentos({
     ...filters,
-    statusPagamento: ['bpi']
+    financialStatus: ['bpi'],
+    statusPagamento: []
   });
 
   const totals = useMemo(() => ({
