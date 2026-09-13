@@ -1682,37 +1682,39 @@ export default function NovoLancamentoDrawer() {
                 </div>
               )}
 
-              <footer className="p-6 border-t border-surface-border bg-neutral-50 flex justify-end gap-4 shrink-0">
+              <footer className="p-6 border-t border-surface-border bg-neutral-50 flex flex-col gap-3 shrink-0">
                 <button
                   type="button"
                   onClick={() => setIsPrintOpen(true)}
-                  className="px-6 py-3 font-black text-[10px] text-neutral-700 border-2 border-neutral-200 rounded-xl hover:bg-neutral-100 hover:border-primary transition-all uppercase tracking-widest"
+                  className="w-full px-6 py-3 font-black text-[10px] text-neutral-700 border-2 border-neutral-200 rounded-xl hover:bg-neutral-100 hover:border-primary transition-all uppercase tracking-widest"
                 >
                   Pré-visualizar / Imprimir
                 </button>
-                <button
-                  type="button"
-                  onClick={handleClose}
-                  className="px-6 py-3 font-black text-[10px] text-secondary border-2 border-neutral-200 rounded-xl hover:bg-neutral-100 hover:border-neutral-300 transition-all uppercase tracking-widest"
-                >
-                  Cancelar
-                </button>
-                
-                {editingItem && lancamentoFormDraft.ja_recebido && hasPendingAdjustmentChanges && (
-                  <span className="self-center text-[9px] font-bold text-alert-red uppercase">Salve os ajustes antes de receber/pagar.</span>
-                )}
-                <button
-                  type="submit"
-                  disabled={isSubmitting || isCreating || isUpdating || saldoInsuficiente || (Boolean(editingItem) && lancamentoFormDraft.ja_recebido && hasPendingAdjustmentChanges)}
-                  className={`px-8 py-3 font-black text-[10px] rounded-xl shadow-md transition-all active:scale-[0.98] flex items-center gap-2 uppercase tracking-widest ${
-                    saldoInsuficiente
-                      ? 'bg-neutral-300 text-neutral-400 cursor-not-allowed'
-                      : 'text-on-primary-container bg-primary-container hover:brightness-95'
-                  }`}
-                >
-                  {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                  {isSubmitting ? 'Salvando...' : 'Salvar Registro'}
-                </button>
+                <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={handleClose}
+                    className="w-full sm:w-auto px-6 py-3 font-black text-[10px] text-secondary border-2 border-neutral-200 rounded-xl hover:bg-neutral-100 hover:border-neutral-300 transition-all uppercase tracking-widest"
+                  >
+                    Cancelar
+                  </button>
+                  
+                  {editingItem && lancamentoFormDraft.ja_recebido && hasPendingAdjustmentChanges && (
+                    <span className="w-full sm:w-auto text-[9px] font-bold text-alert-red uppercase sm:flex-1 sm:min-w-0">Salve os ajustes antes de receber/pagar.</span>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={isSubmitting || isCreating || isUpdating || saldoInsuficiente || (Boolean(editingItem) && lancamentoFormDraft.ja_recebido && hasPendingAdjustmentChanges)}
+                    className={`w-full sm:w-auto px-8 py-3 font-black text-[10px] rounded-xl shadow-md transition-all active:scale-[0.98] flex items-center gap-2 uppercase tracking-widest ${
+                      saldoInsuficiente
+                        ? 'bg-neutral-300 text-neutral-400 cursor-not-allowed'
+                        : 'text-on-primary-container bg-primary-container hover:brightness-95'
+                    }`}
+                  >
+                    {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                    {isSubmitting ? 'Salvando...' : 'Salvar Registro'}
+                  </button>
+                </div>
               </footer>
             </motion.form>
           </div>
