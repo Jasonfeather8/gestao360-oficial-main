@@ -564,6 +564,78 @@ body {
   body.printing-new-document .new-print-document.paper-80mm {
     page: new-document-80mm;
   }
+
+  body.printing-new-document .new-print-document.paper-a4 {
+    position: static !important;
+    top: auto !important;
+    right: auto !important;
+    bottom: auto !important;
+    left: auto !important;
+    width: 210mm !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    overflow-wrap: anywhere;
+    page-break-inside: auto;
+    break-inside: auto;
+  }
+
+  body.printing-new-document .new-print-document.paper-a4 .new-print-header,
+  body.printing-new-document .new-print-document.paper-a4 .new-print-recipient,
+  body.printing-new-document .new-print-document.paper-a4 .new-print-main-value,
+  body.printing-new-document .new-print-document.paper-a4 .new-print-details,
+  body.printing-new-document .new-print-document.paper-a4 .new-print-warning,
+  body.printing-new-document .new-print-document.paper-a4 .new-print-signature,
+  body.printing-new-document .new-print-document.paper-a4 .new-print-adjustments > div,
+  body.printing-new-document .new-print-document.paper-a4 .new-print-parcel {
+    box-sizing: border-box;
+    min-width: 0;
+    max-width: 100%;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  body.printing-new-document .new-print-document.paper-a4 .new-print-header,
+  body.printing-new-document .new-print-document.paper-a4 .new-print-recipient,
+  body.printing-new-document .new-print-document.paper-a4 .new-print-adjustments > div,
+  body.printing-new-document .new-print-document.paper-a4 .new-print-parcel,
+  body.printing-new-document .new-print-document.paper-a4 .new-print-signature {
+    flex-wrap: wrap;
+  }
+
+  body.printing-new-document .new-print-document.paper-a4 .new-print-header > *,
+  body.printing-new-document .new-print-document.paper-a4 .new-print-recipient > *,
+  body.printing-new-document .new-print-document.paper-a4 .new-print-details > *,
+  body.printing-new-document .new-print-document.paper-a4 .new-print-adjustments > div > *,
+  body.printing-new-document .new-print-document.paper-a4 .new-print-parcel > *,
+  body.printing-new-document .new-print-document.paper-a4 .new-print-signature > * {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: normal;
+  }
+
+  body.printing-new-document .new-print-document.paper-a4 .new-print-section-label,
+  body.printing-new-document .new-print-document.paper-a4 .new-print-description > small {
+    max-width: 100%;
+    page-break-after: avoid;
+    break-after: avoid;
+  }
+
+  body.printing-new-document .new-print-document.paper-a4 .new-print-description {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  body.printing-new-document .new-print-document.paper-a4 .new-print-description p {
+    max-width: 100%;
+    orphans: 3;
+    widows: 3;
+  }
 }
 
 .new-print-document,
