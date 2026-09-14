@@ -864,3 +864,161 @@ body {
     page: new-document-80mm;
   }
 }
+
+.new-print-document.paper-a4,
+.new-print-preview.paper-a4 {
+  width: 210mm;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
+}
+
+.new-print-document.paper-a4 .new-print-header,
+.new-print-preview.paper-a4 .new-print-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
+  justify-content: normal;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.new-print-document.paper-a4 .new-print-recipient,
+.new-print-preview.paper-a4 .new-print-recipient {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
+  justify-content: normal;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.new-print-document.paper-a4 .new-print-details,
+.new-print-preview.paper-a4 .new-print-details {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+  justify-content: normal;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.new-print-document.paper-a4 .new-print-details > div,
+.new-print-preview.paper-a4 .new-print-details > div {
+  min-width: 0;
+  max-width: 100%;
+  flex: none;
+}
+
+.new-print-document.paper-a4 .new-print-adjustments,
+.new-print-preview.paper-a4 .new-print-adjustments {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  max-width: 100%;
+}
+
+.new-print-document.paper-a4 .new-print-adjustments > div:not(.new-print-section-label),
+.new-print-preview.paper-a4 .new-print-adjustments > div:not(.new-print-section-label) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
+  justify-content: normal;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.new-print-document.paper-a4 .new-print-parcels,
+.new-print-preview.paper-a4 .new-print-parcels {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  max-width: 100%;
+}
+
+.new-print-document.paper-a4 .new-print-parcel,
+.new-print-preview.paper-a4 .new-print-parcel {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1.15fr) minmax(0, 1fr) minmax(0, 1.2fr);
+  align-items: start;
+  justify-content: normal;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.new-print-document.paper-a4 .new-print-signature,
+.new-print-preview.paper-a4 .new-print-signature {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: end;
+  justify-content: normal;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.new-print-document.paper-a4 .new-print-signature > div,
+.new-print-preview.paper-a4 .new-print-signature > div {
+  width: auto;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.new-print-document.paper-a4 .new-print-main-value,
+.new-print-preview.paper-a4 .new-print-main-value,
+.new-print-document.paper-a4 .new-print-description,
+.new-print-preview.paper-a4 .new-print-description {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.new-print-document.paper-a4 .new-print-header > *,
+.new-print-document.paper-a4 .new-print-recipient > *,
+.new-print-document.paper-a4 .new-print-details > *,
+.new-print-document.paper-a4 .new-print-adjustments > *,
+.new-print-document.paper-a4 .new-print-parcel > *,
+.new-print-document.paper-a4 .new-print-signature > *,
+.new-print-preview.paper-a4 .new-print-header > *,
+.new-print-preview.paper-a4 .new-print-recipient > *,
+.new-print-preview.paper-a4 .new-print-details > *,
+.new-print-preview.paper-a4 .new-print-adjustments > *,
+.new-print-preview.paper-a4 .new-print-parcel > *,
+.new-print-preview.paper-a4 .new-print-signature > * {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.new-print-document.paper-a4 .new-print-section-label,
+.new-print-preview.paper-a4 .new-print-section-label {
+  max-width: 100%;
+  page-break-after: avoid;
+  break-after: avoid;
+}
+
+.new-print-document.paper-a4 .new-print-description,
+.new-print-preview.paper-a4 .new-print-description {
+  page-break-inside: auto;
+  break-inside: auto;
+}
+
+.new-print-document.paper-a4 .new-print-description p,
+.new-print-preview.paper-a4 .new-print-description p {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  orphans: 3;
+  widows: 3;
+}
+
+@media print {
+  body.printing-new-document .new-print-document.paper-a4 .new-print-description p {
+    page-break-inside: auto;
+    break-inside: auto;
+  }
+}
