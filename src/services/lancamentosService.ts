@@ -22,6 +22,7 @@ export interface LancamentoFilters {
   motivoDescontoId?: string;
   motivoAcrescimoId?: string;
   isFinanceiroView?: boolean;
+  operationalView?: boolean;
   page?: number;
   pageSize?: number;
 }
@@ -213,6 +214,11 @@ export const lancamentosService = {
         }
       }
 
+      if (filters.operationalView) {
+        query = query.in('status_pagamento', ['aberto', 'pago_parcial', 'quitação_pendente']);
+        orGroups.push(['status_aprovacao.neq.confirmado_master', 'status_aprovacao.is.null']);
+      }
+
       if (filters.isFinanceiroView) {
         const financialStatusValues = normalizeFilterValues(filters.financialStatus);
         if (financialStatusValues.length > 0) {
@@ -229,34 +235,45 @@ export const lancamentosService = {
       const statusPagamentoValues = normalizeFilterValues(filters.statusPagamento);
       if (statusPagamentoValues.length > 0) {
         const today = new Date().toISOString().split('T')[0];
-        const hasDateScopedStatus = statusPagamentoValues.some(status => status === 'aberto' || status === 'atrasadas');
+        const hasAtrasadas = statusPagamentoValues.includes('atrasadas');
+        const hasAVencer = statusPagamentoValues.includes('aberto');
 
-        if (!hasDateScopedStatus) {
-          query = query.in('status_pagamento', statusPagamentoValues);
-        } else if (statusPagamentoValues.length === 1) {
-          const [status] = statusPagamentoValues;
-          if (status === 'atrasadas') {
-            query = query
-              .lt('data_vencimento', today)
-              .in('status_pagamento', ['aberto', 'pago_parcial']);
-          } else {
-            query = query
-              .eq('status_pagamento', 'aberto')
-              .gte('data_vencimento', today);
+        if (filters.operationalView) {
+          if (hasAtrasadas && !hasAVencer) {
+            query = query.lt('data_vencimento', today);
+          } else if (!hasAtrasadas && hasAVencer) {
+            query = query.gte('data_vencimento', today);
           }
         } else {
-          orGroups.push(statusPagamentoValues.map(status => {
+          const hasDateScopedStatus = statusPagamentoValues.some(status => status === 'aberto' || status === 'atrasadas');
+
+          if (!hasDateScopedStatus) {
+            query = query.in('status_pagamento', statusPagamentoValues);
+          } else if (statusPagamentoValues.length === 1) {
+            const [status] = statusPagamentoValues;
             if (status === 'atrasadas') {
-              return `and(data_vencimento.lt.${today},status_pagamento.in.(aberto,pago_parcial))`;
+              query = query
+                .lt('data_vencimento', today)
+                .in('status_pagamento', ['aberto', 'pago_parcial']);
+            } else {
+              query = query
+                .eq('status_pagamento', 'aberto')
+                .gte('data_vencimento', today);
             }
-            if (status === 'aberto') {
-              return `and(status_pagamento.eq.aberto,data_vencimento.gte.${today})`;
-            }
-            return `status_pagamento.eq.${status}`;
-          }));
+          } else {
+            orGroups.push(statusPagamentoValues.map(status => {
+              if (status === 'atrasadas') {
+                return `and(data_vencimento.lt.${today},status_pagamento.in.(aberto,pago_parcial))`;
+              }
+              if (status === 'aberto') {
+                return `and(status_pagamento.eq.aberto,data_vencimento.gte.${today})`;
+              }
+              return `status_pagamento.eq.${status}`;
+            }));
+          }
         }
       }
-      
+
       const typeValues = normalizeFilterValues(filters.type);
       if (typeValues.length > 0) {
         query = query.in('tipo', typeValues);

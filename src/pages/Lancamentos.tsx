@@ -82,6 +82,7 @@ export default function Lancamentos({
   const isMaster = role === 'master';
   const isColaborador = role === 'colaborador';
   const isFinanceiroView = !typeOverride && !titleOverride;
+  const isOperationalView = !!typeOverride;
 
   // Search State
   const [searchTerm, setSearchTerm] = useState('');
@@ -104,7 +105,7 @@ export default function Lancamentos({
   // Preset state
   const [datePreset, setDatePreset] = useState<'15' | '30' | '90' | 'custom'>('15');
   const [dateDirection, setDateDirection] = useState<'past' | 'future' | 'both'>('past');
-  const [dateFilterActive, setDateFilterActive] = useState(!isFinanceiroView);
+  const [dateFilterActive, setDateFilterActive] = useState(!isFinanceiroView && !isOperationalView);
 
   // Search & Period States
   const [startDate, setStartDate] = useState(() => {
@@ -164,7 +165,7 @@ export default function Lancamentos({
     const nextType = initialTypeFilter || typeOverride || 'all';
     setStatusPagamento(nextStatus === 'all' ? [] : [nextStatus]);
     setTypeFilter(nextType === 'all' ? [] : [nextType]);
-    setDateFilterActive(!isFinanceiroView);
+    setDateFilterActive(!isFinanceiroView && !isOperationalView);
     setSelectedLancamentoIdsForBatch([]);
   }, [initialStatusPagamento, initialTypeFilter, statusPagamentoOverride, typeOverride, titleOverride, isFinanceiroView]);
 
@@ -205,12 +206,13 @@ export default function Lancamentos({
     searchTerm: debouncedSearchTerm,
     docCode: parseInt(docSearchTerm.split('-')[0]) || undefined,
     docParcel: parseInt(docSearchTerm.split('-')[1]) || undefined,
-    startDate: isFinanceiroView && !dateFilterActive ? undefined : startDate,
-    endDate: isFinanceiroView && !dateFilterActive ? undefined : endDate,
-    approvalStatus,
+    startDate: dateFilterActive ? startDate : undefined,
+    endDate: dateFilterActive ? endDate : undefined,
+    approvalStatus: isOperationalView ? statusAprovacaoOverride : approvalStatus,
     financialStatus: isFinanceiroView ? statusPagamento : undefined,
-    statusPagamento: statusPagamento.length === 0 && !isFinanceiroView && isColaborador ? ['quitação_pendente'] : isFinanceiroView ? [] : statusPagamento,
+    statusPagamento: statusPagamento.length === 0 && !isFinanceiroView && !isOperationalView && isColaborador ? ['quitação_pendente'] : isFinanceiroView ? [] : statusPagamento,
     type: typeFilter,
+    operationalView: isOperationalView,
     authorId: isColaborador ? useUIStore.getState().currentUserId : authorIdFilter,
     categoryId: categoryIdFilter,
     contaId: contaIdFilter,
@@ -397,7 +399,7 @@ export default function Lancamentos({
     setDateDirection('past');
 
     handlePresetChange('15', 'past');
-    if (isFinanceiroView) setDateFilterActive(false);
+    if (isFinanceiroView || isOperationalView) setDateFilterActive(false);
     setCurrentPage(1);
   };
 
@@ -476,7 +478,6 @@ export default function Lancamentos({
     });
   }, [activeContas, contasSaldos]);
 
-  const isOperationalView = !!typeOverride;
   const selectedPrintLancamentos = filteredLancamentos.filter(item => selectedLancamentoIdsForBatch.includes(item.id));
   const selectedOperationalLancamentos = isOperationalView ? selectedPrintLancamentos : [];
   const operationalDocumentCodes = new Set<number>();
