@@ -37,6 +37,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useUIStore } from '../store/uiStore';
 import { useDragScroll } from '../hooks/useDragScroll';
 import { LancamentoFinanceiro } from '../types';
+import { calculateAdjustmentAmount } from '../utils/adjustments';
 import { motion, AnimatePresence } from 'motion/react';
 import Button from '../components/Button';
 import MultiSelectDropdown from '../components/MultiSelectDropdown';
@@ -341,15 +342,15 @@ export default function Lancamentos({
     if ((item.status_pagamento === 'pago' || item.status_pagamento === 'pago_parcial') && item.valor_recebido) {
       return item.valor_recebido;
     }
-    const desconto = Number((item as any).desconto_valor) || 0;
-    const acrescimo = Number((item as any).acrescimo_valor) || 0;
+    const desconto = calculateAdjustmentAmount(item.desconto_valor, item.desconto_tipo, item.valor_previsto);
+    const acrescimo = calculateAdjustmentAmount(item.acrescimo_valor, item.acrescimo_tipo, item.valor_previsto);
     const liquido = item.valor_previsto - desconto + acrescimo;
     return liquido;
   };
 
   const getSaldoAPagar = (item: LancamentoFinanceiro): number => {
-    const desconto = Number((item as any).desconto_valor) || 0;
-    const acrescimo = Number((item as any).acrescimo_valor) || 0;
+    const desconto = calculateAdjustmentAmount(item.desconto_valor, item.desconto_tipo, item.valor_previsto);
+    const acrescimo = calculateAdjustmentAmount(item.acrescimo_valor, item.acrescimo_tipo, item.valor_previsto);
     const valorPago = Number(item.valor_recebido) || 0;
     return Math.max(0, item.valor_previsto - desconto + acrescimo - valorPago);
   };
@@ -1072,10 +1073,10 @@ export default function Lancamentos({
                             {valueFormatter(item.valor_previsto)}
                           </td>
                           <td className="py-3 px-4 text-right font-black font-mono text-xs text-neutral-900">
-                            {valueFormatter(item.desconto_valor || 0)}
+                            {valueFormatter(calculateAdjustmentAmount(item.desconto_valor, item.desconto_tipo, item.valor_previsto))}
                           </td>
                           <td className="py-3 px-4 text-right font-black font-mono text-xs text-neutral-900">
-                            {valueFormatter(item.acrescimo_valor || 0)}
+                            {valueFormatter(calculateAdjustmentAmount(item.acrescimo_valor, item.acrescimo_tipo, item.valor_previsto))}
                           </td>
                           <td className="py-3 px-4 text-right font-black font-mono text-xs text-neutral-900">
                             {valueFormatter(item.valor_recebido || 0)}
