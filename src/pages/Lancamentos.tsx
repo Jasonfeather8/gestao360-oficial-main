@@ -522,7 +522,7 @@ export default function Lancamentos({
     { valorPrevisto: 0, desconto: 0, acrescimo: 0, valorPago: 0, liquido: 0, aPagar: 0, entradas: 0, saidas: 0 }
   );
 
-  const mirrorColumnCount = isOperationalView ? 14 : 10;
+  const mirrorColumnCount = isOperationalView ? 15 : 11;
   const hasMeasuredMirrorColumns = columnWidths.length === mirrorColumnCount;
   const mirrorGridWidth = hasMeasuredMirrorColumns
     ? `${columnWidths.reduce((total, width) => total + width, 0)}px`
@@ -632,6 +632,23 @@ export default function Lancamentos({
      );
    }
  };
+
+  const renderBancoCell = (item: LancamentoFinanceiro) => {
+    const conta = activeContas.find(account => account.id === item.conta_bancaria_id);
+    const bankName = conta?.nome_banco || conta?.nome || 'Conta bancária não identificada';
+
+    return (
+      <td className="py-3 px-4 text-center" title={bankName} aria-label={bankName}>
+        <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-neutral-100 text-neutral-500" title={bankName} aria-label={bankName}>
+          {conta?.logo_url ? (
+            <img src={conta.logo_url} alt={bankName} title={bankName} className="w-full h-full object-cover rounded-lg" />
+          ) : (
+            <CreditCard className="w-4 h-4" aria-hidden="true" />
+          )}
+        </span>
+      </td>
+    );
+  };
 
   return (
     <div className="lancamentos-page space-y-6 animate-fade-in" onClick={() => setActiveMenuId(null)}>
@@ -974,6 +991,7 @@ export default function Lancamentos({
                     <th className="py-5 px-4 text-right">Valor Pago</th>
                     <th className="py-5 px-4 text-right">A Pagar</th>
                     <th className="py-5 px-4 text-center">Status</th>
+                    <th className="py-5 px-4 text-center">Banco</th>
                     <th className="py-5 px-3 text-center">Recibo</th>
                   </>
                 ) : (
@@ -984,6 +1002,7 @@ export default function Lancamentos({
                     <th className="py-5 px-4">Pagamento</th>
                     <th className="py-5 px-4 text-right">Valor</th>
                     <th className="py-5 px-4 text-center">Aprovação</th>
+                    <th className="py-5 px-4 text-center">Banco</th>
                     <th className="py-5 px-3 text-center">Recibo</th>
                   </>
                 )}
@@ -992,11 +1011,11 @@ export default function Lancamentos({
             </thead>
             <tbody className="text-[11px] font-bold">
               {isLoading ? (
-                <tr><td colSpan={isOperationalView ? 14 : 10} className="py-24 text-center"><div className="flex flex-col items-center gap-3 opacity-40"><Clock className="w-10 h-10 animate-spin text-primary" /><p className="font-black uppercase text-[10px] tracking-widest">Sincronizando registros...</p></div></td></tr>
+                <tr><td colSpan={isOperationalView ? 15 : 11} className="py-24 text-center"><div className="flex flex-col items-center gap-3 opacity-40"><Clock className="w-10 h-10 animate-spin text-primary" /><p className="font-black uppercase text-[10px] tracking-widest">Sincronizando registros...</p></div></td></tr>
               ) : isError ? (
-                <tr><td colSpan={isOperationalView ? 14 : 10} className="py-24 text-center"><div className="flex flex-col items-center gap-3 text-alert-red"><AlertTriangle className="w-10 h-10" /><p className="font-black uppercase text-[10px] tracking-widest">Erro ao carregar dados. Tente simplificar a busca.</p></div></td></tr>
+                <tr><td colSpan={isOperationalView ? 15 : 11} className="py-24 text-center"><div className="flex flex-col items-center gap-3 text-alert-red"><AlertTriangle className="w-10 h-10" /><p className="font-black uppercase text-[10px] tracking-widest">Erro ao carregar dados. Tente simplificar a busca.</p></div></td></tr>
               ) : filteredLancamentos.length === 0 ? (
-                <tr><td colSpan={isOperationalView ? 14 : 10} className="py-24 text-center"><div className="flex flex-col items-center gap-3 opacity-20"><Receipt className="w-12 h-12" /><p className="font-black uppercase text-[10px] tracking-widest">Nenhum lançamento localizado</p></div></td></tr>
+                <tr><td colSpan={isOperationalView ? 15 : 11} className="py-24 text-center"><div className="flex flex-col items-center gap-3 opacity-20"><Receipt className="w-12 h-12" /><p className="font-black uppercase text-[10px] tracking-widest">Nenhum lançamento localizado</p></div></td></tr>
               ) : (
                 <>
                   {filteredLancamentos.map((item, idx) => {
@@ -1087,6 +1106,7 @@ export default function Lancamentos({
                           <td className="py-3 px-4 text-center whitespace-nowrap">
                             {renderStatusBadge(item)}
                           </td>
+                          {renderBancoCell(item)}
                           <td className="py-3 px-3 text-center" onClick={(e) => e.stopPropagation()}>
                             <button
                               type="button"
@@ -1156,6 +1176,7 @@ export default function Lancamentos({
                           <td className="py-3 px-4 text-center whitespace-nowrap">
                             {renderStatusBadge(item)}
                           </td>
+                          {renderBancoCell(item)}
                           <td className="py-3 px-3 text-center" onClick={(e) => e.stopPropagation()}>
                             <button
                               type="button"
@@ -1263,6 +1284,7 @@ export default function Lancamentos({
                     {valueFormatter(operationalTotals.aPagar)}
                   </div>
                   <div className="py-3 px-4" />
+                  <div className="py-3 px-4" />
                   <div className="py-3 px-3" />
                   <div className="py-3 px-4" />
                 </>
@@ -1277,6 +1299,7 @@ export default function Lancamentos({
                   <div className="py-3 px-4 text-right font-black font-mono text-xs text-neutral-900">
                     {valueFormatter(printTotals.liquido)}
                   </div>
+                  <div className="py-3 px-4" />
                   <div className="py-3 px-4" />
                   <div className="py-3 px-3" />
                   <div className="py-3 px-4" />
