@@ -32,6 +32,7 @@ import type { PrintableDocumentData } from './printing/types';
 
 import { supabase } from '@/integrations/supabase/client';
 import Button from './Button';
+import { calculateAdjustmentAmount } from '../utils/adjustments';
 
 function formatBRL(value: any): string {
   if (value === null || value === undefined) return '';
@@ -471,15 +472,17 @@ export default function NovoLancamentoDrawer() {
   const calculations = useMemo(() => {
     const valorBase = parseMoney(lancamentoFormDraft.valor_previsto);
     
-    let desconto = parseMoney(lancamentoFormDraft.desconto_valor);
-    if (lancamentoFormDraft.desconto_tipo === 'porcentagem') {
-      desconto = (valorBase * desconto) / 100;
-    }
+    const desconto = calculateAdjustmentAmount(
+      lancamentoFormDraft.desconto_valor,
+      lancamentoFormDraft.desconto_tipo,
+      valorBase
+    );
 
-    let acrescimo = parseMoney(lancamentoFormDraft.acrescimo_valor);
-    if (lancamentoFormDraft.acrescimo_tipo === 'porcentagem') {
-      acrescimo = (valorBase * acrescimo) / 100;
-    }
+    const acrescimo = calculateAdjustmentAmount(
+      lancamentoFormDraft.acrescimo_valor,
+      lancamentoFormDraft.acrescimo_tipo,
+      valorBase
+    );
 
     const subtotal = valorBase - desconto + acrescimo;
     const recebido = parseMoney(lancamentoFormDraft.valor_recebido);

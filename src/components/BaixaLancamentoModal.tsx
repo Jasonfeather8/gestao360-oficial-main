@@ -31,6 +31,7 @@ import { useLancamentos, useLancamento, useContas, useEntidades, useCategorias, 
 import { useAuth } from '../hooks/useAuth';
 import MoneyInput from './MoneyInput';
 import Button from './Button';
+import { calculateAdjustmentAmount } from '../utils/adjustments';
 import { supabase } from '@/integrations/supabase/client';
 
 interface LocalFile {
@@ -56,11 +57,6 @@ function parseMoney(value: string | number | undefined | null): number {
   if (typeof value === 'number') return value;
   const cleanStr = value.toString().replace(/\./g, '').replace(',', '.');
   return parseFloat(cleanStr) || 0;
-}
-
-function calculateAdjustmentAmount(value: string | number | undefined | null, type: 'valor' | 'porcentagem', base: number): number {
-  const numericValue = parseMoney(value);
-  return type === 'porcentagem' ? (base * numericValue) / 100 : numericValue;
 }
 
 export default function BaixaLancamentoModal() {
@@ -246,17 +242,13 @@ export default function BaixaLancamentoModal() {
   
   // Calculate discount value
   const numericDesconto = parseMoney(descontoValor);
-  const calculatedDesconto = descontoTipo === 'porcentagem'
-    ? (totalOriginal * numericDesconto) / 100
-    : numericDesconto;
+  const calculatedDesconto = calculateAdjustmentAmount(numericDesconto, descontoTipo, totalOriginal);
 
   // Calculate increase value
   const numericAcrescimo = parseMoney(acrescimoValor);
   const numericTaxa = parseMoney(taxaBancaria);
 
-  const calculatedAcrescimo = acrescimoTipo === 'porcentagem'
-    ? (totalOriginal * numericAcrescimo) / 100
-    : numericAcrescimo;
+  const calculatedAcrescimo = calculateAdjustmentAmount(numericAcrescimo, acrescimoTipo, totalOriginal);
 
   // BPI locks everything, AVR allows editing valorPago
   const isBpi = tipoBaixa === 'bpi';

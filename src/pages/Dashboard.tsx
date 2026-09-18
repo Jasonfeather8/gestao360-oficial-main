@@ -23,6 +23,7 @@ import {
 import { useLancamentos, useContas, useCentrosCusto, useAuditoriaLogs, useEntidades, useContasSaldos } from '../hooks/useData';
 import { useAuth } from '../hooks/useAuth';
 import { useUIStore } from '../store/uiStore';
+import { calculateAdjustmentAmount } from '../utils/adjustments';
 
 import { useDragScroll } from '../hooks/useDragScroll';
 import { useQuery } from '@tanstack/react-query';
@@ -120,19 +121,19 @@ export default function Dashboard() {
    // Real juros and discounts metrics
    const jurosPagos = filteredLancamentos
      .filter(l => l.tipo === 'saida' && l.status_pagamento === 'pago')
-     .reduce((acc, l) => acc + (Number(l.acrescimo_valor) || 0), 0);
+     .reduce((acc, l) => acc + calculateAdjustmentAmount(l.acrescimo_valor, l.acrescimo_tipo, l.valor_previsto), 0);
 
    const descontosObtidos = filteredLancamentos
      .filter(l => l.tipo === 'saida' && l.status_pagamento === 'pago')
-     .reduce((acc, l) => acc + (Number(l.desconto_valor) || 0), 0);
+     .reduce((acc, l) => acc + calculateAdjustmentAmount(l.desconto_valor, l.desconto_tipo, l.valor_previsto), 0);
 
    const jurosRecebidos = filteredLancamentos
      .filter(l => l.tipo === 'entrada' && l.status_pagamento === 'pago')
-     .reduce((acc, l) => acc + (Number(l.acrescimo_valor) || 0), 0);
+     .reduce((acc, l) => acc + calculateAdjustmentAmount(l.acrescimo_valor, l.acrescimo_tipo, l.valor_previsto), 0);
 
    const descontosConcedidos = filteredLancamentos
      .filter(l => l.tipo === 'entrada' && l.status_pagamento === 'pago')
-     .reduce((acc, l) => acc + (Number(l.desconto_valor) || 0), 0);
+     .reduce((acc, l) => acc + calculateAdjustmentAmount(l.desconto_valor, l.desconto_tipo, l.valor_previsto), 0);
 
    return {
      paidPercent: Math.round((paidSum / totalStatusCount) * 100),

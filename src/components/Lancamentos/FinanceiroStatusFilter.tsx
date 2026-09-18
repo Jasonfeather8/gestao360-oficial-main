@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { CreditCard } from 'lucide-react';
 import { useLancamentos } from '../../hooks/useData';
 import { LancamentoFinanceiro } from '../../types';
+import { calculateAdjustmentAmount } from '../../utils/adjustments';
 
 interface FinanceiroStatusFilters {
   searchTerm?: string;
@@ -38,8 +39,8 @@ const getValorLiquido = (item: LancamentoFinanceiro): number => {
   if ((item.status_pagamento === 'pago' || item.status_pagamento === 'pago_parcial') && item.valor_recebido) {
     return Number(item.valor_recebido);
   }
-  const desconto = Number(item.desconto_valor) || 0;
-  const acrescimo = Number(item.acrescimo_valor) || 0;
+  const desconto = calculateAdjustmentAmount(item.desconto_valor, item.desconto_tipo, item.valor_previsto);
+  const acrescimo = calculateAdjustmentAmount(item.acrescimo_valor, item.acrescimo_tipo, item.valor_previsto);
   return Number(item.valor_previsto) - desconto + acrescimo;
 };
 

@@ -484,8 +484,8 @@ export default function Lancamentos({
   const operationalDocumentCodes = new Set<number>();
   const operationalTotals = selectedOperationalLancamentos.reduce(
     (totals, item) => {
-      const desconto = item.desconto_valor || 0;
-      const acrescimo = item.acrescimo_valor || 0;
+      const desconto = calculateAdjustmentAmount(item.desconto_valor, item.desconto_tipo, item.valor_previsto);
+      const acrescimo = calculateAdjustmentAmount(item.acrescimo_valor, item.acrescimo_tipo, item.valor_previsto);
       const valorPago = item.valor_recebido || 0;
       const hasDocumentCode = item.codigo_sequencial != null;
 
@@ -504,8 +504,8 @@ export default function Lancamentos({
   );
   const printTotals = selectedPrintLancamentos.reduce(
     (totals, item) => {
-      const desconto = item.desconto_valor || 0;
-      const acrescimo = item.acrescimo_valor || 0;
+      const desconto = calculateAdjustmentAmount(item.desconto_valor, item.desconto_tipo, item.valor_previsto);
+      const acrescimo = calculateAdjustmentAmount(item.acrescimo_valor, item.acrescimo_tipo, item.valor_previsto);
       const valorPago = item.valor_recebido || 0;
       const liquido = getValorLiquido(item);
 
@@ -1419,11 +1419,11 @@ export default function Lancamentos({
                       </div>
                       <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number">
                         <span className="lancamentos-print-report__label">Desconto</span>
-                        <span className="lancamentos-print-report__value">{valueFormatter(item.desconto_valor || 0)}</span>
+                        <span className="lancamentos-print-report__value">{valueFormatter(calculateAdjustmentAmount(item.desconto_valor, item.desconto_tipo, item.valor_previsto))}</span>
                       </div>
                       <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number">
                         <span className="lancamentos-print-report__label">Acréscimo</span>
-                        <span className="lancamentos-print-report__value">{valueFormatter(item.acrescimo_valor || 0)}</span>
+                        <span className="lancamentos-print-report__value">{valueFormatter(calculateAdjustmentAmount(item.acrescimo_valor, item.acrescimo_tipo, item.valor_previsto))}</span>
                       </div>
                       <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number">
                         <span className="lancamentos-print-report__label">Valor pago</span>
@@ -1477,11 +1477,11 @@ export default function Lancamentos({
                       </div>
                       <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number">
                         <span className="lancamentos-print-report__label">Desconto</span>
-                        <span className="lancamentos-print-report__value">{valueFormatter(item.desconto_valor || 0)}</span>
+                        <span className="lancamentos-print-report__value">{valueFormatter(calculateAdjustmentAmount(item.desconto_valor, item.desconto_tipo, item.valor_previsto))}</span>
                       </div>
                       <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number">
                         <span className="lancamentos-print-report__label">Acréscimo</span>
-                        <span className="lancamentos-print-report__value">{valueFormatter(item.acrescimo_valor || 0)}</span>
+                        <span className="lancamentos-print-report__value">{valueFormatter(calculateAdjustmentAmount(item.acrescimo_valor, item.acrescimo_tipo, item.valor_previsto))}</span>
                       </div>
                       <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number">
                         <span className="lancamentos-print-report__label">Valor exibido</span>

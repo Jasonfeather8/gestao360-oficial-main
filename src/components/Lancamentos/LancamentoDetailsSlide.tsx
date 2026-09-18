@@ -52,6 +52,7 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { PrintDocumentSelector } from '../printing/PrintDocumentSelector';
 import type { PrintableDocumentData } from '../printing/types';
+import { calculateAdjustmentAmount } from '../../utils/adjustments';
 
 export default function LancamentoDetailsSlide() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -107,11 +108,6 @@ export default function LancamentoDetailsSlide() {
 
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
-  };
-
-  const calculateAdjustmentAmount = (value: number | null | undefined, type: string | null | undefined, base: number) => {
-    const numericValue = Number(value) || 0;
-    return type === 'porcentagem' ? (base * numericValue) / 100 : numericValue;
   };
 
   const formatDate = (dateStr: string | null | undefined) => {
