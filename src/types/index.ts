@@ -57,6 +57,12 @@ export interface ContaBancaria {
 
 export type StatusAprovacao = 'pendente_digital' | 'digital' | 'confirmado_master' | 'reprovado';
 export type StatusPagamento = 'aberto' | 'pago' | 'pago_parcial' | 'bpi' | 'quitação_pendente';
+export type TipoAjuste = 'valor' | 'porcentagem';
+
+export interface AjusteFinanceiro {
+  valor?: number;
+  tipo?: TipoAjuste | null;
+}
 
 export interface LancamentoFinanceiro {
   id: string;
@@ -89,10 +95,10 @@ export interface LancamentoFinanceiro {
  desconto_previsto?: number;
  documento_numero?: string;
  bpi_em?: string;
- desconto_valor?: number;
- desconto_tipo?: string;
-  acrescimo_valor?: number;
-  acrescimo_tipo?: string;
+ desconto_valor?: AjusteFinanceiro['valor'];
+ desconto_tipo?: AjusteFinanceiro['tipo'];
+  acrescimo_valor?: AjusteFinanceiro['valor'];
+  acrescimo_tipo?: AjusteFinanceiro['tipo'];
   motivo_desconto_id?: string;
   motivo_acrescimo_id?: string;
   motivo_ajuste?: string;
