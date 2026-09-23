@@ -269,6 +269,28 @@ export function useConciliacao() {
 
   const conciliacoesQuery = useQuery({ queryKey: ['conciliacoes'], queryFn: conciliacoesService.getConciliacoes });
   const transacoesQuery = useQuery({ queryKey: ['transacoes'], queryFn: conciliacoesService.getAllTransacoes });
+  const fechamentosQuery = useQuery({ queryKey: ['fechamentos'], queryFn: conciliacoesService.getFechamentos });
+
+  const invalidateFechamentoData = () => {
+    queryClient.invalidateQueries({ queryKey: ['fechamentos'] });
+    queryClient.invalidateQueries({ queryKey: ['lancamentos'] });
+    queryClient.invalidateQueries({ queryKey: ['transacoes'] });
+    queryClient.invalidateQueries({ queryKey: ['conciliacoes'] });
+    queryClient.invalidateQueries({ queryKey: ['contasSaldos'] });
+    queryClient.invalidateQueries({ queryKey: ['auditoriaLogs'] });
+  };
+
+  const fecharPeriodoMutation = useMutation({
+    mutationFn: ({ contaId, periodoInicio, periodoFim }: { contaId: string; periodoInicio: string; periodoFim: string }) =>
+      conciliacoesService.fecharPeriodo(contaId, periodoInicio, periodoFim),
+    onSuccess: invalidateFechamentoData,
+  });
+
+  const decidirFechamentoMutation = useMutation({
+    mutationFn: ({ fechamentoId, aprovado, justificativa }: { fechamentoId: string; aprovado: boolean; justificativa?: string | null }) =>
+      conciliacoesService.decidirFechamento(fechamentoId, aprovado, justificativa),
+    onSuccess: invalidateFechamentoData,
+  });
 
   const prepareImportMutation = useMutation({
     mutationFn: ({ file, contaBancariaId, userId }: { file: File; contaBancariaId: string; userId: string }) =>
@@ -308,7 +330,9 @@ export function useConciliacao() {
   return {
     conciliacoes: conciliacoesQuery.data || [],
     transacoes: transacoesQuery.data || [],
+    fechamentos: fechamentosQuery.data || [],
     isFetchingTransacoes: transacoesQuery.isPending,
+    isFetchingFechamentos: fechamentosQuery.isPending,
     isLinking: linkMutation.isPending,
     isUnlinking: unlinkMutation.isPending,
     isCleaning: cleanupMutation.isPending,
@@ -319,7 +343,11 @@ export function useConciliacao() {
     isConfirmingImport: confirmImportMutation.isPending,
     linkConciliacao: linkMutation.mutateAsync,
     unlinkConciliacao: unlinkMutation.mutateAsync,
-    cleanupTransacoes: cleanupMutation.mutateAsync
+    cleanupTransacoes: cleanupMutation.mutateAsync,
+    fecharPeriodo: fecharPeriodoMutation.mutateAsync,
+    decidirFechamento: decidirFechamentoMutation.mutateAsync,
+    isFechandoPeriodo: fecharPeriodoMutation.isPending,
+    isDecidindoFechamento: decidirFechamentoMutation.isPending
   };
 }
 

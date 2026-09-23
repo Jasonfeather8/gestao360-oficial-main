@@ -38,11 +38,16 @@ export default function Conciliacao() {
   const { 
     conciliacoes = [],
     transacoes = [],
+    fechamentos = [],
     prepareImport,
     confirmImport,
+    fecharPeriodo,
+    decidirFechamento,
     cancelImport,
     isPreparingImport,
     isConfirmingImport,
+    isFechandoPeriodo,
+    isDecidindoFechamento,
     linkConciliacao,
     unlinkConciliacao,
     cleanupTransacoes,
@@ -96,6 +101,54 @@ export default function Conciliacao() {
   }, [contas, selectedContaId]);
 
   const valueFormatter = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+
+  const periodoAtual = useMemo(() => {
+    const [year, month] = selectedMonth.split('-').map(Number);
+    return {
+      inicio: `${selectedMonth}-01`,
+      fim: new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10),
+    };
+  }, [selectedMonth]);
+
+  const fechamentoAtual = useMemo(
+    () => fechamentos.find(fechamento =>
+      fechamento.conta_bancaria_id === selectedContaId &&
+      fechamento.periodo_inicio === periodoAtual.inicio &&
+      fechamento.periodo_fim === periodoAtual.fim
+    ) || null,
+    [fechamentos, periodoAtual, selectedContaId]
+  );
+
+  const fechamentosAguardandoMaster = useMemo(
+    () => fechamentos.filter(fechamento => fechamento.status === 'aguardando_master'),
+    [fechamentos]
+  );
+
+  const fechamentoBusy = isFechandoPeriodo || isDecidindoFechamento;
+
+  const handleFecharPeriodo = async () => {
+    if (!selectedContaId || !selectedMonth || fechamentoBusy) return;
+    if (!confirm(`Solicitar o fechamento da competência ${selectedMonth}? O servidor validará todas as pendências antes de enviar para o Master.`)) return;
+    try {
+      await fecharPeriodo({ contaId: selectedContaId, periodoInicio: periodoAtual.inicio, periodoFim: periodoAtual.fim });
+      alert('Fechamento solicitado com sucesso. A competência está aguardando o Master.');
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Não foi possível solicitar o fechamento.');
+    }
+  };
+
+  const handleDecidirFechamento = async (fechamentoId: string, aprovado: boolean) => {
+    if (fechamentoBusy) return;
+    if (aprovado && !confirm('Aprovar este fechamento? A decisão do Master confirmará os lançamentos vinculados.')) return;
+    const justificativa = aprovado ? null : prompt('Informe a justificativa da reprovação:');
+    if (!aprovado && justificativa === null) return;
+    try {
+      await decidirFechamento({ fechamentoId, aprovado, justificativa: justificativa?.trim() || null });
+      alert(aprovado ? 'Fechamento aprovado com sucesso.' : 'Fechamento reprovado e devolvido ao fluxo operacional.');
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Não foi possível decidir o fechamento.');
+    }
+  };
 
   const handleCleanup = async () => {
     if (!selectedContaId) return;
@@ -353,6 +406,73 @@ export default function Conciliacao() {
           </p>
         </div>
       )}
+
+      {/* Fechamento formal da competência */}
+      <div className="bg-white border-2 border-neutral-100 p-4 rounded-3xl shadow-sm space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <Shield className="w-5 h-5 text-primary" />
+            <div>
+              <p className="text-[10px] font-black text-neutral-900 uppercase tracking-widest">Fechamento da competência</p>
+              <p className="text-[9px] font-bold text-neutral-400 uppercase mt-0.5">
+                {selectedMonth} • {contas.find(conta => conta.id === selectedContaId)?.nome || 'Selecione uma conta'}
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest ${
+              fechamentoAtual?.status === 'aguardando_master' ? 'bg-amber-50 text-amber-700' :
+              fechamentoAtual?.status === 'aprovado' ? 'bg-emerald-50 text-emerald-700' :
+              fechamentoAtual?.status === 'reprovado' ? 'bg-red-50 text-red-700' :
+              'bg-neutral-100 text-neutral-500'
+            }`}>
+              {fechamentoAtual?.status === 'aguardando_master' ? 'Aguardando Master' :
+                fechamentoAtual?.status === 'aprovado' ? 'Aprovado' :
+                fechamentoAtual?.status === 'reprovado' ? 'Reprovado' : 'Aberto'}
+            </span>
+            {(!fechamentoAtual || fechamentoAtual.status === 'aberto' || fechamentoAtual.status === 'reprovado') && (
+              <button
+                onClick={handleFecharPeriodo}
+                disabled={!selectedContaId || !selectedMonth || fechamentoBusy}
+                className="px-4 py-2 bg-neutral-900 text-white rounded-xl text-[9px] font-black uppercase tracking-widest shadow-sm hover:bg-black transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isFechandoPeriodo ? 'Validando...' : 'Solicitar fechamento'}
+              </button>
+            )}
+          </div>
+        </div>
+        {fechamentoAtual?.status === 'reprovado' && fechamentoAtual.motivo_reprovacao && (
+          <p className="text-[9px] font-bold text-red-600 uppercase tracking-widest">Motivo: {fechamentoAtual.motivo_reprovacao}</p>
+        )}
+        {role === 'master' && fechamentosAguardandoMaster.length > 0 && (
+          <div className="border-t border-neutral-100 pt-3 space-y-2">
+            <p className="text-[9px] font-black text-primary uppercase tracking-widest">Fechamentos aguardando decisão</p>
+            {fechamentosAguardandoMaster.map(fechamento => (
+              <div key={fechamento.id} className="flex flex-wrap items-center justify-between gap-2 bg-neutral-50 px-3 py-2 rounded-xl">
+                <div className="text-[9px] font-bold text-neutral-600 uppercase">
+                  {contas.find(conta => conta.id === fechamento.conta_bancaria_id)?.nome || 'Conta'} • {fechamento.periodo_inicio.slice(0, 7)} • {valueFormatter(Number(fechamento.total_extrato))}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleDecidirFechamento(fechamento.id, false)}
+                    disabled={fechamentoBusy}
+                    className="px-3 py-1.5 border border-red-200 text-red-600 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Reprovar
+                  </button>
+                  <button
+                    onClick={() => handleDecidirFechamento(fechamento.id, true)}
+                    disabled={fechamentoBusy}
+                    className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isDecidindoFechamento ? 'Processando...' : 'Aprovar'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Toolbox de Lote */}
       {bankStatements.some(tx => !tx.status_conciliacao) && (

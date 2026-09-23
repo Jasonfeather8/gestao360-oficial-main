@@ -129,6 +129,28 @@ export interface Conciliacao {
   data_conciliacao: string;
 }
 
+export type StatusFechamentoConciliacao = 'aberto' | 'aguardando_master' | 'aprovado' | 'reprovado';
+
+export interface FechamentoConciliacao {
+  id: string;
+  conta_bancaria_id: string;
+  periodo_inicio: string;
+  periodo_fim: string;
+  status: StatusFechamentoConciliacao;
+  total_extrato: number;
+  total_conciliado: number;
+  total_diferencas: number;
+  total_transacoes: number;
+  transacoes_conciliadas: number;
+  fechado_por?: string | null;
+  fechado_em?: string | null;
+  aprovado_por?: string | null;
+  aprovado_em?: string | null;
+  motivo_reprovacao?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export type TipoDiferenca = 'juros' | 'multa' | 'desconto' | 'tarifa' | 'pagamento_parcial' | 'ajuste_manual';
 
 export interface ConciliacaoAtomicaPayload {

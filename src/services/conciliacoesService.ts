@@ -1,5 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
-import { Conciliacao, TransacaoBanco, ConciliacaoAtomicaPayload, ConciliacaoAtomicaResult } from '../types';
+import { Conciliacao, FechamentoConciliacao, TransacaoBanco, ConciliacaoAtomicaPayload, ConciliacaoAtomicaResult } from '../types';
 import {
   CsvParseResult,
   ImportConfirmationMetadata,
@@ -198,6 +198,32 @@ export const conciliacoesService = {
     const { data, error } = await supabase.from('transacoes_banco').select('*').order('data_transacao', { ascending: false });
     if (error) throw error;
     return data as TransacaoBanco[];
+  },
+
+  getFechamentos: async (): Promise<FechamentoConciliacao[]> => {
+    const { data, error } = await supabase.from('fechamentos_conciliacao').select('*').order('periodo_inicio', { ascending: false });
+    if (error) throw error;
+    return data as FechamentoConciliacao[];
+  },
+
+  fecharPeriodo: async (contaId: string, periodoInicio: string, periodoFim: string): Promise<FechamentoConciliacao> => {
+    const { data, error } = await supabase.rpc('fechar_periodo_conciliacao', {
+      p_conta_id: contaId,
+      p_periodo_inicio: periodoInicio,
+      p_periodo_fim: periodoFim,
+    });
+    if (error) throw error;
+    return data as FechamentoConciliacao;
+  },
+
+  decidirFechamento: async (fechamentoId: string, aprovado: boolean, justificativa?: string | null): Promise<FechamentoConciliacao> => {
+    const { data, error } = await supabase.rpc('decidir_fechamento_conciliacao', {
+      p_fechamento_id: fechamentoId,
+      p_aprovado: aprovado,
+      p_justificativa: justificativa || null,
+    });
+    if (error) throw error;
+    return data as FechamentoConciliacao;
   },
 
   prepareImportFile: async (file: File, contaBancariaId: string, userId: string): Promise<{ lot: ImportLotDraft; preview: ImportPreview }> => {
