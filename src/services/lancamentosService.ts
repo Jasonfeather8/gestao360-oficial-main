@@ -372,6 +372,16 @@ export const lancamentosService = {
     return (data || []) as LancamentoFinanceiro[];
   },
 
+  criarAPartirDeTransacao: async (transacaoBancoId: string, dadosComerciais: Record<string, unknown>): Promise<LancamentoFinanceiro> => {
+    if (!transacaoBancoId) throw new Error('Transação bancária é obrigatória.');
+    const { data, error } = await supabase.rpc('criar_lancamento_a_partir_transacao_atomico', {
+      p_transacao_id: transacaoBancoId,
+      p_dados_comerciais: dadosComerciais,
+    });
+    if (error) throw error;
+    return data as LancamentoFinanceiro;
+  },
+
   create: async (item: any, recorrencia?: any): Promise<LancamentoFinanceiro> => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Usuário não autenticado');

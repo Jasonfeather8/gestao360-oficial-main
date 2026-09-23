@@ -48,6 +48,28 @@ export const transferenciasService = {
     return (data || []) as TransferenciaBancaria[];
   },
 
+  listarPendentesMaster: async (): Promise<TransferenciaBancaria[]> => {
+    const { data, error } = await supabase
+      .from('transferencias_bancarias')
+      .select('*')
+      .eq('status', 'conciliada_pendente_master')
+      .order('data_transferencia', { ascending: false });
+    if (error) throw error;
+    return (data || []) as TransferenciaBancaria[];
+  },
+
+  decidir: async (transferenciaId: string, aprovado: boolean, justificativa?: string | null): Promise<TransferenciaBancaria> => {
+    if (!transferenciaId) throw new Error('Transferência é obrigatória.');
+    if (!aprovado && !justificativa?.trim()) throw new Error('A justificativa da reprovação é obrigatória.');
+    const { data, error } = await supabase.rpc('decidir_transferencia_bancaria', {
+      p_transferencia_id: transferenciaId,
+      p_aprovado: aprovado,
+      p_justificativa: justificativa?.trim() || null,
+    });
+    if (error) throw error;
+    return data as TransferenciaBancaria;
+  },
+
   sugerirDestino: async (transacaoId: string): Promise<TransferenciaDestinoSugestao[]> => {
     if (!transacaoId) return [];
     const { data, error } = await supabase.rpc('sugerir_transferencias_destino', {

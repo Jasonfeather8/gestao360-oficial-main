@@ -124,7 +124,7 @@ export interface TransacaoBanco {
   numero_documento?: string;
 }
 
-export type TransferenciaStatus = 'aberta' | 'aguardando_destino' | 'conciliada' | 'estornada';
+export type TransferenciaStatus = 'aberta' | 'aguardando_destino' | 'conciliada_pendente_master' | 'conciliada' | 'estornada';
 
 export interface TransferenciaBancaria {
   id: string;
@@ -139,6 +139,11 @@ export interface TransferenciaBancaria {
   transacao_origem_id?: string | null;
   transacao_destino_id?: string | null;
   criado_por: string;
+  aprovado_por?: string | null;
+  aprovado_em?: string | null;
+  reprovado_por?: string | null;
+  reprovado_em?: string | null;
+  motivo_reprovacao?: string | null;
   created_at: string;
   updated_at: string;
   estornado_em?: string | null;

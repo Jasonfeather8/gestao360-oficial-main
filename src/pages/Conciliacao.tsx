@@ -84,6 +84,9 @@ export default function Conciliacao() {
     isLoadingSuggestions: isLoadingTransferSuggestions,
     reconcileTransferencia,
     isReconciling: isReconcilingTransferencia,
+    transferenciasPendentesMaster,
+    decideTransferencia,
+    isDecidingTransferencia,
   } = useTransferencias(selectedTransacaoForConciliationId);
 
   // Import states
@@ -317,6 +320,19 @@ export default function Conciliacao() {
     }
   };
 
+  const handleDecidirTransferencia = async (transferenciaId: string, aprovado: boolean) => {
+    if (isDecidingTransferencia) return;
+    if (aprovado && !confirm('Aprovar esta transferência? Os dois espelhos serão confirmados no saldo consolidado.')) return;
+    const justificativa = aprovado ? null : prompt('Informe a justificativa da reprovação:');
+    if (!aprovado && justificativa === null) return;
+    try {
+      await decideTransferencia({ transferenciaId, aprovado, justificativa: justificativa?.trim() || null });
+      alert(aprovado ? 'Transferência aprovada.' : 'Transferência reprovada e devolvida para tratamento operacional.');
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Não foi possível decidir a transferência.');
+    }
+  };
+
   // 1. Processar Transações do Banco
   const bankStatements = useMemo(() => {
     return transacoes
@@ -514,6 +530,46 @@ export default function Conciliacao() {
           </div>
         )}
       </div>
+
+      {role === 'master' && transferenciasPendentesMaster.length > 0 && (
+        <div className="bg-white border-2 border-amber-100 p-4 rounded-3xl shadow-sm space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <Shield className="w-5 h-5 text-amber-600" />
+              <div>
+                <p className="text-[10px] font-black text-amber-700 uppercase tracking-widest">Transferências aguardando Master</p>
+                <p className="text-[9px] font-bold text-neutral-400 uppercase">Origem e destino já estão vinculados; falta a decisão final.</p>
+              </div>
+            </div>
+            <span className="px-3 py-2 rounded-xl bg-amber-50 text-amber-700 text-[9px] font-black uppercase tracking-widest">{transferenciasPendentesMaster.length} pendente(s)</span>
+          </div>
+          <div className="space-y-2">
+            {transferenciasPendentesMaster.map(transferencia => (
+              <div key={transferencia.id} className="flex flex-wrap items-center justify-between gap-2 bg-neutral-50 px-3 py-2 rounded-xl">
+                <div className="text-[9px] font-bold text-neutral-600 uppercase">
+                  {contas.find(conta => conta.id === transferencia.conta_origem_id)?.nome || 'Origem'} → {contas.find(conta => conta.id === transferencia.conta_destino_id)?.nome || 'Destino'} • {valueFormatter(Number(transferencia.valor))} • {transferencia.data_transferencia.split('-').reverse().join('/')}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleDecidirTransferencia(transferencia.id, false)}
+                    disabled={isDecidingTransferencia}
+                    className="px-3 py-1.5 border border-red-200 text-red-600 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Reprovar
+                  </button>
+                  <button
+                    onClick={() => handleDecidirTransferencia(transferencia.id, true)}
+                    disabled={isDecidingTransferencia}
+                    className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Aprovar
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Toolbox de Lote */}
       {bankStatements.some(tx => !tx.status_conciliacao) && (

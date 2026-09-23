@@ -24,7 +24,7 @@ import {
   Shield
 } from 'lucide-react';
 import { useUIStore } from '../store/uiStore';
-import { useLancamentos, useLancamento, useEntidades, useCentrosCusto, useCategorias, useContas, useContasSaldos, useLancamentoAnexos, useCategoriasAjuste, useConciliacao } from '../hooks/useData';
+import { useLancamentos, useLancamento, useEntidades, useCentrosCusto, useCategorias, useContas, useContasSaldos, useLancamentoAnexos, useCategoriasAjuste } from '../hooks/useData';
 import { useAuth } from '../hooks/useAuth';
 import MoneyInput from './MoneyInput';
 import { PrintDocumentSelector } from './printing/PrintDocumentSelector';
@@ -217,8 +217,7 @@ export default function NovoLancamentoDrawer() {
     resetAllDrafts
   } = useUIStore();
 
-  const { createLancamento, updateLancamento, baixaLancamento, isCreating, isUpdating, data: lancamentos = [] } = useLancamentos();
-  const { linkConciliacao } = useConciliacao();
+  const { createLancamento, createLancamentoFromTransaction, updateLancamento, baixaLancamento, isCreating, isUpdating, data: lancamentos = [] } = useLancamentos();
   const { data: lancamentoSelecionado, isLoading: isLancamentoSelecionadoLoading } = useLancamento(selectedLancamentoIdForModal);
   const { data: entidades = [] } = useEntidades();
   const { data: rawCentros = [] } = useCentrosCusto();
@@ -830,9 +829,14 @@ export default function NovoLancamentoDrawer() {
           mode: selectedRecorrenciaAction || undefined
         });
         showToast('Lançamento atualizado com sucesso!', 'success');
+      } else if (isFromExtrato && transacaoBancoParaLancamento) {
+        createdItem = await createLancamentoFromTransaction({
+          transacaoBancoId: transacaoBancoParaLancamento.id,
+          dadosComerciais: itemDetails,
+        });
       } else {
         let recurrencePayload = undefined;
-        const isRecurrent = !isFromExtrato && (lancamentoFormDraft.condicao === 'a_prazo' || lancamentoFormDraft.recorrencia_repeat);
+        const isRecurrent = lancamentoFormDraft.condicao === 'a_prazo' || lancamentoFormDraft.recorrencia_repeat;
         
         if (isRecurrent && parcelasManuais.length > 0) {
           recurrencePayload = {
@@ -849,17 +853,6 @@ export default function NovoLancamentoDrawer() {
         createdItem = await createLancamento({
           item: itemDetails,
           recorrencia: recurrencePayload
-        });
-      }
-
-      if (isFromExtrato) {
-        const createdLancamentoId = (createdItem as any)?.id;
-        if (!createdLancamentoId || !transacaoBancoParaLancamento) {
-          throw new Error('Não foi possível identificar o lançamento criado para conciliação.');
-        }
-        await linkConciliacao({
-          transacaoBancoId: transacaoBancoParaLancamento.id,
-          lancamentoIds: [createdLancamentoId]
         });
       }
 
