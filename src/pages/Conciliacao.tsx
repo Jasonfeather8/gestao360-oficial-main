@@ -30,14 +30,20 @@ import { useConciliacao, useContas, useLancamentos, useEntidades } from '../hook
 import { useAuth } from '../hooks/useAuth';
 import { useUIStore } from '../store/uiStore';
 import { TransacaoBanco, LancamentoFinanceiro } from '../types';
+import { ImportLotDraft, ImportMode, ImportPreview } from '../types/extratoImportacao';
+import { buildCsvTransactions, parseCsv } from '../services/conciliacoesService';
 import Button from '../components/Button';
 
 export default function Conciliacao() {
   const { 
-    conciliacoes = [], 
-    transacoes = [], 
-    importCSV, 
-    linkConciliacao, 
+    conciliacoes = [],
+    transacoes = [],
+    prepareImport,
+    confirmImport,
+    cancelImport,
+    isPreparingImport,
+    isConfirmingImport,
+    linkConciliacao,
     unlinkConciliacao, 
     cleanupTransacoes,
     classifyDifference,
@@ -45,7 +51,7 @@ export default function Conciliacao() {
     isCleaning
   } = useConciliacao();
 
-  const { role } = useAuth();
+  const { role, user } = useAuth();
   const { data: contas = [] } = useContas();
   const { data: lancamentos = [] } = useLancamentos({ pageSize: 1000 }); // Buscar volume maior para conciliar
   const { data: entidades = [] } = useEntidades();
@@ -67,11 +73,14 @@ export default function Conciliacao() {
 
   // Import states
   const [csvContentText, setCsvContentText] = useState('');
+  const [importLot, setImportLot] = useState<ImportLotDraft | null>(null);
+  const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
+  const [importError, setImportError] = useState('');
   const [selectedImportContaId, setSelectedImportContaId] = useState('');
-  const [importMode, setImportMode] = useState<'entrada' | 'saida' | 'ambos'>('ambos');
+  const [importMode, setImportMode] = useState<ImportMode>('ambos');
   const [columnMapping, setColumnMapping] = useState({ data: '', valor: '', descricao: '', documento: '' });
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
-  const [csvPreviewRows, setCsvPreviewRows] = useState<any[]>([]);
+  const [csvPreviewRows, setCsvPreviewRows] = useState<Array<Record<string, string>>>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Difference states
@@ -97,65 +106,83 @@ export default function Conciliacao() {
     }
   };
 
-  const processFile = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const text = e.target?.result as string;
-      setCsvContentText(text);
-      const lines = text.split('\n').filter(l => l.trim());
-      if (lines.length > 0) {
-        const sep = lines[0].includes(';') ? ';' : ',';
-        const headers = lines[0].split(sep).map(h => h.trim().replace(/"/g, ''));
-        setCsvHeaders(headers);
-        const preview = lines.slice(1, 6).map(line => {
-          const parts = line.split(sep).map(p => p.trim().replace(/"/g, ''));
-          const row: any = {};
-          headers.forEach((h, i) => { row[h] = parts[i]; });
-          return row;
-        });
-        setCsvPreviewRows(preview);
-        const mapping = { data: '', valor: '', descricao: '', documento: '' };
-        headers.forEach(h => {
-          const l = h.toLowerCase();
-          if (l.includes('dat')) mapping.data = h;
-          if (l.includes('val')) mapping.valor = h;
-          if (l.includes('desc')) mapping.descricao = h;
-          if (l.includes('doc')) mapping.documento = h;
-        });
-        setColumnMapping(mapping);
-      }
-    };
-    reader.readAsText(file);
-  };
-
-  const handleImportCSVSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const processFile = async (file: File) => {
+    setImportError('');
+    if (importLot && !(await handleImportCancel())) return;
     try {
-      const lines = csvContentText.split('\n').filter(l => l.trim());
-      const separator = lines[0].includes(';') ? ';' : ',';
-      const headers = lines[0].split(separator).map(h => h.trim().replace(/"/g, ''));
-      const rowsToImport = lines.slice(1).map(line => {
-        const parts = line.split(separator).map(p => p.trim().replace(/"/g, ''));
-        const rowData: any = {};
-        headers.forEach((h, i) => { rowData[h] = parts[i]; });
-        const valRaw = rowData[columnMapping.valor] || '0';
-        // Limpeza avançada de valores monetários
-        const val = parseFloat(valRaw.replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, ''));
-        return { 
-          data: rowData[columnMapping.data], 
-          valor: val, 
-          descricao: rowData[columnMapping.descricao], 
-          documento: rowData[columnMapping.documento] || '' 
-        };
-      }).filter(r => r.data && !isNaN(r.valor));
-      
-      await importCSV({ contaBancariaId: selectedImportContaId, rows: rowsToImport, importMode });
-      setModalOpen('isImportarCSVOpen', false);
-      alert('Importação concluída com sucesso!');
-    } catch (err: any) {
-      alert('Erro na importação: ' + err.message);
+      if (!user?.id) throw new Error('Sessão expirada. Entre novamente para importar o extrato.');
+      const result = await prepareImport({ file, contaBancariaId: selectedImportContaId, userId: user.id });
+      setImportLot(result.lot);
+      setImportPreview(result.preview);
+      setCsvContentText(result.preview.fileType === 'csv' ? await file.text() : '');
+      setCsvHeaders(result.preview.firstRows.length ? Object.keys(result.preview.firstRows[0]) : []);
+      setCsvPreviewRows(result.preview.firstRows);
+      if (result.preview.fileType === 'csv') {
+        const headers = Object.keys(result.preview.firstRows[0] || {});
+        setColumnMapping({
+          data: headers.find(header => /dat/i.test(header)) || '',
+          valor: headers.find(header => /val/i.test(header)) || '',
+          descricao: headers.find(header => /desc/i.test(header)) || '',
+          documento: headers.find(header => /doc/i.test(header)) || '',
+        });
+      }
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : 'Não foi possível preparar o arquivo.');
     }
   };
+
+  const handleImportCancel = async (): Promise<boolean> => {
+    if (isPreparingImport || isConfirmingImport) return false;
+    if (importLot) {
+      try { await cancelImport(importLot); } catch (error) { setImportError('Não foi possível remover o arquivo temporário. Tente cancelar novamente.'); return false; }
+    }
+    resetImportState();
+    setModalOpen('isImportarCSVOpen', false);
+    return true;
+  };
+
+  const resetImportState = () => {
+    setCsvContentText('');
+    setImportLot(null);
+    setImportPreview(null);
+    setImportError('');
+    setCsvHeaders([]);
+    setCsvPreviewRows([]);
+    setColumnMapping({ data: '', valor: '', descricao: '', documento: '' });
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+  const handleImportCSVSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!importLot || !importPreview) return;
+    try {
+      let transactions = importPreview.transactions;
+      if (importPreview.fileType === 'csv') {
+        const parsed = parseCsv(csvContentText);
+        transactions = await buildCsvTransactions(importLot.contaBancariaId, parsed.rows, columnMapping, importMode);
+      }
+      if (!transactions.length) throw new Error('O arquivo precisa conter ao menos uma transação.');
+      await confirmImport({
+        lot: importLot,
+        transactions,
+        metadata: {
+          pages: importPreview.pages,
+          periodStart: importPreview.periodStart,
+          periodEnd: importPreview.periodEnd,
+          openingBalance: importPreview.openingBalance,
+          closingBalance: importPreview.closingBalance,
+          bankIdentified: importPreview.bankIdentified,
+          totalEntries: importPreview.totalEntries,
+          totalExits: importPreview.totalExits,
+          parserTotals: importPreview.parserTotals,
+        },
+      });
+      resetImportState();
+      setModalOpen('isImportarCSVOpen', false);
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : 'Não foi possível confirmar a importação.');
+    }
+  };
+
 
   const executeConciliationLink = async () => {
     if (!selectedTransacaoForConciliationId || !selectedLancamentoForConciliationId) return;
@@ -504,14 +531,14 @@ export default function Conciliacao() {
       <AnimatePresence>
         {isImportarCSVOpen && (
           <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setModalOpen('isImportarCSVOpen', false)} className="absolute inset-0 bg-black/60 backdrop-blur-xs" />
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={handleImportCancel} className="absolute inset-0 bg-black/60 backdrop-blur-xs" />
             <motion.form initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} onSubmit={handleImportCSVSubmit} className="bg-white w-full max-w-[600px] rounded-[40px] shadow-2xl border-2 border-neutral-100 flex flex-col relative z-20 overflow-hidden">
               <header className="px-10 py-8 border-b bg-neutral-50/50 flex justify-between items-center shrink-0">
                 <div>
                   <h2 className="text-xl font-black uppercase tracking-tighter">Motor de Importação</h2>
                   <p className="text-[10px] text-primary uppercase font-black tracking-widest mt-1">Transforme arquivos brutos em inteligência financeira</p>
                 </div>
-                <button type="button" onClick={() => setModalOpen('isImportarCSVOpen', false)} className="p-3 hover:bg-neutral-200 rounded-2xl transition-all">
+                <button type="button" onClick={handleImportCancel} className="p-3 hover:bg-neutral-200 rounded-2xl transition-all">
                   <X className="w-6 h-6 text-neutral-400" />
                 </button>
               </header>
@@ -522,7 +549,7 @@ export default function Conciliacao() {
                     <label className="text-[10px] font-black text-secondary uppercase tracking-widest">Conta Destino</label>
                     <div className="flex items-center gap-3 h-14 px-4 bg-neutral-100 border-2 border-neutral-100 rounded-2xl">
                       <Building className="w-5 h-5 text-neutral-400" />
-                      <select value={selectedImportContaId} onChange={(e) => setSelectedImportContaId(e.target.value)} className="bg-transparent border-none text-xs font-bold uppercase outline-none cursor-pointer flex-1">
+                      <select value={selectedImportContaId} onChange={(e) => setSelectedImportContaId(e.target.value)} disabled={!!importLot} className="bg-transparent border-none text-xs font-bold uppercase outline-none cursor-pointer flex-1 disabled:opacity-60">
                         {contas.map(cnt => <option key={cnt.id} value={cnt.id}>{cnt.nome_banco || cnt.nome}</option>)}
                       </select>
                     </div>
@@ -530,28 +557,40 @@ export default function Conciliacao() {
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-secondary uppercase tracking-widest">Direcionador de Fluxo</label>
                     <div className="flex bg-neutral-100 p-1 rounded-2xl h-14">
-                      {['ambos','entrada','saida'].map(m => (
-                        <button key={m} type="button" onClick={() => setImportMode(m as any)} className={`flex-1 rounded-xl text-[10px] font-black uppercase transition-all ${importMode === m ? 'bg-white text-primary shadow-sm' : 'text-neutral-400'}`}>{m}</button>
+                      {(['ambos', 'entrada', 'saida'] as ImportMode[]).map(m => (
+                        <button key={m} type="button" onClick={() => setImportMode(m)} className={`flex-1 rounded-xl text-[10px] font-black uppercase transition-all ${importMode === m ? 'bg-white text-primary shadow-sm' : 'text-neutral-400'}`}>{m}</button>
                       ))}
                     </div>
                   </div>
                 </div>
 
-                {!csvContentText ? (
-                  <div 
+                {!importPreview ? (
+                  <div
                     onClick={() => fileInputRef.current?.click()} 
                     className="border-4 border-dashed rounded-[32px] p-16 text-center cursor-pointer bg-neutral-50 hover:bg-neutral-100 hover:border-primary/30 transition-all group"
                   >
-                    <input type="file" ref={fileInputRef} onChange={(e) => e.target.files?.[0] && processFile(e.target.files[0])} accept=".csv" className="hidden" />
+                    <input type="file" ref={fileInputRef} onChange={(e) => e.target.files?.[0] && void processFile(e.target.files[0])} accept=".csv,.pdf,application/pdf,text/csv" className="hidden" />
                     <div className="w-20 h-20 bg-white rounded-3xl shadow-sm flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform">
                       <Upload className="w-10 h-10 text-primary" />
                     </div>
-                    <p className="text-sm font-black uppercase tracking-widest text-neutral-800">Clique para selecionar o CSV</p>
-                    <p className="text-[10px] font-bold text-neutral-400 uppercase mt-2">Suporte para arquivos bancários padrão (Excel/CSV)</p>
+                    <p className="text-sm font-black uppercase tracking-widest text-neutral-800">Clique para selecionar o extrato</p>
+                    <p className="text-[10px] font-bold text-neutral-400 uppercase mt-2">PDF ou CSV • limite de 20 MB</p>
                   </div>
                 ) : (
                   <div className="space-y-8 animate-fade-in">
-                    <div className="space-y-4">
+                    <div className="p-5 bg-neutral-50 border-2 border-neutral-100 rounded-3xl space-y-3">
+                      <div className="flex items-center justify-between gap-3"><span className="text-xs font-black uppercase truncate">{importPreview.fileName}</span><span className="text-[10px] font-black uppercase text-primary">{importPreview.fileType.toUpperCase()}</span></div>
+                      <div className="grid grid-cols-2 gap-3 text-[10px] font-bold text-neutral-500 uppercase">
+                        <span>Período: {importPreview.periodStart || 'não detectado'} — {importPreview.periodEnd || 'não detectado'}</span>
+                        <span>{importPreview.pages ? `${importPreview.pages} página(s)` : `${importPreview.transactions.length} transações`}</span>
+                        <span className="text-emerald-600">Entradas: {valueFormatter(importPreview.totalEntries)}</span>
+                        <span className="text-red-500">Saídas: {valueFormatter(importPreview.totalExits)}</span>
+                        <span>Saldo inicial: {importPreview.openingBalance === undefined ? 'não disponível' : valueFormatter(importPreview.openingBalance)}</span>
+                        <span>Saldo final: {importPreview.closingBalance === undefined ? 'não disponível' : valueFormatter(importPreview.closingBalance)}</span>
+                      </div>
+                      {importPreview.bankIdentified && <p className="text-[10px] font-black text-primary uppercase">Banco identificado: {importPreview.bankIdentified}</p>}
+                    </div>
+                    {importPreview.fileType === 'csv' && <div className="space-y-4">
                       <h4 className="text-[10px] font-black text-primary uppercase tracking-[0.2em] border-b pb-2">Mapeamento de Colunas</h4>
                       <div className="grid grid-cols-1 gap-3">
                         {[{f:'data',l:'Data Transação',i:Calendar},{f:'valor',l:'Valor (R$)',i:Coins},{f:'descricao',l:'Descrição Banco',i:FileSpreadsheet},{f:'documento',l:'NSU / Documento',i:Hash}].map(it => (
@@ -570,7 +609,7 @@ export default function Conciliacao() {
                           </div>
                         ))}
                       </div>
-                    </div>
+                    </div>}
 
                     <div className="space-y-4">
                       <h4 className="text-[10px] font-black text-primary uppercase tracking-[0.2em] border-b pb-2">Pré-visualização (Primeiras 5 linhas)</h4>
@@ -578,13 +617,13 @@ export default function Conciliacao() {
                         <table className="w-full text-[10px] text-left">
                           <thead className="bg-neutral-50 text-neutral-400 border-b border-neutral-100 font-black uppercase">
                             <tr>
-                              {Object.values(columnMapping).filter(v=>v).map(h=><th key={h} className="p-4">{h}</th>)}
+                              {importPreview.fileType === 'csv' ? Object.values(columnMapping).filter(v=>v).map(h=><th key={h} className="p-4">{h}</th>) : <><th className="p-4">Data</th><th className="p-4">Descrição</th><th className="p-4">Valor</th></>}
                             </tr>
                           </thead>
                           <tbody className="font-bold text-neutral-700">
                             {csvPreviewRows.map((row, i) => (
                               <tr key={i} className="border-b border-neutral-50 last:border-none">
-                                {Object.values(columnMapping).filter((value): value is string => Boolean(value)).map(h=><td key={h} className="p-4">{row[h]}</td>)}
+                                {importPreview.fileType === 'csv' ? Object.values(columnMapping).filter((value): value is string => Boolean(value)).map(h=><td key={h} className="p-4">{row[h]}</td>) : <><td className="p-4">{row.data}</td><td className="p-4">{row['descrição']}</td><td className="p-4">{row.valor}</td></>}
                               </tr>
                             ))}
                           </tbody>
@@ -596,9 +635,10 @@ export default function Conciliacao() {
               </div>
 
               <footer className="px-10 py-8 border-t bg-neutral-50/50 flex justify-end gap-4 shrink-0">
-                <button type="button" onClick={() => {setCsvContentText(''); setModalOpen('isImportarCSVOpen', false);}} className="px-8 text-[10px] font-black uppercase text-neutral-400 tracking-widest hover:text-neutral-900 transition-colors">Cancelar</button>
-                <Button type="submit" disabled={!csvContentText || !columnMapping.data || !columnMapping.valor}>
-                  Finalizar Importação
+                {importError && <p className="mr-auto max-w-[280px] text-[10px] font-black text-red-500 uppercase">{importError}</p>}
+                <button type="button" onClick={handleImportCancel} className="px-8 text-[10px] font-black uppercase text-neutral-400 tracking-widest hover:text-neutral-900 transition-colors">Cancelar</button>
+                <Button type="submit" disabled={!importPreview || isPreparingImport || isConfirmingImport || (importPreview?.fileType === 'csv' && (!columnMapping.data || !columnMapping.valor || !columnMapping.descricao))}>
+                  {isPreparingImport || isConfirmingImport ? 'Processando...' : 'Confirmar Importação'}
                 </Button>
               </footer>
             </motion.form>

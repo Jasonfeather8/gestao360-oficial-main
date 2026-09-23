@@ -115,6 +115,8 @@ export interface TransacaoBanco {
   tipo_movimento: 'debito' | 'credito';
   hash_transacao: string; // duplicate prevention
   status_conciliacao: boolean;
+  extrato_lote_id?: string;
+  numero_documento?: string;
 }
 
 export interface Conciliacao {

@@ -14,6 +14,7 @@ import { auditoriaService } from '../services/auditoriaService';
 import { notificationsService } from '../services/notificationsService';
 import { diagnosticLogger } from '../services/diagnosticLogger';
 import { TipoDiferenca } from '../types';
+import { ImportConfirmationMetadata, ImportLotDraft, ImportTransaction } from '../types/extratoImportacao';
 
 export function useNotifications() {
   const queryClient = useQueryClient();
@@ -272,10 +273,15 @@ export function useConciliacao() {
   const conciliacoesQuery = useQuery({ queryKey: ['conciliacoes'], queryFn: conciliacoesService.getConciliacoes });
   const transacoesQuery = useQuery({ queryKey: ['transacoes'], queryFn: conciliacoesService.getAllTransacoes });
 
-  const importMutation = useMutation({
-    mutationFn: ({ contaBancariaId, rows, importMode }: { contaBancariaId: string, rows: any[], importMode: 'entrada' | 'saida' | 'ambos' }) => 
-      conciliacoesService.importCSV(contaBancariaId, rows, importMode),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['transacoes'] })
+  const prepareImportMutation = useMutation({
+    mutationFn: ({ file, contaBancariaId, userId }: { file: File; contaBancariaId: string; userId: string }) =>
+      conciliacoesService.prepareImportFile(file, contaBancariaId, userId),
+  });
+
+  const confirmImportMutation = useMutation({
+    mutationFn: ({ lot, transactions, metadata }: { lot: ImportLotDraft; transactions: ImportTransaction[]; metadata?: ImportConfirmationMetadata }) =>
+      conciliacoesService.confirmImport(lot, transactions, metadata),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['transacoes'] }),
   });
 
   const linkMutation = useMutation({
@@ -315,7 +321,11 @@ export function useConciliacao() {
     isLinking: linkMutation.isPending,
     isUnlinking: unlinkMutation.isPending,
     isCleaning: cleanupMutation.isPending,
-    importCSV: importMutation.mutateAsync,
+    prepareImport: prepareImportMutation.mutateAsync,
+    confirmImport: confirmImportMutation.mutateAsync,
+    cancelImport: conciliacoesService.cleanupImport,
+    isPreparingImport: prepareImportMutation.isPending,
+    isConfirmingImport: confirmImportMutation.isPending,
     linkConciliacao: linkMutation.mutateAsync,
     unlinkConciliacao: unlinkMutation.mutateAsync,
     cleanupTransacoes: cleanupMutation.mutateAsync,
