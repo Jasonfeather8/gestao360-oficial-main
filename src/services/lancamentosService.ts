@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import { diagnosticLogger } from './diagnosticLogger';
+import { transferenciasService } from './transferenciasService';
 import { LancamentoFinanceiro } from '../types';
 import { calculateAdjustmentAmount } from '../utils/adjustments';
 
@@ -573,9 +574,14 @@ export const lancamentosService = {
   delete: async (id: string, mode: 'single' | 'all' = 'single'): Promise<boolean> => {
     const { data: current } = await supabase
       .from('lancamentos_financeiros')
-      .select('recorrencia_id')
+      .select('recorrencia_id, transferencia_id')
       .eq('id', id)
       .single();
+
+    if (current?.transferencia_id) {
+      await transferenciasService.estornar(current.transferencia_id);
+      return true;
+    }
 
     if (mode === 'all' && current?.recorrencia_id) {
       const { error } = await supabase
@@ -857,6 +863,11 @@ export const lancamentosService = {
       .single();
 
     if (getError) throw getError;
+
+    if (current.transferencia_id) {
+      await transferenciasService.estornar(current.transferencia_id);
+      return;
+    }
 
     if (current.vinculo_residuo_id) {
       const { data: original } = await supabase

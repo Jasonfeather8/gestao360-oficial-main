@@ -83,6 +83,8 @@ export interface LancamentoFinanceiro {
   comprovante_url?: string;
   descricao_bancaria_original?: string | null;
   observacoes: string;
+  transferencia_id?: string | null;
+  transferencia_lado?: 'origem' | 'destino' | 'tarifa' | null;
   recorrencia_id?: string; // Null if single parcel
   numero_parcela?: number; // parcel number if recurring
   quantidade_total_parcelas?: number;
@@ -118,6 +120,34 @@ export interface TransacaoBanco {
   status_conciliacao: boolean;
   extrato_lote_id?: string;
   numero_documento?: string;
+}
+
+export type TransferenciaStatus = 'aberta' | 'aguardando_destino' | 'conciliada' | 'estornada';
+
+export interface TransferenciaBancaria {
+  id: string;
+  conta_origem_id: string;
+  conta_destino_id: string;
+  valor: number;
+  data_transferencia: string;
+  status: TransferenciaStatus;
+  lancamento_saida_id: string;
+  lancamento_entrada_id: string;
+  tarifa_lancamento_id?: string | null;
+  transacao_origem_id?: string | null;
+  transacao_destino_id?: string | null;
+  criado_por: string;
+  created_at: string;
+  updated_at: string;
+  estornado_em?: string | null;
+  estornado_por?: string | null;
+  motivo_estorno?: string | null;
+}
+
+export interface TransferenciaDestinoSugestao extends TransferenciaBancaria {
+  conta_origem_nome?: string | null;
+  conta_destino_nome?: string | null;
+  diferenca_dias?: number;
 }
 
 export interface Conciliacao {

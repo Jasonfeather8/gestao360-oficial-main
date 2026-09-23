@@ -17,6 +17,7 @@ import {
   Hash,
   ArrowUpRight,
   ArrowDownLeft,
+  ArrowRightLeft,
   CheckCircle2,
   Trash2,
   Zap,
@@ -26,13 +27,14 @@ import {
   ShieldCheck,
   Shield
 } from 'lucide-react';
-import { useConciliacao, useContas, useLancamentos, useEntidades } from '../hooks/useData';
+import { useConciliacao, useContas, useLancamentos, useEntidades, useTransferencias } from '../hooks/useData';
 import { useAuth } from '../hooks/useAuth';
 import { useUIStore } from '../store/uiStore';
 import { TransacaoBanco, LancamentoFinanceiro } from '../types';
 import { ImportLotDraft, ImportMode, ImportPreview } from '../types/extratoImportacao';
 import { buildCsvTransactions, parseCsv } from '../services/conciliacoesService';
 import Button from '../components/Button';
+import TransferenciaBancariaModal from '../components/TransferenciaBancariaModal';
 
 export default function Conciliacao() {
   const { 
@@ -60,8 +62,8 @@ export default function Conciliacao() {
   const { data: lancamentos = [] } = useLancamentos({ pageSize: 1000 }); // Buscar volume maior para conciliar
   const { data: entidades = [] } = useEntidades();
 
-  const { 
-    isImportarCSVOpen, setModalOpen, selectedTransacaoForConciliationId,
+  const {
+    isImportarCSVOpen, isTransferenciaBancariaOpen, setModalOpen, selectedTransacaoForConciliationId,
     isVincularConciliarOpen, isClassificarDiferencaOpen,
     setSelectedTransacaoForConciliationId,
     setTransacaoBancoParaLancamento,
@@ -76,6 +78,13 @@ export default function Conciliacao() {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   });
+  const {
+    transferencias,
+    suggestions: transferSuggestions,
+    isLoadingSuggestions: isLoadingTransferSuggestions,
+    reconcileTransferencia,
+    isReconciling: isReconcilingTransferencia,
+  } = useTransferencias(selectedTransacaoForConciliationId);
 
   // Import states
   const [csvContentText, setCsvContentText] = useState('');
@@ -293,6 +302,19 @@ export default function Conciliacao() {
     }
   };
 
+  const handleConfirmTransferSuggestion = async (transferenciaId: string, lado: 'origem' | 'destino') => {
+    const tx = transacoes.find(transaction => transaction.id === selectedTransacaoForConciliationId);
+    if (!tx || isReconcilingTransferencia) return;
+    if (!confirm(`Confirmar esta sugestão e conciliar ${lado === 'origem' ? 'a saída de origem' : 'a entrada de destino'} da transferência?`)) return;
+    try {
+      await reconcileTransferencia({ transferenciaId, transacaoId: tx.id, lado });
+      setSelectedTransacaoForConciliationId(null);
+      setSelectedLancamentoIds([]);
+    } catch (error) {
+      alert(`Erro: ${error instanceof Error ? error.message : 'Não foi possível conciliar a transferência.'}`);
+    }
+  };
+
   // 1. Processar Transações do Banco
   const bankStatements = useMemo(() => {
     return transacoes
@@ -314,9 +336,10 @@ export default function Conciliacao() {
     return lancamentos.filter(l => {
       const matchConta = l.conta_bancaria_id === selectedContaId;
       const matchStatus = !conciliacoes.some(c => c.lancamento_id === l.id);
+      const isTransferMirror = Boolean(l.transferencia_id && (l.transferencia_lado === 'origem' || l.transferencia_lado === 'destino'));
       const matchMonth = l.data_vencimento.startsWith(selectedMonth);
       const matchDirection = directionFilter === 'todos' ? true : l.tipo === directionFilter;
-      return matchConta && matchStatus && matchMonth && matchDirection;
+      return matchConta && matchStatus && !isTransferMirror && matchMonth && matchDirection;
     });
   }, [lancamentos, conciliacoes, selectedContaId, selectedMonth, directionFilter]);
 
@@ -335,6 +358,19 @@ export default function Conciliacao() {
   }, [selectedTransacaoForConciliationId, transacoes, availableLaunches]);
 
   const selectedTxForWorkspace = useMemo(() => transacoes.find(t => t.id === selectedTransacaoForConciliationId) || null, [selectedTransacaoForConciliationId, transacoes]);
+  const originTransferSuggestions = useMemo(() => {
+    if (!selectedTxForWorkspace || selectedTxForWorkspace.valor >= 0) return [];
+    const txCents = Math.round(Math.abs(selectedTxForWorkspace.valor) * 100);
+    const txDate = new Date(`${selectedTxForWorkspace.data_transacao}T00:00:00Z`).getTime();
+    return transferencias.filter(transferencia => {
+      const transferDate = new Date(`${transferencia.data_transferencia}T00:00:00Z`).getTime();
+      return transferencia.status !== 'estornada'
+        && transferencia.conta_origem_id === selectedTxForWorkspace.conta_bancaria_id
+        && !transferencia.transacao_origem_id
+        && Math.round(Number(transferencia.valor) * 100) === txCents
+        && Math.abs(transferDate - txDate) <= 7 * 24 * 60 * 60 * 1000;
+    });
+  }, [selectedTxForWorkspace, transferencias]);
   const selectedLancsForWorkspace = useMemo(() => lancamentos.filter(l => selectedLancamentoIds.includes(l.id)), [selectedLancamentoIds, lancamentos]);
 
   const draftDifferenceAmount = useMemo(() => {
@@ -392,6 +428,9 @@ export default function Conciliacao() {
             <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="bg-transparent border-none text-[10px] font-black uppercase outline-none" />
           </div>
 
+          <button onClick={() => setModalOpen('isTransferenciaBancariaOpen', true)} className="px-6 h-12 bg-primary text-white font-black text-[10px] uppercase tracking-[0.2em] rounded-2xl hover:bg-primary/90 transition-all flex items-center gap-3 shadow-xl active:scale-95">
+            <ArrowRightLeft className="w-4 h-4" /> Nova Transferência
+          </button>
           <button onClick={() => setModalOpen('isImportarCSVOpen', true)} className="px-6 h-12 bg-neutral-900 text-white font-black text-[10px] uppercase tracking-[0.2em] rounded-2xl hover:bg-black transition-all flex items-center gap-3 shadow-xl active:scale-95">
             <Upload className="w-4 h-4" /> Importar Extrato
           </button>
@@ -515,8 +554,11 @@ export default function Conciliacao() {
                 <FileSpreadsheet className="w-16 h-16 text-neutral-300" />
                 <p className="text-xs font-black uppercase tracking-widest max-w-[200px]">Importe um extrato para começar a conciliação</p>
               </div>
-            ) : bankStatements.map(tx => (
-              <motion.div 
+            ) : bankStatements.map(tx => {
+              const suggestionsForTx = tx.valor > 0 ? transferSuggestions : originTransferSuggestions;
+              const suggestionSide = tx.valor > 0 ? 'destino' as const : 'origem' as const;
+              return (
+              <motion.div
                 layout
                 key={tx.id} 
                 onClick={() => {
@@ -567,25 +609,46 @@ export default function Conciliacao() {
                       <Unlink className="w-4 h-4" />
                     </button>
                   ) : selectedTransacaoForConciliationId === tx.id ? (
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setTransacaoBancoParaLancamento(tx);
-                          setModalOpen('isNovoLancamentoOpen', true);
-                        }}
-                        className="h-8 px-3 rounded-xl bg-primary text-white text-[9px] font-black uppercase tracking-widest shadow-sm hover:bg-primary/90 transition-all"
-                      >
-                        <Plus className="w-3.5 h-3.5 inline mr-1" /> Novo Lançamento
-                      </button>
-                      <div className="w-8 h-8 rounded-xl bg-primary flex items-center justify-center text-white animate-pulse">
-                        <ChevronRight className="w-4 h-4" />
+                    <div className="flex flex-col items-end gap-2">
+                      {suggestionsForTx.length > 0 && (
+                        <div className="flex flex-col items-end gap-1">
+                          <span className="text-[8px] font-black uppercase tracking-widest text-emerald-600">
+                            {isLoadingTransferSuggestions && tx.valor > 0 ? 'Buscando transferência...' : 'Sugestão de transferência'}
+                          </span>
+                          {suggestionsForTx.map(suggestion => (
+                            <button
+                              key={suggestion.id}
+                              type="button"
+                              disabled={isReconcilingTransferencia}
+                              onClick={(event) => { event.stopPropagation(); void handleConfirmTransferSuggestion(suggestion.id, suggestionSide); }}
+                              className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[8px] font-black uppercase tracking-wide text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+                            >
+                              Confirmar {suggestion.conta_origem_nome || 'transferência'} • {valueFormatter(suggestion.valor)}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setTransacaoBancoParaLancamento(tx);
+                            setModalOpen('isNovoLancamentoOpen', true);
+                          }}
+                          className="h-8 px-3 rounded-xl bg-primary text-white text-[9px] font-black uppercase tracking-widest shadow-sm hover:bg-primary/90 transition-all"
+                        >
+                          <Plus className="w-3.5 h-3.5 inline mr-1" /> Novo Lançamento
+                        </button>
+                        <div className="w-8 h-8 rounded-xl bg-primary flex items-center justify-center text-white animate-pulse">
+                          <ChevronRight className="w-4 h-4" />
+                        </div>
                       </div>
                     </div>
                   ) : null}
                 </div>
               </motion.div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -963,6 +1026,11 @@ export default function Conciliacao() {
           </div>
         )}
       </AnimatePresence>
+      <TransferenciaBancariaModal
+        isOpen={isTransferenciaBancariaOpen}
+        contas={contas}
+        onClose={() => setModalOpen('isTransferenciaBancariaOpen', false)}
+      />
     </div>
   );
 }
