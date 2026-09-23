@@ -32,6 +32,7 @@ import Recorrencias from './pages/Recorrencias';
 import CRM from './pages/CRM';
 import Cadastros from './pages/Cadastros';
 import Relatorios from './pages/Relatorios';
+import Implantacao from './pages/Implantacao';
 import Configuracoes from './pages/Configuracoes';
 import Notificacoes from './pages/Notificacoes';
 import Pagar from './pages/Pagar';
@@ -229,6 +230,7 @@ function AppContent() {
                       <Route path="/recorrencias" element={<Recorrencias />} />
                       <Route path="/cadastros" element={<Cadastros />} />
                       <Route path="/relatorios" element={<Relatorios />} />
+                      <Route path="/implantacao" element={<Implantacao />} />
 
                       {/* Rotas exclusivas do Master */}
                       <Route path="/configuracoes" element={<Configuracoes />} />

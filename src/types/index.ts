@@ -299,6 +299,33 @@ export interface CofreSaldo {
   transferencias_pendentes: number;
 }
 
+export interface ConsolidatedFinancialSummary {
+  bank_confirmed: number;
+  bank_operational: number;
+  cash_approved: number;
+  cash_operational: number;
+  cash_pending: number;
+  pending_cash_movements: number;
+  pending_cash_transfers: number;
+  pending_cash_transfer_value: number;
+  consolidated_confirmed: number;
+  consolidated_operational: number;
+}
+
+export interface ImplantacaoValidationEvidence {
+  duplicate_transaction_hashes: number | null;
+  unclassified_differences: number | null;
+  multiple_entry_conciliations: number | null;
+  reversed_bank_transfers: number | null;
+  pending_bank_transfers: number | null;
+  reversed_cash_transfers: number | null;
+  pending_cash_transfers: number | null;
+  profile_count: number | null;
+  closing_count: number | null;
+  imported_statement_count: number | null;
+  unavailable_sources: string[];
+}
+
 export interface CriarMovimentacaoCofrePayload {
   cofreId: string;
   tipo: TipoMovimentacaoCofre;

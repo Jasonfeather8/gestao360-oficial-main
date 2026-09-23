@@ -20,7 +20,7 @@ import {
   User,
   X
 } from 'lucide-react';
-import { useLancamentos, useContas, useCentrosCusto, useAuditoriaLogs, useEntidades, useContasSaldos } from '../hooks/useData';
+import { useLancamentos, useContas, useCentrosCusto, useAuditoriaLogs, useEntidades, useContasSaldos, useConsolidatedFinancialSummary } from '../hooks/useData';
 import { useAuth } from '../hooks/useAuth';
 import { useUIStore } from '../store/uiStore';
 import { calculateAdjustmentAmount } from '../utils/adjustments';
@@ -150,6 +150,7 @@ export default function Dashboard() {
  }, [filteredLancamentos]);
 
  const { data: contasSaldos = [] } = useContasSaldos();
+ const { data: consolidatedSummary } = useConsolidatedFinancialSummary();
 
  const accountsBalances = useMemo(() => {
    return contas.map(account => {
@@ -411,6 +412,32 @@ export default function Dashboard() {
                 ))}
               </div>
 
+            </section>
+
+            <section className="bg-surface p-4 rounded-xl border border-surface-border shadow-sm animate-fade-in">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-xs font-black uppercase tracking-wider text-secondary flex items-center gap-2"><Shield className="w-4 h-4 text-primary" /> Resumo consolidado</h4>
+                <span className="text-[9px] font-bold text-secondary uppercase">Bancos e físico do Cofre separados</span>
+              </div>
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+                {[
+                  ['Bancos confirmados', consolidatedSummary?.bank_confirmed],
+                  ['Bancos operacionais', consolidatedSummary?.bank_operational],
+                  ['Cofre aprovado', consolidatedSummary?.cash_approved],
+                  ['Cofre operacional', consolidatedSummary?.cash_operational],
+                  ['Total confirmado', consolidatedSummary?.consolidated_confirmed],
+                  ['Total operacional', consolidatedSummary?.consolidated_operational],
+                ].map(([label, value]) => (
+                  <div key={String(label)} className="rounded-lg border border-surface-border/70 bg-surface-low-low p-3">
+                    <p className="text-[9px] font-black uppercase tracking-wider text-secondary">{label}</p>
+                    <p className="mt-1 text-sm font-bold font-mono text-on-surface">{valueFormatter(Number(value || 0))}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-[10px] font-bold text-secondary">
+                <span>Pendências do Cofre: {consolidatedSummary?.pending_cash_movements || 0} movimentações · {consolidatedSummary?.pending_cash_transfers || 0} transferências</span>
+                <span>{valueFormatter(Number(consolidatedSummary?.cash_pending || 0))} em aprovação · {valueFormatter(Number(consolidatedSummary?.pending_cash_transfer_value || 0))} em transferências</span>
+              </div>
             </section>
 
             <section className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in">
