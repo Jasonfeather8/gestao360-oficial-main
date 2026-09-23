@@ -123,11 +123,25 @@ export interface Conciliacao {
   id: string;
   lancamento_id: string;
   transacao_banco_id: string;
+  grupo_conciliacao_id?: string | null;
   usuario_conciliador_id: string;
   data_conciliacao: string;
 }
 
 export type TipoDiferenca = 'juros' | 'multa' | 'desconto' | 'tarifa' | 'pagamento_parcial' | 'ajuste_manual';
+
+export interface ConciliacaoAtomicaPayload {
+  transacaoBancoId: string;
+  lancamentoIds: string[];
+  tipoDiferenca?: TipoDiferenca | null;
+  justificativa?: string | null;
+}
+
+export interface ConciliacaoAtomicaResult {
+  grupo_conciliacao_id: string;
+  conciliacoes: Conciliacao[];
+  diferenca_centavos: number;
+}
 
 export interface DiferencaFinanceira {
   id: string;

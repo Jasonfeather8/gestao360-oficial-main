@@ -44,9 +44,8 @@ export default function Conciliacao() {
     isPreparingImport,
     isConfirmingImport,
     linkConciliacao,
-    unlinkConciliacao, 
+    unlinkConciliacao,
     cleanupTransacoes,
-    classifyDifference,
     isLinking,
     isCleaning
   } = useConciliacao();
@@ -57,14 +56,15 @@ export default function Conciliacao() {
   const { data: entidades = [] } = useEntidades();
 
   const { 
-    currentUserId, isImportarCSVOpen, setModalOpen, selectedTransacaoForConciliationId, selectedLancamentoForConciliationId,
+    isImportarCSVOpen, setModalOpen, selectedTransacaoForConciliationId,
     isVincularConciliarOpen, isClassificarDiferencaOpen,
-    setSelectedTransacaoForConciliationId, setSelectedLancamentoForConciliationId,
-    setCurrentConciliationDifferenceValue, setCurrentConciliationId,
-    currentConciliationId, currentConciliationDifferenceValue
+    setSelectedTransacaoForConciliationId,
+    setCurrentConciliationDifferenceValue,
+    currentConciliationDifferenceValue
   } = useUIStore();
 
   const [selectedContaId, setSelectedContaId] = useState<string>('');
+  const [selectedLancamentoIds, setSelectedLancamentoIds] = useState<string[]>([]);
   const [directionFilter, setDirectionFilter] = useState<'todos' | 'entrada' | 'saida'>('todos');
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
@@ -184,47 +184,52 @@ export default function Conciliacao() {
   };
 
 
+  const clearConciliationSelection = () => {
+    setModalOpen('isVincularConciliarOpen', false);
+    setModalOpen('isClassificarDiferencaOpen', false);
+    setSelectedTransacaoForConciliationId(null);
+    setSelectedLancamentoIds([]);
+    setCurrentConciliationDifferenceValue(0);
+  };
+
   const executeConciliationLink = async () => {
-    if (!selectedTransacaoForConciliationId || !selectedLancamentoForConciliationId) return;
+    if (!selectedTransacaoForConciliationId || selectedLancamentoIds.length === 0) return;
     try {
       const tx = transacoes.find(t => t.id === selectedTransacaoForConciliationId);
-      const lanc = lancamentos.find(l => l.id === selectedLancamentoForConciliationId);
-      if (!tx || !lanc) return;
-      
-      const newCon = await linkConciliacao({ lancamentoId: lanc.id, transacaoBancoId: tx.id, usuarioId: currentUserId });
-      
-      const erpVal = lanc.tipo === 'saida' ? -Math.abs(lanc.valor_previsto) : Math.abs(lanc.valor_previsto);
-      const diff = tx.valor - erpVal;
-      
-      if (Math.abs(diff) > 0.01) {
-        setCurrentConciliationId(newCon.id); 
-        setCurrentConciliationDifferenceValue(diff);
-        setModalOpen('isVincularConciliarOpen', false); 
-        setModalOpen('isClassificarDiferencaOpen', true);
-      } else {
+      const selected = lancamentos.filter(l => selectedLancamentoIds.includes(l.id));
+      if (!tx || selected.length !== selectedLancamentoIds.length) return;
+      const txCents = Math.round(Number(tx.valor.toFixed(2)) * 100);
+      const erpCents = selected.reduce((sum, lanc) => {
+        const value = lanc.tipo === 'saida' ? -Math.abs(lanc.valor_previsto) : Math.abs(lanc.valor_previsto);
+        return sum + Math.round(Number(value.toFixed(2)) * 100);
+      }, 0);
+      const differenceCents = txCents - erpCents;
+      const difference = differenceCents / 100;
+
+      setCurrentConciliationDifferenceValue(difference);
+      if (differenceCents !== 0) {
         setModalOpen('isVincularConciliarOpen', false);
-        setSelectedTransacaoForConciliationId(null);
-        setSelectedLancamentoForConciliationId(null);
+        setModalOpen('isClassificarDiferencaOpen', true);
+        return;
       }
+
+      await linkConciliacao({ transacaoBancoId: tx.id, lancamentoIds: selectedLancamentoIds });
+      clearConciliationSelection();
     } catch (err: any) { alert('Erro: ' + err.message); }
   };
 
   const handleClassifyDiffSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentConciliationId) return;
+    if (!selectedTransacaoForConciliationId || selectedLancamentoIds.length === 0 || !diffJustification.trim()) return;
     try {
-      await classifyDifference({
-        conciliacaoId: currentConciliationId,
+      await linkConciliacao({
+        transacaoBancoId: selectedTransacaoForConciliationId,
+        lancamentoIds: selectedLancamentoIds,
         tipoDiferenca: diffType,
-        valorDiferenca: currentConciliationDifferenceValue,
-        observacaoJustificativa: diffJustification
+        justificativa: diffJustification.trim(),
       });
-      setModalOpen('isClassificarDiferencaOpen', false);
-      setCurrentConciliationId(null);
-      setCurrentConciliationDifferenceValue(0);
       setDiffJustification('');
-      setSelectedTransacaoForConciliationId(null);
-      setSelectedLancamentoForConciliationId(null);
+      clearConciliationSelection();
     } catch (err: any) { alert('Erro: ' + err.message); }
   };
 
@@ -276,13 +281,17 @@ export default function Conciliacao() {
   }, [selectedTransacaoForConciliationId, transacoes, availableLaunches]);
 
   const selectedTxForWorkspace = useMemo(() => transacoes.find(t => t.id === selectedTransacaoForConciliationId) || null, [selectedTransacaoForConciliationId, transacoes]);
-  const selectedLancForWorkspace = useMemo(() => lancamentos.find(l => l.id === selectedLancamentoForConciliationId) || null, [selectedLancamentoForConciliationId, lancamentos]);
+  const selectedLancsForWorkspace = useMemo(() => lancamentos.filter(l => selectedLancamentoIds.includes(l.id)), [selectedLancamentoIds, lancamentos]);
 
   const draftDifferenceAmount = useMemo(() => {
-    if (!selectedTxForWorkspace || !selectedLancForWorkspace) return 0;
-    const erpVal = selectedLancForWorkspace.tipo === 'saida' ? -Math.abs(selectedLancForWorkspace.valor_previsto) : Math.abs(selectedLancForWorkspace.valor_previsto);
-    return selectedTxForWorkspace.valor - erpVal;
-  }, [selectedTxForWorkspace, selectedLancForWorkspace]);
+    if (!selectedTxForWorkspace || selectedLancsForWorkspace.length === 0) return 0;
+    const txCents = Math.round(Number(selectedTxForWorkspace.valor.toFixed(2)) * 100);
+    const erpCents = selectedLancsForWorkspace.reduce((sum, lanc) => {
+      const value = lanc.tipo === 'saida' ? -Math.abs(lanc.valor_previsto) : Math.abs(lanc.valor_previsto);
+      return sum + Math.round(Number(value.toFixed(2)) * 100);
+    }, 0);
+    return (txCents - erpCents) / 100;
+  }, [selectedTxForWorkspace, selectedLancsForWorkspace]);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -389,7 +398,12 @@ export default function Conciliacao() {
               <motion.div 
                 layout
                 key={tx.id} 
-                onClick={() => !tx.status_conciliacao && setSelectedTransacaoForConciliationId(tx.id)} 
+                onClick={() => {
+                  if (!tx.status_conciliacao) {
+                    setSelectedTransacaoForConciliationId(tx.id);
+                    setSelectedLancamentoIds([]);
+                  }
+                }}
                 className={`p-5 rounded-2xl border-2 transition-all flex items-center justify-between group ${
                   tx.status_conciliacao 
                     ? 'opacity-40 grayscale bg-neutral-100 cursor-default' 
@@ -455,6 +469,14 @@ export default function Conciliacao() {
               <span className="px-3 py-1 bg-white border border-neutral-200 rounded-lg text-[10px] font-black text-neutral-900">
                 {availableLaunches.length} DISPONÍVEIS
               </span>
+              {selectedLancamentoIds.length > 0 && selectedTransacaoForConciliationId && (
+                <button
+                  onClick={() => setModalOpen('isVincularConciliarOpen', true)}
+                  className="px-3 py-2 bg-primary text-white rounded-xl text-[9px] font-black uppercase tracking-widest shadow-sm"
+                >
+                  Confirmar {selectedLancamentoIds.length} selecionado(s)
+                </button>
+              )}
             </div>
           </header>
 
@@ -508,17 +530,22 @@ export default function Conciliacao() {
                     <div className="text-sm font-black font-mono text-neutral-900">
                       {valueFormatter(l.valor_previsto)}
                     </div>
-                    <button 
-                      onClick={() => { setSelectedLancamentoForConciliationId(l.id); setModalOpen('isVincularConciliarOpen', true); }} 
-                      disabled={!selectedTransacaoForConciliationId}
-                      className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
-                        !selectedTransacaoForConciliationId 
-                          ? 'bg-neutral-100 text-neutral-300 cursor-not-allowed' 
-                          : 'bg-neutral-900 text-white hover:bg-black shadow-lg active:scale-95'
-                      }`}
-                    >
-                      <Link2 className="w-5 h-5" />
-                    </button>
+                    <label className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+                      !selectedTransacaoForConciliationId
+                        ? 'bg-neutral-100 text-neutral-300 cursor-not-allowed'
+                        : selectedLancamentoIds.includes(l.id)
+                          ? 'bg-primary text-white shadow-lg'
+                          : 'bg-neutral-100 text-neutral-500 hover:bg-neutral-200'
+                    }`} title="Selecionar lançamento">
+                      <input
+                        type="checkbox"
+                        checked={selectedLancamentoIds.includes(l.id)}
+                        disabled={!selectedTransacaoForConciliationId}
+                        onChange={() => setSelectedLancamentoIds(current => current.includes(l.id) ? current.filter(id => id !== l.id) : [...current, l.id])}
+                        className="sr-only"
+                      />
+                      {selectedLancamentoIds.includes(l.id) ? <CheckCircle2 className="w-5 h-5" /> : <Link2 className="w-5 h-5" />}
+                    </label>
                   </div>
                 </motion.div>
               );
@@ -645,7 +672,7 @@ export default function Conciliacao() {
           </div>
         )}
 
-        {isVincularConciliarOpen && selectedTxForWorkspace && selectedLancForWorkspace && (
+        {isVincularConciliarOpen && selectedTxForWorkspace && selectedLancsForWorkspace.length > 0 && (
           <div className="fixed inset-0 z-[600] flex justify-end">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setModalOpen('isVincularConciliarOpen', false)} className="absolute inset-0 bg-black/40 backdrop-blur-xs" />
             <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 25, stiffness: 200 }} className="w-full md:w-[500px] h-full bg-white shadow-2xl flex flex-col relative z-20">
@@ -677,17 +704,27 @@ export default function Conciliacao() {
                   </div>
                 </div>
 
-                {/* Visual Card: ERP */}
-                <div className="p-8 rounded-[32px] border-2 border-primary/20 bg-primary/5 space-y-4 relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-24 h-24 -mr-8 -mt-8 bg-primary opacity-5 rounded-full" />
+                {/* Comparação objetiva dos lançamentos selecionados */}
+                <div className="p-6 rounded-[32px] border-2 border-primary/20 bg-primary/5 space-y-4 relative overflow-hidden">
                   <span className="text-[10px] font-black uppercase text-primary tracking-widest flex items-center gap-2">
-                    <Coins className="w-4 h-4" /> Previsão do ERP
+                    <Coins className="w-4 h-4" /> ERP selecionado ({selectedLancsForWorkspace.length})
                   </span>
-                  <div>
-                    <p className="font-black text-sm uppercase text-neutral-900 leading-tight">{entidades.find(e => e.id === selectedLancForWorkspace.entidade_id)?.nome_razao_social || 'N/A'}</p>
-                    <p className="text-[10px] font-bold text-neutral-400 uppercase mt-1">Vencimento: {selectedLancForWorkspace.data_vencimento.split('-').reverse().join('/')} • {selectedLancForWorkspace.observacoes}</p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-[9px] text-left">
+                      <thead className="text-neutral-400 uppercase font-black border-b border-primary/10">
+                        <tr><th className="py-2 pr-3">Campo</th><th className="py-2">Banco</th><th className="py-2">ERP</th></tr>
+                      </thead>
+                      <tbody className="font-bold text-neutral-700">
+                        <tr className="border-b border-primary/10"><td className="py-2 pr-3">Valor (centavos)</td><td className="py-2 font-mono">{Math.round(Number(selectedTxForWorkspace.valor.toFixed(2)) * 100)}¢</td><td className="py-2 font-mono">{selectedLancsForWorkspace.reduce((sum, lanc) => sum + Math.round(Number((lanc.tipo === 'saida' ? -Math.abs(lanc.valor_previsto) : Math.abs(lanc.valor_previsto)).toFixed(2)) * 100), 0)}¢</td></tr>
+                        <tr className="border-b border-primary/10"><td className="py-2 pr-3">Data</td><td className="py-2">{selectedTxForWorkspace.data_transacao}</td><td className="py-2">{selectedLancsForWorkspace.map(l => l.data_vencimento).join(', ')}</td></tr>
+                        <tr className="border-b border-primary/10"><td className="py-2 pr-3">Natureza</td><td className="py-2">{selectedTxForWorkspace.tipo_movimento === 'credito' ? 'entrada' : 'saida'}</td><td className="py-2">{selectedLancsForWorkspace.map(l => l.tipo).join(', ')}</td></tr>
+                        <tr className="border-b border-primary/10"><td className="py-2 pr-3">Descrição</td><td className="py-2">{selectedTxForWorkspace.descricao_banco}</td><td className="py-2">{selectedLancsForWorkspace.map(l => l.observacoes || 'Sem descrição').join(' • ')}</td></tr>
+                        <tr className="border-b border-primary/10"><td className="py-2 pr-3">Entidade</td><td className="py-2">—</td><td className="py-2">{selectedLancsForWorkspace.map(l => entidades.find(e => e.id === l.entidade_id)?.nome_razao_social || 'N/A').join(', ')}</td></tr>
+                        <tr><td className="py-2 pr-3">Conta</td><td className="py-2">{contas.find(c => c.id === selectedTxForWorkspace.conta_bancaria_id)?.nome || selectedTxForWorkspace.conta_bancaria_id}</td><td className="py-2">{selectedLancsForWorkspace.map(l => contas.find(c => c.id === l.conta_bancaria_id)?.nome || l.conta_bancaria_id).join(', ')}</td></tr>
+                      </tbody>
+                    </table>
                   </div>
-                  <p className="font-black text-3xl text-primary font-mono">{valueFormatter(selectedLancForWorkspace.valor_previsto)}</p>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-alert-red">Divergências ficam destacadas no valor residual e serão validadas pelo servidor.</p>
                 </div>
               </div>
 

@@ -1,5 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
-import { Conciliacao, TransacaoBanco, DiferencaFinanceira, TipoDiferenca } from '../types';
+import { Conciliacao, TransacaoBanco, ConciliacaoAtomicaPayload, ConciliacaoAtomicaResult } from '../types';
 import {
   CsvParseResult,
   ImportConfirmationMetadata,
@@ -314,29 +314,22 @@ export const conciliacoesService = {
     if (error) throw error;
   },
 
-  linkConciliacao: async (lancamentoId: string, transacaoBancoId: string, usuarioId: string, isMaster: boolean = true): Promise<Conciliacao> => {
-    const { data, error } = await supabase.from('conciliacoes').insert([{ lancamento_id: lancamentoId, transacao_banco_id: transacaoBancoId, usuario_conciliador_id: usuarioId, data_conciliacao: new Date().toISOString() }]).select().single();
+  linkConciliacao: async (payload: ConciliacaoAtomicaPayload): Promise<ConciliacaoAtomicaResult> => {
+    const { data, error } = await supabase.rpc('conciliar_transacao_atomica', {
+      p_transacao_id: payload.transacaoBancoId,
+      p_lancamento_ids: payload.lancamentoIds,
+      p_tipo_diferenca: payload.tipoDiferenca || null,
+      p_justificativa: payload.justificativa || null,
+    });
     if (error) throw error;
-    const finalStatus = isMaster ? 'pago' : 'quitação_pendente';
-    const { data: tx } = await supabase.from('transacoes_banco').select('data_transacao, valor').eq('id', transacaoBancoId).single();
-    await supabase.from('lancamentos_financeiros').update({ status_pagamento: finalStatus, data_pagamento: tx?.data_transacao || new Date().toISOString().split('T')[0], valor_recebido: Math.abs(tx?.valor || 0) }).eq('id', lancamentoId);
-    await supabase.from('transacoes_banco').update({ status_conciliacao: true }).eq('id', transacaoBancoId);
-    return data as Conciliacao;
+    return data as ConciliacaoAtomicaResult;
   },
 
   unlinkConciliacao: async (conciliacaoId: string): Promise<boolean> => {
-    const { data: con } = await supabase.from('conciliacoes').select('*').eq('id', conciliacaoId).single();
-    if (con) {
-      await supabase.from('lancamentos_financeiros').update({ status_pagamento: 'aberto', data_pagamento: null, valor_recebido: 0 }).eq('id', con.lancamento_id);
-      await supabase.from('transacoes_banco').update({ status_conciliacao: false }).eq('id', con.transacao_banco_id);
-      await supabase.from('conciliacoes').delete().eq('id', conciliacaoId);
-    }
+    const { error } = await supabase.rpc('desvincular_conciliacao_atomica', {
+      p_conciliacao_id: conciliacaoId,
+    });
+    if (error) throw error;
     return true;
   },
-
-  classifyDifference: async (conciliacaoId: string, tipo: TipoDiferenca, valor: number, obs: string): Promise<DiferencaFinanceira> => {
-    const { data, error } = await supabase.from('diferencas_financeiras').insert([{ conciliacao_id: conciliacaoId, tipo_diferenca: tipo, valor_diferenca: valor, observacao_justificativa: obs }]).select().single();
-    if (error) throw error;
-    return data as DiferencaFinanceira;
-  }
 };
