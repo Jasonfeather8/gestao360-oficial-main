@@ -81,6 +81,7 @@ export interface LancamentoFinanceiro {
   categoria_id: string;
   conta_bancaria_id: string;
   comprovante_url?: string;
+  descricao_bancaria_original?: string | null;
   observacoes: string;
   recorrencia_id?: string; // Null if single parcel
   numero_parcela?: number; // parcel number if recurring

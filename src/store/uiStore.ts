@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { LancamentoFinanceiro } from '../types';
+import { LancamentoFinanceiro, TransacaoBanco } from '../types';
 
 export type TabType =
   | 'dashboard'
@@ -47,6 +47,7 @@ interface UIState {
   selectedRecorrenciaAction: 'single' | 'all' | null;
 
   selectedTransacaoForConciliationId: string | null;
+  transacaoBancoParaLancamento: TransacaoBanco | null;
   selectedLancamentoForConciliationId: string | null;
   currentConciliationDifferenceValue: number;
   currentConciliationId: string | null;
@@ -59,6 +60,7 @@ interface UIState {
     data_vencimento: string;
     data_competencia: string;
     data_pagamento: string;
+    descricao_bancaria_original: string;
     entidade_id: string;
     centro_custo_id: string;
     categoria_id: string;
@@ -106,13 +108,14 @@ interface UIState {
   setActiveConfigSubTab: (sub: 'equipe' | 'auditoria' | 'legacy') => void;
   setCurrentUserId: (id: string) => void;
   
-  setModalOpen: (modal: keyof Omit<UIState, 'theme' | 'activeTab' | 'activeConfigSubTab' | 'currentUserId' | 'scrollPositions' | 'selectedLancamentoIdForModal' | 'selectedRecorrenciaAction' | 'selectedTransacaoForConciliationId' | 'selectedLancamentoForConciliationId' | 'currentConciliationDifferenceValue' | 'currentConciliationId' | 'lancamentoFormDraft' | 'entidadeFormDraft' | 'setTheme' | 'setActiveTab' | 'setActiveConfigSubTab' | 'setCurrentUserId' | 'setModalOpen' | 'setSelectedLancamentoIdForModal' | 'setSelectedRecorrenciaAction' | 'setSelectedTransacaoForConciliaId' | 'setSelectedLancamentoForConciliaId' | 'setCurrentConciliationId' | 'setLancamentoFormDraft' | 'setEntidadeFormDraft' | 'setScrollPosition'>, value: boolean) => void;
+  setModalOpen: (modal: keyof Omit<UIState, 'theme' | 'activeTab' | 'activeConfigSubTab' | 'currentUserId' | 'scrollPositions' | 'selectedLancamentoIdForModal' | 'selectedRecorrenciaAction' | 'selectedTransacaoForConciliationId' | 'transacaoBancoParaLancamento' | 'selectedLancamentoForConciliationId' | 'currentConciliationDifferenceValue' | 'currentConciliationId' | 'lancamentoFormDraft' | 'entidadeFormDraft' | 'setTheme' | 'setActiveTab' | 'setActiveConfigSubTab' | 'setCurrentUserId' | 'setModalOpen' | 'setSelectedLancamentoIdForModal' | 'setSelectedRecorrenciaAction' | 'setSelectedTransacaoForConciliaId' | 'setSelectedLancamentoForConciliaId' | 'setCurrentConciliationId' | 'setLancamentoFormDraft' | 'setEntidadeFormDraft' | 'setScrollPosition'>, value: boolean) => void;
   
   setSelectedLancamentoIdForModal: (id: string | null) => void;
   setSelectedLancamentoIdsForBatch: (ids: string[]) => void;
   setSelectedRecorrenciaAction: (action: 'single' | 'all' | null) => void;
 
   setSelectedTransacaoForConciliationId: (id: string | null) => void;
+  setTransacaoBancoParaLancamento: (transacao: TransacaoBanco | null) => void;
   setSelectedLancamentoForConciliationId: (id: string | null) => void;
   setCurrentConciliationDifferenceValue: (val: number) => void;
   setCurrentConciliationId: (id: string | null) => void;
@@ -132,6 +135,7 @@ const initialDrafts = {
     data_vencimento: new Date().toISOString().split('T')[0],
     data_competencia: new Date().toISOString().split('T')[0],
     data_pagamento: new Date().toISOString().split('T')[0],
+    descricao_bancaria_original: '',
     entidade_id: '',
     centro_custo_id: '',
     categoria_id: '',
@@ -201,6 +205,7 @@ export const useUIStore = create<UIState>()(
       selectedRecorrenciaAction: null,
 
       selectedTransacaoForConciliationId: null,
+      transacaoBancoParaLancamento: null,
       selectedLancamentoForConciliationId: null,
       currentConciliationDifferenceValue: 0,
       currentConciliationId: null,
@@ -221,6 +226,7 @@ export const useUIStore = create<UIState>()(
       setSelectedRecorrenciaAction: (action) => set({ selectedRecorrenciaAction: action }),
 
       setSelectedTransacaoForConciliationId: (id) => set({ selectedTransacaoForConciliationId: id }),
+      setTransacaoBancoParaLancamento: (transacaoBancoParaLancamento) => set({ transacaoBancoParaLancamento }),
       setSelectedLancamentoForConciliationId: (id) => set({ selectedLancamentoForConciliationId: id }),
       setCurrentConciliationDifferenceValue: (currentConciliationDifferenceValue) => set({ currentConciliationDifferenceValue }),
       setCurrentConciliationId: (currentConciliationId) => set({ currentConciliationId }),
@@ -246,6 +252,7 @@ export const useUIStore = create<UIState>()(
     }),
     {
       name: 'gestao360_ui_state',
+      partialize: (state) => ({ ...state, transacaoBancoParaLancamento: null }),
     }
   )
 );

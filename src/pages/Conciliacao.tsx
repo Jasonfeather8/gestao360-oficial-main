@@ -59,6 +59,7 @@ export default function Conciliacao() {
     isImportarCSVOpen, setModalOpen, selectedTransacaoForConciliationId,
     isVincularConciliarOpen, isClassificarDiferencaOpen,
     setSelectedTransacaoForConciliationId,
+    setTransacaoBancoParaLancamento,
     setCurrentConciliationDifferenceValue,
     currentConciliationDifferenceValue
   } = useUIStore();
@@ -438,16 +439,28 @@ export default function Conciliacao() {
                     {valueFormatter(tx.valor)}
                   </div>
                   {tx.status_conciliacao ? (
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); handleUnlink(tx.conciliation!.id); }} 
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleUnlink(tx.conciliation!.id); }}
                       className="p-2 hover:bg-red-50 text-neutral-300 hover:text-alert-red rounded-xl transition-all"
                       title="Desvincular"
                     >
                       <Unlink className="w-4 h-4" />
                     </button>
                   ) : selectedTransacaoForConciliationId === tx.id ? (
-                    <div className="w-8 h-8 rounded-xl bg-primary flex items-center justify-center text-white animate-pulse">
-                      <ChevronRight className="w-4 h-4" />
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setTransacaoBancoParaLancamento(tx);
+                          setModalOpen('isNovoLancamentoOpen', true);
+                        }}
+                        className="h-8 px-3 rounded-xl bg-primary text-white text-[9px] font-black uppercase tracking-widest shadow-sm hover:bg-primary/90 transition-all"
+                      >
+                        <Plus className="w-3.5 h-3.5 inline mr-1" /> Novo Lançamento
+                      </button>
+                      <div className="w-8 h-8 rounded-xl bg-primary flex items-center justify-center text-white animate-pulse">
+                        <ChevronRight className="w-4 h-4" />
+                      </div>
                     </div>
                   ) : null}
                 </div>
