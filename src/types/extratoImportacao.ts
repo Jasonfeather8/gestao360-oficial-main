@@ -1,4 +1,4 @@
-export type ImportFileType = 'csv' | 'pdf';
+export type ImportFileType = 'csv' | 'xlsx' | 'pdf';
 export type ImportMode = 'entrada' | 'saida' | 'ambos';
 
 export interface ImportTransaction {
@@ -24,6 +24,8 @@ export interface ImportPreview {
   totalExits: number;
   transactions: ImportTransaction[];
   firstRows: Array<Record<string, string>>;
+  sourceRows?: Array<Record<string, string>>;
+  sourceHeaders?: string[];
   bankIdentified?: string;
   parserTotals?: { entries?: number; exits?: number };
 }

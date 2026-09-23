@@ -178,10 +178,10 @@ export default function Conciliacao() {
       setImportLot(result.lot);
       setImportPreview(result.preview);
       setCsvContentText(result.preview.fileType === 'csv' ? await file.text() : '');
-      setCsvHeaders(result.preview.firstRows.length ? Object.keys(result.preview.firstRows[0]) : []);
+      const headers = result.preview.sourceHeaders || Object.keys(result.preview.firstRows[0] || {});
+      setCsvHeaders(headers);
       setCsvPreviewRows(result.preview.firstRows);
-      if (result.preview.fileType === 'csv') {
-        const headers = Object.keys(result.preview.firstRows[0] || {});
+      if (result.preview.fileType === 'csv' || result.preview.fileType === 'xlsx') {
         setColumnMapping({
           data: headers.find(header => /dat/i.test(header)) || '',
           valor: headers.find(header => /val/i.test(header)) || '',
@@ -219,9 +219,11 @@ export default function Conciliacao() {
     if (!importLot || !importPreview) return;
     try {
       let transactions = importPreview.transactions;
-      if (importPreview.fileType === 'csv') {
-        const parsed = parseCsv(csvContentText);
-        transactions = await buildCsvTransactions(importLot.contaBancariaId, parsed.rows, columnMapping, importMode);
+      if (importPreview.fileType === 'csv' || importPreview.fileType === 'xlsx') {
+        const rows = importPreview.fileType === 'csv'
+          ? parseCsv(csvContentText).rows
+          : importPreview.sourceRows || [];
+        transactions = await buildCsvTransactions(importLot.contaBancariaId, rows, columnMapping, importMode);
       }
       if (!transactions.length) throw new Error('O arquivo precisa conter ao menos uma transação.');
       await confirmImport({
@@ -792,12 +794,12 @@ export default function Conciliacao() {
                     onClick={() => fileInputRef.current?.click()} 
                     className="border-4 border-dashed rounded-[32px] p-16 text-center cursor-pointer bg-neutral-50 hover:bg-neutral-100 hover:border-primary/30 transition-all group"
                   >
-                    <input type="file" ref={fileInputRef} onChange={(e) => e.target.files?.[0] && void processFile(e.target.files[0])} accept=".csv,.pdf,application/pdf,text/csv" className="hidden" />
+                    <input type="file" ref={fileInputRef} onChange={(e) => e.target.files?.[0] && void processFile(e.target.files[0])} accept=".csv,.xlsx,.pdf,application/pdf,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden" />
                     <div className="w-20 h-20 bg-white rounded-3xl shadow-sm flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform">
                       <Upload className="w-10 h-10 text-primary" />
                     </div>
                     <p className="text-sm font-black uppercase tracking-widest text-neutral-800">Clique para selecionar o extrato</p>
-                    <p className="text-[10px] font-bold text-neutral-400 uppercase mt-2">PDF ou CSV • limite de 20 MB</p>
+                    <p className="text-[10px] font-bold text-neutral-400 uppercase mt-2">PDF, CSV ou XLSX • limite de 20 MB</p>
                   </div>
                 ) : (
                   <div className="space-y-8 animate-fade-in">
@@ -813,7 +815,7 @@ export default function Conciliacao() {
                       </div>
                       {importPreview.bankIdentified && <p className="text-[10px] font-black text-primary uppercase">Banco identificado: {importPreview.bankIdentified}</p>}
                     </div>
-                    {importPreview.fileType === 'csv' && <div className="space-y-4">
+                    {(importPreview.fileType === 'csv' || importPreview.fileType === 'xlsx') && <div className="space-y-4">
                       <h4 className="text-[10px] font-black text-primary uppercase tracking-[0.2em] border-b pb-2">Mapeamento de Colunas</h4>
                       <div className="grid grid-cols-1 gap-3">
                         {[{f:'data',l:'Data Transação',i:Calendar},{f:'valor',l:'Valor (R$)',i:Coins},{f:'descricao',l:'Descrição Banco',i:FileSpreadsheet},{f:'documento',l:'NSU / Documento',i:Hash}].map(it => (
@@ -840,13 +842,13 @@ export default function Conciliacao() {
                         <table className="w-full text-[10px] text-left">
                           <thead className="bg-neutral-50 text-neutral-400 border-b border-neutral-100 font-black uppercase">
                             <tr>
-                              {importPreview.fileType === 'csv' ? Object.values(columnMapping).filter(v=>v).map(h=><th key={h} className="p-4">{h}</th>) : <><th className="p-4">Data</th><th className="p-4">Descrição</th><th className="p-4">Valor</th></>}
+                              {(importPreview.fileType === 'csv' || importPreview.fileType === 'xlsx') ? Object.values(columnMapping).filter(v=>v).map(h=><th key={h} className="p-4">{h}</th>) : <><th className="p-4">Data</th><th className="p-4">Descrição</th><th className="p-4">Valor</th></>}
                             </tr>
                           </thead>
                           <tbody className="font-bold text-neutral-700">
                             {csvPreviewRows.map((row, i) => (
                               <tr key={i} className="border-b border-neutral-50 last:border-none">
-                                {importPreview.fileType === 'csv' ? Object.values(columnMapping).filter((value): value is string => Boolean(value)).map(h=><td key={h} className="p-4">{row[h]}</td>) : <><td className="p-4">{row.data}</td><td className="p-4">{row['descrição']}</td><td className="p-4">{row.valor}</td></>}
+                                {(importPreview.fileType === 'csv' || importPreview.fileType === 'xlsx') ? Object.values(columnMapping).filter((value): value is string => Boolean(value)).map(h=><td key={h} className="p-4">{row[h]}</td>) : <><td className="p-4">{row.data}</td><td className="p-4">{row['descrição']}</td><td className="p-4">{row.valor}</td></>}
                               </tr>
                             ))}
                           </tbody>
@@ -860,7 +862,7 @@ export default function Conciliacao() {
               <footer className="px-10 py-8 border-t bg-neutral-50/50 flex justify-end gap-4 shrink-0">
                 {importError && <p className="mr-auto max-w-[280px] text-[10px] font-black text-red-500 uppercase">{importError}</p>}
                 <button type="button" onClick={handleImportCancel} className="px-8 text-[10px] font-black uppercase text-neutral-400 tracking-widest hover:text-neutral-900 transition-colors">Cancelar</button>
-                <Button type="submit" disabled={!importPreview || isPreparingImport || isConfirmingImport || (importPreview?.fileType === 'csv' && (!columnMapping.data || !columnMapping.valor || !columnMapping.descricao))}>
+                <Button type="submit" disabled={!importPreview || isPreparingImport || isConfirmingImport || ((importPreview?.fileType === 'csv' || importPreview?.fileType === 'xlsx') && (!columnMapping.data || !columnMapping.valor || !columnMapping.descricao))}>
                   {isPreparingImport || isConfirmingImport ? 'Processando...' : 'Confirmar Importação'}
                 </Button>
               </footer>

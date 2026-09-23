@@ -11,9 +11,40 @@ import {
   PdfParseResult,
 } from '../types/extratoImportacao';
 
+type XlsxParseResult = {
+  headers: string[];
+  rows: Array<Record<string, string>>;
+};
+
 const MAX_IMPORT_SIZE = 20 * 1024 * 1024;
+const XLSX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 const friendlyError = (message: string) => new Error(message);
+
+const functionErrorMessage = async (error: unknown, fallback: string): Promise<string> => {
+  const context = (error as { context?: Response } | null)?.context;
+  if (context) {
+    try {
+      const payload = await context.clone().json() as { error?: string };
+      if (payload.error) return payload.error;
+    } catch {
+      // Keep the SDK message when the function response is not JSON.
+    }
+  }
+  return error instanceof Error && error.message ? error.message : fallback;
+};
+
+export const getImportFileType = (fileName: string, mimeType = ''): ImportFileType => {
+  const normalizedName = fileName.toLowerCase();
+  const normalizedMime = mimeType.toLowerCase().split(';', 1)[0].trim();
+  if (normalizedName.endsWith('.xlsx')) {
+    if (normalizedMime && normalizedMime !== XLSX_MIME_TYPE) throw friendlyError('O arquivo XLSX possui um tipo MIME inválido.');
+    return 'xlsx';
+  }
+  if (normalizedName.endsWith('.pdf')) return 'pdf';
+  if (normalizedName.endsWith('.csv')) return 'csv';
+  throw friendlyError('Formato não suportado. Selecione um arquivo PDF, CSV ou XLSX.');
+};
 
 const normalizeDate = (value: string): string => {
   const clean = value.trim().split(/[ T]/)[0];
@@ -229,8 +260,7 @@ export const conciliacoesService = {
   prepareImportFile: async (file: File, contaBancariaId: string, userId: string): Promise<{ lot: ImportLotDraft; preview: ImportPreview }> => {
     if (!contaBancariaId) throw friendlyError('Selecione a conta bancária antes de importar.');
     if (file.size > MAX_IMPORT_SIZE) throw friendlyError('O arquivo excede o limite de 20 MB.');
-    const fileType: ImportFileType | null = file.name.toLowerCase().endsWith('.pdf') ? 'pdf' : file.name.toLowerCase().endsWith('.csv') ? 'csv' : null;
-    if (!fileType) throw friendlyError('Formato não suportado. Selecione um arquivo PDF ou CSV.');
+    const fileType = getImportFileType(file.name, file.type);
     const fileHash = await sha256(await file.arrayBuffer());
     const { data: existing, error: existingError } = await supabase.from('extratos_bancarios').select('id').eq('arquivo_hash', fileHash).maybeSingle();
     if (existingError) throw existingError;
@@ -244,7 +274,7 @@ export const conciliacoesService = {
       userId,
       fileName: file.name,
       fileSize: file.size,
-      mimeType: fileType === 'pdf' ? 'application/pdf' : 'text/csv',
+      mimeType: fileType === 'pdf' ? 'application/pdf' : fileType === 'xlsx' ? XLSX_MIME_TYPE : 'text/csv',
       fileHash,
       storagePath,
     };
@@ -253,18 +283,24 @@ export const conciliacoesService = {
       const { error: uploadError } = await supabase.storage.from('bank-statements').upload(storagePath, file, { contentType: lot.mimeType, upsert: false });
       if (uploadError) throw friendlyError(`Não foi possível enviar o arquivo: ${uploadError.message}`);
 
-      if (fileType === 'csv') {
-        const parsed = parseCsv(await file.text());
+      if (fileType === 'csv' || fileType === 'xlsx') {
+        const parsed: XlsxParseResult = fileType === 'csv'
+          ? parseCsv(await file.text())
+          : await (async () => {
+              const { data, error: functionError } = await supabase.functions.invoke('parse-bank-statement', { body: { storage_path: storagePath, file_type: 'xlsx' } });
+              if (functionError) throw friendlyError(`Não foi possível extrair a planilha: ${await functionErrorMessage(functionError, 'Falha ao processar a planilha')}`);
+              return data as XlsxParseResult;
+            })();
         const mapping = { data: parsed.headers.find(header => /dat/i.test(header)) || '', valor: parsed.headers.find(header => /val/i.test(header)) || '', descricao: parsed.headers.find(header => /desc/i.test(header)) || '', documento: parsed.headers.find(header => /doc/i.test(header)) || '' };
         const transactions = mapping.data && mapping.valor && mapping.descricao
           ? await buildCsvTransactions(contaBancariaId, parsed.rows, mapping, 'ambos')
           : [];
         const summary = transactions.length ? summarize(transactions) : { periodStart: undefined, periodEnd: undefined, totalEntries: 0, totalExits: 0 };
-        return { lot, preview: { fileName: file.name, fileType, mimeType: lot.mimeType, ...summary, size: file.size, transactions, firstRows: parsed.rows.slice(0, 5) } };
+        return { lot, preview: { fileName: file.name, fileType, mimeType: lot.mimeType, ...summary, size: file.size, transactions, firstRows: parsed.rows.slice(0, 5), sourceRows: parsed.rows, sourceHeaders: parsed.headers } };
       }
 
-      const { data, error: functionError } = await supabase.functions.invoke('parse-bank-statement', { body: { storage_path: storagePath } });
-      if (functionError) throw friendlyError(`Não foi possível extrair o PDF: ${functionError.message}`);
+      const { data, error: functionError } = await supabase.functions.invoke('parse-bank-statement', { body: { storage_path: storagePath, file_type: 'pdf' } });
+      if (functionError) throw friendlyError(`Não foi possível extrair o PDF: ${await functionErrorMessage(functionError, 'Falha ao processar o PDF')}`);
       const result = data as PdfParseResult;
       const parserNumbers = [result.openingBalance, result.closingBalance, result.totalEntries, result.totalExits].filter((value): value is number => value !== undefined);
       if (parserNumbers.some(value => !Number.isFinite(value))) throw friendlyError('O PDF contém totais ou saldos inválidos.');

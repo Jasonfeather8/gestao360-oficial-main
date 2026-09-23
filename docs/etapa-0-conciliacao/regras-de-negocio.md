@@ -76,9 +76,7 @@ As nove regras abaixo foram aprovadas pelo cliente para a Etapa 0.
 
 **Critério de aceite:** o registro do requisito deve identificar explicitamente os três formatos: PDF, CSV e XLSX.
 
-**Evidência pendente:** comprovação correspondente aos formatos considerados.
-
-O registro do XLSX nesta documentação não representa entrega de suporte a XLSX. O suporte a XLSX está fora do escopo desta entrega.
+**Evidência pendente:** comprovação correspondente aos formatos considerados. A implementação dos formatos é tratada nas fases técnicas próprias, sem alterar a aprovação desta regra de negócio.
 
 ### 9. PDF escaneado e OCR
 
@@ -102,7 +100,6 @@ Este documento cobre somente a formalização das regras de negócio aprovadas p
 - fixtures;
 - parser;
 - testes;
-- suporte a XLSX;
 - qualquer alteração de código ou de banco de dados;
 - migrações;
 - implementação ou alteração de hooks, componentes, layout, dependências ou funcionalidades.

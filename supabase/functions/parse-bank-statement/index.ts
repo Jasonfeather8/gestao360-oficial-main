@@ -8,6 +8,8 @@ import { serve } from 'https://deno.land/std@0.190.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0'
 // @ts-expect-error Deno resolves this npm module in the Edge Function runtime.
 import pdfParse from 'npm:pdf-parse@1.1.1'
+// @ts-expect-error Deno resolves this npm module in the Edge Function runtime.
+import * as XLSX from 'npm:xlsx@0.18.5'
 
 type ParsedTransaction = {
   date: string
@@ -124,6 +126,25 @@ const extractText = (text: string) => {
   return { openingBalance, closingBalance, totalEntries, totalExits, transactions }
 }
 
+const parseXlsx = (bytes: ArrayBuffer) => {
+  const workbook = XLSX.read(new Uint8Array(bytes), { type: 'array', cellDates: true })
+  const firstSheetName = workbook.SheetNames[0]
+  if (!firstSheetName) fail('A planilha XLSX não possui uma aba.')
+  const worksheet = workbook.Sheets[firstSheetName]
+  const rawRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false, defval: '', blankrows: true }) as unknown[][]
+  if (rawRows.length < 2) fail('A planilha XLSX precisa conter cabeçalho e ao menos uma linha.')
+
+  const headers = rawRows[0].map(value => String(value ?? '').trim())
+  if (headers.some(header => !header)) fail('O cabeçalho do XLSX possui uma coluna sem nome.')
+  if (new Set(headers).size !== headers.length) fail('O cabeçalho do XLSX possui colunas duplicadas.')
+
+  const rows = rawRows.slice(1).map((cells, rowIndex) => {
+    if (cells.length > headers.length) fail(`A linha ${rowIndex + 2} do XLSX possui mais campos que o cabeçalho.`)
+    return Object.fromEntries(headers.map((header, index) => [header, String(cells[index] ?? '').trim()]))
+  })
+  return { headers, rows, sheetName: firstSheetName }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders })
   if (req.method !== 'POST') return new Response(JSON.stringify({ error: 'Método não permitido' }), { status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
@@ -137,14 +158,25 @@ serve(async (req) => {
     const { data: authData, error: authError } = await supabaseAdmin.auth.getUser(tokenMatch[1])
     if (authError || !authData.user) fail('Token de autenticação inválido')
 
-    const body = await req.json() as { storage_path?: string }
+    const body = await req.json() as { storage_path?: string; file_type?: 'pdf' | 'xlsx' }
     if (!body.storage_path || body.storage_path.split('/')[0] !== authData.user.id) fail('Caminho do arquivo não pertence ao usuário autenticado')
+    const extension = body.storage_path.toLowerCase().split('.').pop()
+    const fileType = body.file_type || (extension === 'xlsx' ? 'xlsx' : extension === 'pdf' ? 'pdf' : undefined)
+    if (!fileType || (fileType === 'xlsx' && extension !== 'xlsx') || (fileType === 'pdf' && extension !== 'pdf')) fail('Extensão do arquivo incompatível com o formato informado')
 
-    log('Iniciando extração', { user_id: authData.user.id })
+    log('Iniciando extração', { user_id: authData.user.id, file_type: fileType })
     const { data: file, error: fileError } = await supabaseAdmin.storage.from('bank-statements').download(body.storage_path)
     if (fileError || !file) fail('Arquivo privado não encontrado')
-    const parsed = await pdfParse(new Uint8Array(await file.arrayBuffer()))
-    const result = extractText(parsed.text || '')
+    const fileBytes = await file.arrayBuffer()
+    if (fileType === 'xlsx') {
+      const result = parseXlsx(fileBytes)
+      log('Extração concluída', { user_id: authData.user.id, file_type: fileType, rows: result.rows.length })
+      return new Response(JSON.stringify(result), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    const parsed = await pdfParse(new Uint8Array(fileBytes))
+    if (!parsed.text || !parsed.text.trim()) fail('PDF escaneado/OCR não é suportado nesta versão: o arquivo não possui texto extraível.')
+    const result = extractText(parsed.text)
     result.transactions.forEach(transaction => {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(transaction.date) || !transaction.description.trim()) fail('O PDF contém uma transação inválida')
     })
