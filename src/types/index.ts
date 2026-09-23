@@ -85,6 +85,8 @@ export interface LancamentoFinanceiro {
   observacoes: string;
   transferencia_id?: string | null;
   transferencia_lado?: 'origem' | 'destino' | 'tarifa' | null;
+  transferencia_cofre_id?: string | null;
+  transferencia_cofre_lado?: 'banco' | null;
   recorrencia_id?: string; // Null if single parcel
   numero_parcela?: number; // parcel number if recurring
   quantidade_total_parcelas?: number;
@@ -228,4 +230,89 @@ export interface ResumoSaldo {
   saldo_consolidado: number;
   saldo_simulado: number;
   ultima_atualizacao: string;
+}
+
+export type CofreStatus = 'ativo' | 'inativo';
+export type TipoMovimentacaoCofre = 'entrada' | 'saida';
+export type OrigemMovimentacaoCofre = 'manual' | 'baixa_direta' | 'transferencia';
+export type StatusMovimentacaoCofre = 'aguardando_master' | 'aprovado' | 'reprovado' | 'estornado';
+export type DirecaoTransferenciaCofre = 'banco_para_cofre' | 'cofre_para_banco';
+export type StatusTransferenciaCofre = 'aguardando_recebimento' | 'aguardando_master' | 'aprovada' | 'reprovada' | 'estornada';
+
+export interface CofreLocal {
+  id: string;
+  nome: string;
+  saldo_inicial: number;
+  status: CofreStatus;
+  criado_por: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MovimentacaoCofre {
+  id: string;
+  cofre_id: string;
+  tipo: TipoMovimentacaoCofre;
+  valor: number;
+  data_movimentacao: string;
+  descricao: string;
+  origem: OrigemMovimentacaoCofre;
+  lancamento_id?: string | null;
+  transferencia_cofre_id?: string | null;
+  responsavel_id: string;
+  status: StatusMovimentacaoCofre;
+  confirmado_recebimento_por?: string | null;
+  confirmado_recebimento_em?: string | null;
+  aprovado_por?: string | null;
+  aprovado_em?: string | null;
+  motivo_reprovacao?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TransferenciaCofre {
+  id: string;
+  direcao: DirecaoTransferenciaCofre;
+  conta_bancaria_id: string;
+  cofre_id: string;
+  valor: number;
+  data_transferencia: string;
+  status: StatusTransferenciaCofre;
+  lancamento_bancario_id: string;
+  movimentacao_cofre_id: string;
+  criado_por: string;
+  recebido_por?: string | null;
+  recebido_em?: string | null;
+  aprovado_por?: string | null;
+  aprovado_em?: string | null;
+  motivo_reprovacao?: string | null;
+  motivo_estorno?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CofreSaldo {
+  cofre_id: string;
+  saldo_fisico: number;
+  saldo_pendente: number;
+  movimentos_pendentes: number;
+  transferencias_pendentes: number;
+}
+
+export interface CriarMovimentacaoCofrePayload {
+  cofreId: string;
+  tipo: TipoMovimentacaoCofre;
+  valor: number;
+  dataMovimentacao: string;
+  descricao: string;
+  origem: OrigemMovimentacaoCofre;
+  lancamentoId?: string | null;
+}
+
+export interface CriarTransferenciaCofrePayload {
+  direcao: DirecaoTransferenciaCofre;
+  contaBancariaId: string;
+  cofreId: string;
+  valor: number;
+  dataTransferencia: string;
 }

@@ -13,7 +13,8 @@ export type TabType =
   | 'cadastros'
   | 'relatorios'
   | 'configuracoes'
-  | 'notificacoes';
+  | 'notificacoes'
+  | 'cofre';
 
 interface UIState {
   // Theme and routing

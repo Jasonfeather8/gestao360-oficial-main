@@ -13,6 +13,7 @@ import { usuariosService } from '../services/usuariosService';
 import { auditoriaService } from '../services/auditoriaService';
 import { notificationsService } from '../services/notificationsService';
 import { transferenciasService, CriarTransferenciaPayload } from '../services/transferenciasService';
+import { cofreService } from '../services/cofreService';
 import { diagnosticLogger } from '../services/diagnosticLogger';
 import { ImportConfirmationMetadata, ImportLotDraft, ImportTransaction } from '../types/extratoImportacao';
 
@@ -408,6 +409,50 @@ export function useTransferencias(transacaoDestinoId: string | null = null) {
     isCreating: createMutation.isPending,
     isReconciling: reconcileMutation.isPending,
     isReversing: reverseMutation.isPending,
+  };
+}
+
+export function useCofreLocal(cofreId?: string) {
+  const queryClient = useQueryClient();
+  const { role } = useAuth();
+  const cofresQuery = useQuery({ queryKey: ['cofres'], queryFn: cofreService.listarCofres });
+  const saldosQuery = useQuery({ queryKey: ['cofresSaldos'], queryFn: cofreService.listarSaldos });
+  const movimentosQuery = useQuery({ queryKey: ['movimentacoesCofre', cofreId], queryFn: () => cofreService.listarMovimentacoes(cofreId) });
+  const transferenciasQuery = useQuery({ queryKey: ['transferenciasCofre'], queryFn: cofreService.listarTransferencias });
+
+  const invalidate = () => {
+    ['cofres', 'cofresSaldos', 'movimentacoesCofre', 'transferenciasCofre', 'lancamentos', 'contasSaldos', 'financialSummary', 'dashboardStats', 'auditoriaLogs'].forEach(queryKey => {
+      queryClient.invalidateQueries({ queryKey: [queryKey] });
+    });
+  };
+
+  const criarCofreMutation = useMutation({ mutationFn: cofreService.criarCofre, onSuccess: invalidate });
+  const atualizarCofreMutation = useMutation({ mutationFn: cofreService.atualizarCofre, onSuccess: invalidate });
+  const movimentacaoMutation = useMutation({ mutationFn: cofreService.criarMovimentacao, onSuccess: invalidate });
+  const transferenciaMutation = useMutation({ mutationFn: cofreService.criarTransferencia, onSuccess: invalidate });
+  const confirmarMutation = useMutation({ mutationFn: cofreService.confirmarRecebimento, onSuccess: invalidate });
+  const decidirMovimentacaoMutation = useMutation({ mutationFn: cofreService.decidirMovimentacao, onSuccess: invalidate });
+  const decidirTransferenciaMutation = useMutation({ mutationFn: cofreService.decidirTransferencia, onSuccess: invalidate });
+  const estornarMovimentacaoMutation = useMutation({ mutationFn: ({ id, motivo }: { id: string; motivo: string }) => cofreService.estornarMovimentacao(id, motivo), onSuccess: invalidate });
+  const estornarTransferenciaMutation = useMutation({ mutationFn: ({ id, motivo }: { id: string; motivo: string }) => cofreService.estornarTransferencia(id, motivo), onSuccess: invalidate });
+
+  return {
+    role,
+    cofres: cofresQuery.data || [],
+    saldos: saldosQuery.data || [],
+    movimentacoes: movimentosQuery.data || [],
+    transferencias: transferenciasQuery.data || [],
+    isLoading: cofresQuery.isLoading || saldosQuery.isLoading || movimentosQuery.isLoading || transferenciasQuery.isLoading,
+    criarCofre: criarCofreMutation.mutateAsync,
+    atualizarCofre: atualizarCofreMutation.mutateAsync,
+    criarMovimentacao: movimentacaoMutation.mutateAsync,
+    criarTransferencia: transferenciaMutation.mutateAsync,
+    confirmarRecebimento: confirmarMutation.mutateAsync,
+    decidirMovimentacao: decidirMovimentacaoMutation.mutateAsync,
+    decidirTransferencia: decidirTransferenciaMutation.mutateAsync,
+    estornarMovimentacao: estornarMovimentacaoMutation.mutateAsync,
+    estornarTransferencia: estornarTransferenciaMutation.mutateAsync,
+    isMutating: [criarCofreMutation, atualizarCofreMutation, movimentacaoMutation, transferenciaMutation, confirmarMutation, decidirMovimentacaoMutation, decidirTransferenciaMutation, estornarMovimentacaoMutation, estornarTransferenciaMutation].some(mutation => mutation.isPending),
   };
 }
 

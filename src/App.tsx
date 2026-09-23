@@ -36,6 +36,7 @@ import Configuracoes from './pages/Configuracoes';
 import Notificacoes from './pages/Notificacoes';
 import Pagar from './pages/Pagar';
 import Receber from './pages/Receber';
+import CofreLocal from './pages/CofreLocal';
 
 // Create a client for React Query caching
 const queryClient = new QueryClient({
@@ -221,6 +222,7 @@ function AppContent() {
                       <Route path="/pagar" element={<Pagar />} />
                       <Route path="/receber" element={<Receber />} />
                       <Route path="/crm" element={<CRM />} />
+                      <Route path="/cofre" element={<CofreLocal />} />
 
                       {/* Rotas restritas a Master e Gerente */}
                       <Route path="/conciliacao" element={<Conciliacao />} />
