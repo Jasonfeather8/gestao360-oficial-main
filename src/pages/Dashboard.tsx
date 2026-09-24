@@ -24,10 +24,9 @@ import { useLancamentos, useContas, useCentrosCusto, useAuditoriaLogs, useEntida
 import { useAuth } from '../hooks/useAuth';
 import { useUIStore } from '../store/uiStore';
 import { calculateAdjustmentAmount } from '../utils/adjustments';
+import { isFinancialReportItem } from '../utils/financialItems';
 
 import { useDragScroll } from '../hooks/useDragScroll';
-import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
 
 export default function Dashboard() {
   const { role } = useAuth();
@@ -58,16 +57,7 @@ export default function Dashboard() {
   // Detail modal state for audit
   const [selectedAuditLog, setSelectedAuditLog] = useState<any | null>(null);
 
-  const { data: stats, isLoading: loadingStats } = useQuery({
-    queryKey: ['dashboardStats'],
-    queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return null;
-      const { data, error } = await supabase.rpc('get_dashboard_stats', { p_user_id: user.id });
-      if (error) throw error;
-      return data;
-    }
-  });
+  const { data: consolidatedSummary, isLoading: loadingConsolidatedSummary } = useConsolidatedFinancialSummary();
   
   const { setModalOpen, setActiveTab } = useUIStore();
 
@@ -150,7 +140,6 @@ export default function Dashboard() {
  }, [filteredLancamentos]);
 
  const { data: contasSaldos = [] } = useContasSaldos();
- const { data: consolidatedSummary } = useConsolidatedFinancialSummary();
 
  const accountsBalances = useMemo(() => {
    return contas.map(account => {
@@ -164,12 +153,10 @@ export default function Dashboard() {
    });
  }, [contas, contasSaldos]);
 
- const globalBalances = useMemo(() => {
-   return {
-     operacional: accountsBalances.reduce((sum, acc) => sum + (acc.operacional || 0), 0),
-     auditado: accountsBalances.reduce((sum, acc) => sum + (acc.auditado || 0), 0)
-   };
- }, [accountsBalances]);
+ const globalBalances = {
+   operacional: consolidatedSummary?.consolidated_operational || 0,
+   auditado: consolidatedSummary?.consolidated_confirmed || 0
+ };
 
   const costCenterBreakdown = useMemo(() => {
     return centrosCusto.map(cc => {
@@ -180,7 +167,7 @@ export default function Dashboard() {
     });
   }, [centrosCusto, filteredLancamentos]);
 
-  if (loadingLancamentos || loadingContas || loadingStats) {
+  if (loadingLancamentos || loadingContas || loadingConsolidatedSummary) {
     return (
       <div className="flex-1 flex items-center justify-center min-h-[400px]">
         <div className="flex flex-col items-center gap-2">
@@ -218,10 +205,10 @@ export default function Dashboard() {
               <button onClick={() => {
                 const headers = 'KPI,Valor\n';
                 const rows = [
-                  ['Saldo Consolidado', valueFormatter(stats?.total_consolidado || 0)],
-                  ['Expectativa Final', valueFormatter(stats?.total_simulado || 0)],
-                  ['Pendentes Saida', valueFormatter(stats?.pendente_saida_valor || 0)],
-                  ['Pendentes Entrada', valueFormatter(stats?.pendente_entrada_valor || 0)]
+                  ['Saldo Consolidado', valueFormatter(consolidatedSummary?.consolidated_confirmed || 0)],
+                  ['Expectativa Final', valueFormatter(consolidatedSummary?.consolidated_simulated || 0)],
+                  ['Pendentes Saida', valueFormatter(consolidatedSummary?.pending_bank_out_value || 0)],
+                  ['Pendentes Entrada', valueFormatter(consolidatedSummary?.pending_bank_in_value || 0)]
                 ].map(r => r.join(',')).join('\n');
                 const blob = new Blob([headers + rows], { type: 'text/csv;charset=utf-8;' });
                 const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = 'dashboard_real.csv'; link.click();
@@ -241,7 +228,7 @@ export default function Dashboard() {
                 
                 <div className="space-y-4">
                   <div>
-                    <h3 className="text-2xl font-bold font-mono text-on-surface">{valueFormatter(stats?.total_operacional || 0)}</h3>
+                    <h3 className="text-2xl font-bold font-mono text-on-surface">{valueFormatter(consolidatedSummary?.consolidated_operational || 0)}</h3>
                     <div className="text-[10px] font-semibold text-secondary flex items-center gap-1 uppercase tracking-widest mt-1">
                       <Clock className="w-3.5 h-3.5" /> Saldo Operacional (Disponível)
                     </div>
@@ -250,7 +237,7 @@ export default function Dashboard() {
                   <div className="pt-4 border-t border-surface-border/50">
                     {isMaster ? (
                       <>
-                        <h4 className="text-lg font-bold font-mono text-bank-truth-green">{valueFormatter(stats?.total_consolidado || 0)}</h4>
+                        <h4 className="text-lg font-bold font-mono text-bank-truth-green">{valueFormatter(consolidatedSummary?.consolidated_confirmed || 0)}</h4>
                         <div className="text-[10px] font-semibold text-bank-truth-green flex items-center gap-1 uppercase tracking-widest mt-1">
                           <CheckCircle2 className="w-3.5 h-3.5" /> Saldo Real (Confirmado Master)
                         </div>
@@ -260,7 +247,7 @@ export default function Dashboard() {
                         <div>
                           <p className="text-[9px] font-black text-secondary uppercase tracking-widest">Em Validação Master</p>
                           <p className="text-xs font-bold font-mono text-neutral-400">
-                            {valueFormatter(Math.max(0, (stats?.total_operacional || 0) - (stats?.total_consolidado || 0)))}
+                            {valueFormatter(Math.max(0, (consolidatedSummary?.consolidated_operational || 0) - (consolidatedSummary?.consolidated_confirmed || 0)))}
                           </p>
                         </div>
                         <div className="bg-neutral-50 px-2 py-1 rounded-lg border border-neutral-100 flex items-center gap-1">
@@ -276,14 +263,14 @@ export default function Dashboard() {
               <div className="bg-white dark:bg-surface p-6 rounded-xl border border-surface-border shadow-sm relative overflow-hidden group">
                 <div className="absolute top-0 left-0 w-1 h-full bg-primary"></div>
                 <div className="flex justify-between items-start mb-4"><span className="text-xs font-bold text-secondary uppercase tracking-wider">Expectativa Final</span><LineChart className="w-5 h-5 text-primary" /></div>
-                <h3 className="text-2xl font-bold font-mono text-on-surface">{valueFormatter(stats?.total_simulado || 0)}</h3>
+                <h3 className="text-2xl font-bold font-mono text-on-surface">{valueFormatter(consolidatedSummary?.consolidated_simulated || 0)}</h3>
                 <p className="text-xs text-secondary mt-2">Cenário previsto para final do período</p>
                 
-                {stats?.quitacao_pendente_count > 0 && (
+                {(consolidatedSummary?.pending_bank_out_count || 0) + (consolidatedSummary?.pending_bank_in_count || 0) > 0 && (
                    <div className="mt-4 p-2 bg-amber-50 rounded-lg border border-amber-100 flex items-center gap-2">
                      <AlertTriangle className="w-4 h-4 text-amber-600" />
                      <span className="text-[9px] font-black text-amber-700 uppercase">
-                       {stats.quitacao_pendente_count} Quitações aguardando Master
+                       {(consolidatedSummary?.pending_bank_out_count || 0) + (consolidatedSummary?.pending_bank_in_count || 0)} Pendências bancárias aguardando Master
                      </span>
                    </div>
                 )}
@@ -303,11 +290,11 @@ export default function Dashboard() {
                   >
                     <div className="flex flex-col">
                       <span className="text-[9px] font-black text-alert-red uppercase">Pendentes (Saída)</span>
-                      <span className="text-lg font-bold font-mono text-on-surface group-hover:text-primary">{valueFormatter(stats?.pendente_saida_valor || 0)}</span>
+                      <span className="text-lg font-bold font-mono text-on-surface group-hover:text-primary">{valueFormatter(consolidatedSummary?.pending_bank_out_value || 0)}</span>
                     </div>
                     <div className="text-right">
                       <span className="bg-red-50 text-alert-red text-[10px] font-black px-2 py-1 rounded-lg border border-red-100">
-                        {stats?.pendente_saida_count || 0} Itens
+                        {consolidatedSummary?.pending_bank_out_count || 0} Itens
                       </span>
                     </div>
                   </div>
@@ -320,11 +307,11 @@ export default function Dashboard() {
                   >
                     <div className="flex flex-col">
                       <span className="text-[9px] font-black text-bank-truth-green uppercase">Pendentes (Entrada)</span>
-                      <span className="text-lg font-bold font-mono text-on-surface group-hover:text-primary">{valueFormatter(stats?.pendente_entrada_valor || 0)}</span>
+                      <span className="text-lg font-bold font-mono text-on-surface group-hover:text-primary">{valueFormatter(consolidatedSummary?.pending_bank_in_value || 0)}</span>
                     </div>
                     <div className="text-right">
                       <span className="bg-emerald-50 text-bank-truth-green text-[10px] font-black px-2 py-1 rounded-lg border border-emerald-100">
-                        {stats?.pendente_entrada_count || 0} Itens
+                        {consolidatedSummary?.pending_bank_in_count || 0} Itens
                       </span>
                     </div>
                   </div>
@@ -534,7 +521,7 @@ export default function Dashboard() {
               <table className="w-full text-left border-collapse">
                 <thead><tr className="bg-neutral-50 text-neutral-400 border-b border-neutral-100 text-[9px] font-black uppercase tracking-widest"><th className="py-4 px-8">Data</th><th className="py-4 px-8">Descrição</th><th className="py-4 px-8">Entidade</th><th className="py-4 px-8 text-right">Valor</th></tr></thead>
                 <tbody className="text-[11px] font-bold">
-                  {lancamentos.filter(l => l.status_pagamento === 'pago').slice(0, 50).map(l => (
+                  {lancamentos.filter(l => isFinancialReportItem(l) && l.status_pagamento === 'pago').slice(0, 50).map(l => (
                     <tr key={l.id} className="border-b border-neutral-50 hover:bg-neutral-50">
 
                       <td className="py-4 px-8 font-mono">{l.data_vencimento.split('-').reverse().join('/')}</td>

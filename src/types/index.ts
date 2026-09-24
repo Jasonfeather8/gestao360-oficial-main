@@ -307,14 +307,20 @@ export interface CofreSaldo {
 export interface ConsolidatedFinancialSummary {
   bank_confirmed: number;
   bank_operational: number;
+  bank_simulated: number;
   cash_approved: number;
   cash_operational: number;
   cash_pending: number;
   pending_cash_movements: number;
   pending_cash_transfers: number;
   pending_cash_transfer_value: number;
+  pending_bank_out_value: number;
+  pending_bank_out_count: number;
+  pending_bank_in_value: number;
+  pending_bank_in_count: number;
   consolidated_confirmed: number;
   consolidated_operational: number;
+  consolidated_simulated: number;
 }
 
 export interface ImplantacaoValidationEvidence {

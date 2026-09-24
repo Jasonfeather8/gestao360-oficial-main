@@ -102,7 +102,7 @@ export function useConsolidatedFinancialSummary() {
   return useQuery({
     queryKey: ['consolidatedFinancialSummary', user?.id],
     queryFn: async () => {
-      const { data, error } = await supabase.rpc('get_consolidated_financial_summary');
+      const { data, error } = await supabase.rpc('get_consolidated_dashboard_summary');
       if (error) throw error;
       return (data?.[0] || null) as import('../types').ConsolidatedFinancialSummary | null;
     },
