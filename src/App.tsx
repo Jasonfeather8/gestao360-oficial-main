@@ -38,6 +38,7 @@ import Notificacoes from './pages/Notificacoes';
 import Pagar from './pages/Pagar';
 import Receber from './pages/Receber';
 import CofreLocal from './pages/CofreLocal';
+import LogsTestes from './pages/LogsTestes';
 
 // Create a client for React Query caching
 const queryClient = new QueryClient({
@@ -153,6 +154,16 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function RoleRestrictedRoute({ children }: { children: React.ReactNode }) {
+  const { role } = useAuth();
+
+  if (role !== 'master' && role !== 'gerente') {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return <>{children}</>;
+}
+
 function AppContent() {
   const { setModalOpen, isSidebarCollapsed, setSidebarCollapsed } = useUIStore();
   const { signOut } = useAuth();
@@ -227,6 +238,7 @@ function AppContent() {
 
                       {/* Rotas restritas a Master e Gerente */}
                       <Route path="/conciliacao" element={<Conciliacao />} />
+                      <Route path="/logs-testes" element={<RoleRestrictedRoute><LogsTestes /></RoleRestrictedRoute>} />
                       <Route path="/recorrencias" element={<Recorrencias />} />
                       <Route path="/cadastros" element={<Cadastros />} />
                       <Route path="/relatorios" element={<Relatorios />} />

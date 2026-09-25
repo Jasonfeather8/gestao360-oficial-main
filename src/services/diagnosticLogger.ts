@@ -1,6 +1,6 @@
-type DiagnosticLevel = 'info' | 'warn' | 'error';
+export type DiagnosticLevel = 'info' | 'warn' | 'error';
 
-type DiagnosticEntry = {
+export type DiagnosticEntry = {
   timestamp: string;
   level: DiagnosticLevel;
   scope: string;
@@ -10,15 +10,33 @@ type DiagnosticEntry = {
 
 const STORAGE_KEY = 'gestao360_diagnostic_logs';
 const MAX_ENTRIES = 100;
+const SENSITIVE_KEY = /(password|senha|token|secret|authorization|api[-_ ]?key|access[-_ ]?token|refresh[-_ ]?token)/i;
+
+function redactString(value: string) {
+  return value
+    .replace(/(bearer\s+)[a-z0-9._~+/=-]+/gi, '$1[REDACTED]')
+    .replace(/((?:password|senha|token|secret|authorization|api[-_ ]?key)\s*[:=]\s*)[^\s,;]+/gi, '$1[REDACTED]');
+}
 
 function serialize(details: unknown) {
-  if (details instanceof Error) return { name: details.name, message: details.message, stack: details.stack };
+  if (details instanceof Error) {
+    return {
+      name: details.name,
+      message: redactString(details.message),
+      stack: details.stack ? redactString(details.stack) : undefined,
+    };
+  }
   try {
-    return JSON.parse(JSON.stringify(details, (_key, value) => value instanceof Error
-      ? { name: value.name, message: value.message, stack: value.stack }
-      : value));
+    return JSON.parse(JSON.stringify(details, (key, value) => {
+      if (SENSITIVE_KEY.test(key)) return '[REDACTED]';
+      if (typeof value === 'string') return redactString(value);
+      if (value instanceof Error) {
+        return { name: value.name, message: redactString(value.message), stack: value.stack ? redactString(value.stack) : undefined };
+      }
+      return value;
+    }));
   } catch {
-    return String(details);
+    return redactString(String(details));
   }
 }
 
@@ -28,7 +46,7 @@ export const diagnosticLogger = {
       timestamp: new Date().toISOString(),
       level,
       scope,
-      message,
+      message: redactString(message),
       details: details === undefined ? undefined : serialize(details),
     };
 
@@ -39,7 +57,7 @@ export const diagnosticLogger = {
       // Logging must never interrupt the application flow.
     }
 
-    const output = `[${scope}] ${message}`;
+    const output = `[${entry.scope}] ${entry.message}`;
     if (level === 'error') console.error(output, entry.details ?? '');
     else if (level === 'warn') console.warn(output, entry.details ?? '');
     else console.info(output, entry.details ?? '');
@@ -62,6 +80,14 @@ export const diagnosticLogger = {
       return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]') as DiagnosticEntry[];
     } catch {
       return [];
+    }
+  },
+
+  clearEntries() {
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // Logging must never interrupt the application flow.
     }
   },
 };
