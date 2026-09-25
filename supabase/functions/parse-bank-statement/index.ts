@@ -19,6 +19,11 @@ type ParsedTransaction = {
   document?: string
 }
 
+const MAX_FILE_SIZE = 20 * 1024 * 1024
+const XLSX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+const PDF_MIME_TYPE = 'application/pdf'
+const CSV_MIME_TYPE = 'text/csv'
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -27,6 +32,11 @@ const corsHeaders = {
 
 const log = (...args: unknown[]) => console.log('[parse-bank-statement]', ...args)
 const fail = (message: string): never => { throw new Error(message) }
+
+const sha256 = async (bytes: ArrayBuffer): Promise<string> => {
+  const digest = await crypto.subtle.digest('SHA-256', bytes)
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')
+}
 
 const parseBrl = (raw: string): number => {
   const normalized = raw.replace(/\s/g, '').replace(/R\$/i, '').replace(/[+-]/g, '')
@@ -158,16 +168,60 @@ serve(async (req) => {
     const { data: authData, error: authError } = await supabaseAdmin.auth.getUser(tokenMatch[1])
     if (authError || !authData.user) fail('Token de autenticação inválido')
 
-    const body = await req.json() as { storage_path?: string; file_type?: 'pdf' | 'xlsx' }
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .select('role')
+      .eq('id', authData.user.id)
+      .maybeSingle()
+    if (profileError || !profile || !['master', 'gerente'].includes(profile.role)) fail('Usuário não autorizado a processar extratos')
+
+    const body = await req.json() as { lot_id?: string; storage_path?: string; file_type?: 'pdf' | 'xlsx' | 'csv'; file_hash?: string; mime_type?: string }
+    if (!body.lot_id || !/^[0-9a-f-]{36}$/i.test(body.lot_id)) fail('Lote de importação inválido')
     if (!body.storage_path || body.storage_path.split('/')[0] !== authData.user.id) fail('Caminho do arquivo não pertence ao usuário autenticado')
+    if (!body.file_hash || !/^[a-f0-9]{64}$/.test(body.file_hash)) fail('Hash SHA-256 do arquivo é obrigatório')
     const extension = body.storage_path.toLowerCase().split('.').pop()
-    const fileType = body.file_type || (extension === 'xlsx' ? 'xlsx' : extension === 'pdf' ? 'pdf' : undefined)
-    if (!fileType || (fileType === 'xlsx' && extension !== 'xlsx') || (fileType === 'pdf' && extension !== 'pdf')) fail('Extensão do arquivo incompatível com o formato informado')
+    const fileType = body.file_type || (extension === 'xlsx' ? 'xlsx' : extension === 'pdf' ? 'pdf' : extension === 'csv' ? 'csv' : undefined)
+    if (!fileType || (fileType === 'xlsx' && extension !== 'xlsx') || (fileType === 'pdf' && extension !== 'pdf') || (fileType === 'csv' && extension !== 'csv')) fail('Extensão do arquivo incompatível com o formato informado')
+    const expectedMime = fileType === 'pdf' ? PDF_MIME_TYPE : fileType === 'xlsx' ? XLSX_MIME_TYPE : CSV_MIME_TYPE
+    if (body.mime_type !== expectedMime) fail('MIME informado incompatível com a extensão do arquivo')
+
+    const { data: lot, error: lotError } = await supabaseAdmin
+      .from('extratos_bancarios')
+      .select('id, conta_bancaria_id, arquivo_nome, arquivo_tamanho, arquivo_mime_type, arquivo_hash, storage_path, importado_por, status')
+      .eq('id', body.lot_id)
+      .maybeSingle()
+    if (lotError || !lot) fail('Lote de importação não encontrado')
+    if (lot.status !== 'em_validacao' || lot.importado_por !== authData.user.id) fail('Lote de importação não está disponível para processamento')
+    if (lot.storage_path !== body.storage_path || lot.arquivo_hash !== body.file_hash || lot.arquivo_mime_type !== expectedMime) fail('Os metadados do lote não correspondem ao arquivo')
+    if (lot.arquivo_tamanho <= 0 || lot.arquivo_tamanho > MAX_FILE_SIZE) fail('O tamanho do arquivo é inválido')
+    const lotExtension = lot.arquivo_nome.toLowerCase().split('.').pop()
+    if ((fileType === 'pdf' && lotExtension !== 'pdf') || (fileType === 'xlsx' && lotExtension !== 'xlsx') || (fileType === 'csv' && lotExtension !== 'csv')) fail('O nome do arquivo não corresponde ao formato informado')
+
+    const { data: storageObject, error: objectError } = await supabaseAdmin
+      .schema('storage')
+      .from('objects')
+      .select('name, bucket_id, owner_id, metadata')
+      .eq('bucket_id', 'bank-statements')
+      .eq('name', body.storage_path)
+      .maybeSingle()
+    if (objectError || !storageObject) fail('Arquivo privado não encontrado')
+    if (storageObject.owner_id !== authData.user.id) fail('Arquivo não pertence ao usuário autenticado')
+    const objectMime = typeof storageObject.metadata?.mimetype === 'string' ? storageObject.metadata.mimetype.toLowerCase() : ''
+    if (objectMime !== expectedMime) fail('MIME armazenado incompatível com a extensão do arquivo')
+    const objectSize = Number(storageObject.metadata?.size)
+    if (Number.isFinite(objectSize) && (objectSize <= 0 || objectSize > MAX_FILE_SIZE)) fail('O arquivo excede o limite de 20 MB')
 
     log('Iniciando extração', { user_id: authData.user.id, file_type: fileType })
     const { data: file, error: fileError } = await supabaseAdmin.storage.from('bank-statements').download(body.storage_path)
     if (fileError || !file) fail('Arquivo privado não encontrado')
     const fileBytes = await file.arrayBuffer()
+    if (fileBytes.byteLength <= 0 || fileBytes.byteLength > MAX_FILE_SIZE) fail('O arquivo excede o limite de 20 MB')
+    if (fileBytes.byteLength !== Number(lot.arquivo_tamanho)) fail('O tamanho do arquivo não confere com o lote')
+    if (await sha256(fileBytes) !== body.file_hash) fail('O hash SHA-256 do arquivo não confere')
+    if (fileType === 'csv') {
+      log('Verificação do arquivo concluída', { user_id: authData.user.id, file_type: fileType })
+      return new Response(JSON.stringify({ verified: true }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
     if (fileType === 'xlsx') {
       const result = parseXlsx(fileBytes)
       log('Extração concluída', { user_id: authData.user.id, file_type: fileType, rows: result.rows.length })

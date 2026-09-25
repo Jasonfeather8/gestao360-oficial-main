@@ -3,11 +3,21 @@ export type ImportMode = 'entrada' | 'saida' | 'ambos';
 
 export interface ImportTransaction {
   data_transacao: string;
+  data_original?: string;
   valor: number;
+  valor_centavos?: number;
   descricao_banco: string;
+  descricao_original?: string;
   numero_documento?: string;
   tipo_movimento: 'credito' | 'debito';
   hash_transacao: string;
+  pagina_origem?: number;
+  linha_origem?: number;
+  arquivo_nome?: string;
+  arquivo_hash?: string;
+  confianca_extracao?: number;
+  motivo_alerta?: string | null;
+  extrato_lote_id?: string;
 }
 
 export interface ImportPreview {
@@ -30,6 +40,8 @@ export interface ImportPreview {
   parserTotals?: { entries?: number; exits?: number };
 }
 
+export type ImportLotStatus = 'em_validacao' | 'confirmado' | 'cancelado' | 'erro';
+
 export interface ImportLotDraft {
   id: string;
   contaBancariaId: string;
@@ -39,6 +51,7 @@ export interface ImportLotDraft {
   mimeType: string;
   fileHash: string;
   storagePath: string;
+  status?: ImportLotStatus;
 }
 
 export interface ImportConfirmationMetadata {

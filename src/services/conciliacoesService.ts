@@ -18,6 +18,8 @@ type XlsxParseResult = {
 
 const MAX_IMPORT_SIZE = 20 * 1024 * 1024;
 const XLSX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+const CSV_MIME_TYPES = new Set(['text/csv', 'application/csv']);
+const PDF_MIME_TYPE = 'application/pdf';
 
 const friendlyError = (message: string) => new Error(message);
 
@@ -41,8 +43,14 @@ export const getImportFileType = (fileName: string, mimeType = ''): ImportFileTy
     if (normalizedMime && normalizedMime !== XLSX_MIME_TYPE) throw friendlyError('O arquivo XLSX possui um tipo MIME inválido.');
     return 'xlsx';
   }
-  if (normalizedName.endsWith('.pdf')) return 'pdf';
-  if (normalizedName.endsWith('.csv')) return 'csv';
+  if (normalizedName.endsWith('.pdf')) {
+    if (normalizedMime && normalizedMime !== PDF_MIME_TYPE) throw friendlyError('O arquivo PDF possui um tipo MIME inválido.');
+    return 'pdf';
+  }
+  if (normalizedName.endsWith('.csv')) {
+    if (normalizedMime && !CSV_MIME_TYPES.has(normalizedMime)) throw friendlyError('O arquivo CSV possui um tipo MIME inválido.');
+    return 'csv';
+  }
   throw friendlyError('Formato não suportado. Selecione um arquivo PDF, CSV ou XLSX.');
 };
 
@@ -193,10 +201,16 @@ export const buildCsvTransactions = async (
     if (!Number.isFinite(roundedValue) || roundedValue === 0) throw friendlyError(`Valor inválido na linha ${index + 2}.`);
     const base = {
       data_transacao: date,
+      data_original: rawDate.trim(),
       valor: roundedValue,
+      valor_centavos: Math.round(roundedValue * 100),
       descricao_banco: description,
+      descricao_original: description,
       numero_documento: (row[mapping.documento] || '').trim() || undefined,
       tipo_movimento: value > 0 ? 'credito' as const : 'debito' as const,
+      linha_origem: index + 2,
+      confianca_extracao: 1,
+      motivo_alerta: null,
     };
     const hash = await buildHash(accountId, base);
     if (hashes.has(hash)) throw friendlyError(`A linha ${index + 2} é duplicada dentro do arquivo.`);
@@ -217,6 +231,14 @@ const summarize = (transactions: ImportTransaction[]) => {
     totalExits: transactions.filter(transaction => transaction.valor < 0).reduce((sum, transaction) => sum + Math.abs(transaction.valor), 0),
   };
 };
+
+const attachLotMetadata = (transactions: ImportTransaction[], lot: ImportLotDraft): ImportTransaction[] =>
+  transactions.map(transaction => ({
+    ...transaction,
+    arquivo_nome: lot.fileName,
+    arquivo_hash: lot.fileHash,
+    extrato_lote_id: lot.id,
+  }));
 
 export const conciliacoesService = {
   getConciliacoes: async (): Promise<Conciliacao[]> => {
@@ -259,62 +281,94 @@ export const conciliacoesService = {
 
   prepareImportFile: async (file: File, contaBancariaId: string, userId: string): Promise<{ lot: ImportLotDraft; preview: ImportPreview }> => {
     if (!contaBancariaId) throw friendlyError('Selecione a conta bancária antes de importar.');
-    if (file.size > MAX_IMPORT_SIZE) throw friendlyError('O arquivo excede o limite de 20 MB.');
+    if (file.size <= 0 || file.size > MAX_IMPORT_SIZE) throw friendlyError('O arquivo deve ter até 20 MB.');
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    if (authError || !authData.user) throw friendlyError('Usuário não autenticado.');
+    if (userId && userId !== authData.user.id) throw friendlyError('O usuário informado não corresponde à sessão autenticada.');
+    const ownerId = authData.user.id;
     const fileType = getImportFileType(file.name, file.type);
     const fileHash = await sha256(await file.arrayBuffer());
-    const { data: existing, error: existingError } = await supabase.from('extratos_bancarios').select('id').eq('arquivo_hash', fileHash).maybeSingle();
-    if (existingError) throw existingError;
-    if (existing) throw friendlyError('Este arquivo já foi importado. Selecione outro extrato.');
-
     const id = crypto.randomUUID();
-    const storagePath = `${userId}/${id}/${sanitizeFileName(file.name)}`;
+    const storagePath = `${ownerId}/${id}/${sanitizeFileName(file.name)}`;
     const lot: ImportLotDraft = {
       id,
       contaBancariaId,
-      userId,
+      userId: ownerId,
       fileName: file.name,
       fileSize: file.size,
-      mimeType: fileType === 'pdf' ? 'application/pdf' : fileType === 'xlsx' ? XLSX_MIME_TYPE : 'text/csv',
+      mimeType: fileType === 'pdf' ? PDF_MIME_TYPE : fileType === 'xlsx' ? XLSX_MIME_TYPE : 'text/csv',
       fileHash,
       storagePath,
+      status: 'em_validacao',
     };
 
     try {
       const { error: uploadError } = await supabase.storage.from('bank-statements').upload(storagePath, file, { contentType: lot.mimeType, upsert: false });
       if (uploadError) throw friendlyError(`Não foi possível enviar o arquivo: ${uploadError.message}`);
 
+      const { error: lotError } = await supabase.rpc('preparar_importacao_extrato', {
+        p_lote: {
+          id: lot.id,
+          conta_bancaria_id: lot.contaBancariaId,
+          arquivo_nome: lot.fileName,
+          arquivo_tamanho: lot.fileSize,
+          arquivo_mime_type: lot.mimeType,
+          arquivo_hash: lot.fileHash,
+          storage_path: lot.storagePath,
+          importado_por: lot.userId,
+        },
+      });
+      if (lotError) throw lotError;
+
       if (fileType === 'csv' || fileType === 'xlsx') {
         const parsed: XlsxParseResult = fileType === 'csv'
-          ? parseCsv(await file.text())
+          ? await (async () => {
+              const { error: functionError } = await supabase.functions.invoke('parse-bank-statement', { body: { lot_id: lot.id, storage_path: storagePath, file_type: 'csv', file_hash: lot.fileHash, mime_type: lot.mimeType } });
+              if (functionError) throw friendlyError(`Não foi possível verificar o CSV: ${await functionErrorMessage(functionError, 'Falha ao verificar o arquivo')}`);
+              return parseCsv(await file.text());
+            })()
           : await (async () => {
-              const { data, error: functionError } = await supabase.functions.invoke('parse-bank-statement', { body: { storage_path: storagePath, file_type: 'xlsx' } });
+              const { data, error: functionError } = await supabase.functions.invoke('parse-bank-statement', { body: { lot_id: lot.id, storage_path: storagePath, file_type: 'xlsx', file_hash: lot.fileHash, mime_type: lot.mimeType } });
               if (functionError) throw friendlyError(`Não foi possível extrair a planilha: ${await functionErrorMessage(functionError, 'Falha ao processar a planilha')}`);
               return data as XlsxParseResult;
             })();
         const mapping = { data: parsed.headers.find(header => /dat/i.test(header)) || '', valor: parsed.headers.find(header => /val/i.test(header)) || '', descricao: parsed.headers.find(header => /desc/i.test(header)) || '', documento: parsed.headers.find(header => /doc/i.test(header)) || '' };
         const transactions = mapping.data && mapping.valor && mapping.descricao
-          ? await buildCsvTransactions(contaBancariaId, parsed.rows, mapping, 'ambos')
+          ? attachLotMetadata(await buildCsvTransactions(contaBancariaId, parsed.rows, mapping, 'ambos'), lot)
           : [];
         const summary = transactions.length ? summarize(transactions) : { periodStart: undefined, periodEnd: undefined, totalEntries: 0, totalExits: 0 };
         return { lot, preview: { fileName: file.name, fileType, mimeType: lot.mimeType, ...summary, size: file.size, transactions, firstRows: parsed.rows.slice(0, 5), sourceRows: parsed.rows, sourceHeaders: parsed.headers } };
       }
 
-      const { data, error: functionError } = await supabase.functions.invoke('parse-bank-statement', { body: { storage_path: storagePath, file_type: 'pdf' } });
+      const { data, error: functionError } = await supabase.functions.invoke('parse-bank-statement', { body: { lot_id: lot.id, storage_path: storagePath, file_type: 'pdf', file_hash: lot.fileHash, mime_type: lot.mimeType } });
       if (functionError) throw friendlyError(`Não foi possível extrair o PDF: ${await functionErrorMessage(functionError, 'Falha ao processar o PDF')}`);
       const result = data as PdfParseResult;
       const parserNumbers = [result.openingBalance, result.closingBalance, result.totalEntries, result.totalExits].filter((value): value is number => value !== undefined);
       if (parserNumbers.some(value => !Number.isFinite(value))) throw friendlyError('O PDF contém totais ou saldos inválidos.');
-      const transactions = await Promise.all(result.transactions.map(async transaction => {
+      const parsedTransactions = await Promise.all(result.transactions.map(async (transaction, index) => {
         const credit = transaction.credit ?? 0;
         const debit = transaction.debit ?? 0;
         if ((credit > 0 && debit > 0) || (credit === 0 && debit === 0) || !Number.isFinite(credit) || !Number.isFinite(debit)) {
           throw friendlyError('O PDF contém uma transação com direção ou valor inválido.');
         }
         const value = credit > 0 ? credit : -Math.abs(debit);
-        const base = { data_transacao: normalizeDate(transaction.date), valor: Number(value.toFixed(2)), descricao_banco: transaction.description.trim(), numero_documento: transaction.document?.trim() || undefined, tipo_movimento: value > 0 ? 'credito' as const : 'debito' as const };
+        const base = {
+          data_transacao: normalizeDate(transaction.date),
+          data_original: transaction.date,
+          valor: Number(value.toFixed(2)),
+          valor_centavos: Math.round(value * 100),
+          descricao_banco: transaction.description.trim(),
+          descricao_original: transaction.description.trim(),
+          numero_documento: transaction.document?.trim() || undefined,
+          tipo_movimento: value > 0 ? 'credito' as const : 'debito' as const,
+          linha_origem: index + 1,
+          confianca_extracao: 1,
+          motivo_alerta: null,
+        };
         if (!base.descricao_banco || !Number.isFinite(base.valor) || base.valor === 0) throw friendlyError('O PDF contém uma transação sem data, valor ou descrição válida.');
         return { ...base, hash_transacao: await buildHash(contaBancariaId, base) };
       }));
+      const transactions = attachLotMetadata(parsedTransactions, lot);
       const hashes = new Set<string>();
       transactions.forEach(transaction => { if (hashes.has(transaction.hash_transacao)) throw friendlyError('O PDF contém transações duplicadas.'); hashes.add(transaction.hash_transacao); });
       if (!transactions.length) throw friendlyError('Não foi possível encontrar transações no PDF.');
@@ -334,10 +388,18 @@ export const conciliacoesService = {
 
   confirmImport: async (lot: ImportLotDraft, transactions: ImportTransaction[], metadata: ImportConfirmationMetadata = {}) => {
     if (!lot.id || transactions.length === 0) throw friendlyError('O lote precisa conter ao menos uma transação.');
+    if (lot.fileSize <= 0 || lot.fileSize > MAX_IMPORT_SIZE || !/^[a-f0-9]{64}$/.test(lot.fileHash)) throw friendlyError('Os metadados do arquivo são inválidos.');
+    if (lot.storagePath.split('/')[0] !== lot.userId || lot.storagePath.split('/').length < 3) throw friendlyError('O caminho do arquivo não pertence ao lote.');
+    getImportFileType(lot.fileName, lot.mimeType);
     const hashes = new Set<string>();
     transactions.forEach((transaction, index) => {
       if (!validateDate(transaction.data_transacao) || !/^\d{4}-\d{2}-\d{2}$/.test(transaction.data_transacao)) throw friendlyError(`Data inválida na transação ${index + 1}.`);
+      if (transaction.data_original !== undefined && !transaction.data_original.trim()) throw friendlyError(`A data original da transação ${index + 1} não pode ficar vazia.`);
+      if (transaction.descricao_original !== undefined && !transaction.descricao_original.trim()) throw friendlyError(`A descrição original da transação ${index + 1} não pode ficar vazia.`);
       if (!Number.isFinite(transaction.valor) || transaction.valor === 0) throw friendlyError(`Valor inválido na transação ${index + 1}.`);
+      if (transaction.valor_centavos !== undefined && (!Number.isInteger(transaction.valor_centavos) || transaction.valor_centavos !== Math.round(transaction.valor * 100))) throw friendlyError(`Valor em centavos inválido na transação ${index + 1}.`);
+      if (transaction.confianca_extracao !== undefined && (!Number.isFinite(transaction.confianca_extracao) || transaction.confianca_extracao < 0 || transaction.confianca_extracao > 1)) throw friendlyError(`Confiança de extração inválida na transação ${index + 1}.`);
+      if (transaction.arquivo_nome !== undefined && (transaction.arquivo_nome !== lot.fileName || transaction.arquivo_hash !== lot.fileHash || transaction.extrato_lote_id !== lot.id)) throw friendlyError(`A origem do arquivo da transação ${index + 1} não corresponde ao lote.`);
       if (!transaction.descricao_banco.trim()) throw friendlyError(`A descrição da transação ${index + 1} não pode ficar vazia.`);
       if ((transaction.valor > 0 && transaction.tipo_movimento !== 'credito') || (transaction.valor < 0 && transaction.tipo_movimento !== 'debito')) throw friendlyError(`A direção da transação ${index + 1} não corresponde ao valor.`);
       if (!/^[a-f0-9]{64}$/.test(transaction.hash_transacao) || hashes.has(transaction.hash_transacao)) throw friendlyError(`A transação ${index + 1} possui hash inválido ou duplicado.`);
@@ -358,16 +420,44 @@ export const conciliacoesService = {
       p_metadata: metadata,
     });
     if (error) {
-      const { data: persistedLot } = await supabase.from('extratos_bancarios').select('id').eq('id', lot.id).maybeSingle();
-      if (!persistedLot) await conciliacoesService.cleanupImport(lot);
+      const { data: persistedLot } = await supabase.from('extratos_bancarios').select('status').eq('id', lot.id).maybeSingle();
+      if (!persistedLot || persistedLot.status !== 'confirmado') await conciliacoesService.cleanupImport(lot);
       throw error;
     }
     return data;
   },
 
   cleanupImport: async (lot: ImportLotDraft): Promise<void> => {
-    const { error } = await supabase.storage.from('bank-statements').remove([lot.storagePath]);
-    if (error) throw error;
+    if (lot.status === 'confirmado') return;
+    const { data: persistedLot, error: statusLookupError } = await supabase
+      .from('extratos_bancarios')
+      .select('status')
+      .eq('id', lot.id)
+      .maybeSingle();
+    if (!statusLookupError && persistedLot?.status === 'confirmado') return;
+
+    let cancelError: unknown = statusLookupError;
+    try {
+      const { error } = await supabase.rpc('cancelar_importacao_extrato', { p_lote_id: lot.id });
+      cancelError = error;
+    } catch (error) {
+      cancelError = error;
+    }
+
+    let storageError: unknown = null;
+    try {
+      const { error } = await supabase.storage.from('bank-statements').remove([lot.storagePath]);
+      storageError = error;
+    } catch (error) {
+      storageError = error;
+    }
+
+    const errors = [cancelError, storageError]
+      .filter((error): error is Error => Boolean(error) && !/lote não encontrado/i.test(error instanceof Error ? error.message : String(error)));
+    if (errors.length > 0) {
+      const details = errors.map(error => error instanceof Error ? error.message : String(error)).join('; ');
+      throw friendlyError(`Não foi possível cancelar a importação e remover o arquivo temporário: ${details}`);
+    }
   },
 
 

@@ -115,13 +115,23 @@ export interface TransacaoBanco {
   id: string;
   conta_bancaria_id: string;
   data_transacao: string;
+  data_original?: string | null;
   valor: number;
+  valor_centavos?: number | null;
   descricao_banco: string;
+  descricao_original?: string | null;
   tipo_movimento: 'debito' | 'credito';
   hash_transacao: string; // duplicate prevention
   status_conciliacao: boolean;
   extrato_lote_id?: string;
-  numero_documento?: string;
+  numero_documento?: string | null;
+  pagina_origem?: number | null;
+  linha_origem?: number | null;
+  arquivo_nome?: string | null;
+  arquivo_hash?: string | null;
+  confianca_extracao?: number | null;
+  motivo_alerta?: string | null;
+  created_at?: string;
 }
 
 export type TransferenciaStatus = 'aberta' | 'aguardando_destino' | 'conciliada_pendente_master' | 'conciliada' | 'estornada';
