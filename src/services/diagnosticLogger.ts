@@ -8,14 +8,25 @@ export type DiagnosticEntry = {
   details?: unknown;
 };
 
-const STORAGE_KEY = 'gestao360_diagnostic_logs';
+const STORAGE_KEY = 'gestao360_data_bridge_integrity_logs';
 const MAX_ENTRIES = 100;
-const SENSITIVE_KEY = /(password|senha|token|secret|authorization|api[-_ ]?key|access[-_ ]?token|refresh[-_ ]?token)/i;
+const SENSITIVE_KEY = /(password|senha|token|secret|authorization|cookie|credential|api[-_ ]?key|access[-_ ]?token|refresh[-_ ]?token)/i;
+const subscribers = new Set<() => void>();
 
 function redactString(value: string) {
   return value
     .replace(/(bearer\s+)[a-z0-9._~+/=-]+/gi, '$1[REDACTED]')
-    .replace(/((?:password|senha|token|secret|authorization|api[-_ ]?key)\s*[:=]\s*)[^\s,;]+/gi, '$1[REDACTED]');
+    .replace(/((?:password|senha|token|secret|authorization|cookie|credential|api[-_ ]?key)\s*[:=]\s*)[^\s,;]+/gi, '$1[REDACTED]');
+}
+
+function notifySubscribers() {
+  subscribers.forEach((subscriber) => {
+    try {
+      subscriber();
+    } catch {
+      // A listener must never interrupt logging.
+    }
+  });
 }
 
 function serialize(details: unknown) {
@@ -53,14 +64,24 @@ export const diagnosticLogger = {
     try {
       const previous = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]') as DiagnosticEntry[];
       localStorage.setItem(STORAGE_KEY, JSON.stringify([...previous, entry].slice(-MAX_ENTRIES)));
+      notifySubscribers();
     } catch {
       // Logging must never interrupt the application flow.
     }
 
-    const output = `[${entry.scope}] ${entry.message}`;
-    if (level === 'error') console.error(output, entry.details ?? '');
-    else if (level === 'warn') console.warn(output, entry.details ?? '');
-    else console.info(output, entry.details ?? '');
+    try {
+      const output = `[${entry.scope}] ${entry.message}`;
+      if (level === 'error') console.error(output, entry.details ?? '');
+      else if (level === 'warn') console.warn(output, entry.details ?? '');
+      else console.info(output, entry.details ?? '');
+    } catch {
+      // Logging must never interrupt the application flow.
+    }
+  },
+
+  subscribe(listener: () => void) {
+    subscribers.add(listener);
+    return () => subscribers.delete(listener);
   },
 
   info(scope: string, message: string, details?: unknown) {
@@ -86,6 +107,7 @@ export const diagnosticLogger = {
   clearEntries() {
     try {
       localStorage.removeItem(STORAGE_KEY);
+      notifySubscribers();
     } catch {
       // Logging must never interrupt the application flow.
     }
