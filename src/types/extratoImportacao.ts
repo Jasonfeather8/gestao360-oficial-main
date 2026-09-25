@@ -7,6 +7,7 @@ export interface ImportTransaction {
   data_transacao: string;
   data_original?: string;
   valor: number;
+  valor_original?: number;
   valor_centavos?: number;
   descricao_banco: string;
   descricao_original?: string;
@@ -38,6 +39,28 @@ export interface ImportReviewItem {
   trecho: string;
 }
 
+export interface ImportConsistencyIssue {
+  code: string;
+  message: string;
+  transactionIndex?: number;
+  severity: 'critical' | 'warning';
+}
+
+export interface ImportConsistencyState {
+  criticalErrors: ImportConsistencyIssue[];
+  alerts: ImportConsistencyIssue[];
+  extractedCount: number;
+  ocrCount: number;
+  duplicateCount: number;
+  computedEntries: number;
+  computedExits: number;
+  computedNet: number;
+  totalsDifferenceCents?: { entries?: number; exits?: number };
+  balanceDifferenceCents?: number;
+  periodMatches: boolean | null;
+  continuityMatches: boolean | null;
+}
+
 export interface ImportPreview {
   fileName: string;
   fileType: ImportFileType;
@@ -58,6 +81,8 @@ export interface ImportPreview {
   sourceHeaders?: string[];
   bankIdentified?: string;
   parserTotals?: { entries?: number; exits?: number };
+  reportedTransactionCount?: number;
+  consistency: ImportConsistencyState;
 }
 
 export type ImportLotStatus = 'em_validacao' | 'confirmado' | 'cancelado' | 'erro';
@@ -84,6 +109,11 @@ export interface ImportConfirmationMetadata {
   totalEntries?: number;
   totalExits?: number;
   parserTotals?: { entries?: number; exits?: number };
+  reportedTransactionCount?: number;
+  extractedCount?: number;
+  ocrCount?: number;
+  consistency?: ImportConsistencyState;
+  rawTransactions?: Array<Pick<ImportTransaction, 'data_original' | 'descricao_original' | 'valor_original' | 'data_transacao' | 'descricao_banco' | 'valor' | 'tipo_movimento' | 'pagina_origem' | 'linha_origem' | 'origem_extracao'>>;
   sourceOrigin?: ImportSourceOrigin;
   pendingReviewCount?: number;
   reviewState?: 'validated' | 'has_pending_reviews';
@@ -102,6 +132,7 @@ export interface PdfParseResult {
   closingBalance?: number;
   totalEntries?: number;
   totalExits?: number;
+  reportedTransactionCount?: number;
   bankIdentified?: string;
   sourceOrigin: ImportSourceOrigin;
   transactions: Array<{

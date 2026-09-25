@@ -3,6 +3,8 @@ import { Conciliacao, FechamentoConciliacao, TransacaoBanco, ConciliacaoAtomicaP
 import {
   CsvParseResult,
   ImportConfirmationMetadata,
+  ImportConsistencyIssue,
+  ImportConsistencyState,
   ImportFileType,
   ImportLotDraft,
   ImportMode,
@@ -203,6 +205,7 @@ export const buildCsvTransactions = async (
       data_transacao: date,
       data_original: rawDate.trim(),
       valor: roundedValue,
+      valor_original: parsedValue,
       valor_centavos: Math.round(roundedValue * 100),
       descricao_banco: description,
       descricao_original: description,
@@ -229,6 +232,104 @@ const summarize = (transactions: ImportTransaction[]) => {
     periodEnd: dates[dates.length - 1],
     totalEntries: transactions.filter(transaction => transaction.valor > 0).reduce((sum, transaction) => sum + transaction.valor, 0),
     totalExits: transactions.filter(transaction => transaction.valor < 0).reduce((sum, transaction) => sum + Math.abs(transaction.valor), 0),
+  };
+};
+
+const cents = (value: number): number => Math.round(value * 100);
+
+const addConsistencyIssue = (issues: ImportConsistencyIssue[], code: string, message: string, transactionIndex?: number) => {
+  if (!issues.some(issue => issue.code === code && issue.transactionIndex === transactionIndex)) {
+    issues.push({ code, message, transactionIndex, severity: 'critical' });
+  }
+};
+
+export const validateImportConsistency = (
+  transactions: ImportTransaction[],
+  metadata: ImportConfirmationMetadata,
+): ImportConsistencyState => {
+  const criticalErrors: ImportConsistencyIssue[] = [];
+  const alerts: ImportConsistencyIssue[] = [];
+  const dates = transactions.map(transaction => transaction.data_transacao).filter(Boolean).sort();
+  const computedEntries = transactions.filter(transaction => transaction.valor > 0).reduce((sum, transaction) => sum + transaction.valor, 0);
+  const computedExits = transactions.filter(transaction => transaction.valor < 0).reduce((sum, transaction) => sum + Math.abs(transaction.valor), 0);
+  const hashes = new Set<string>();
+  const fingerprints = new Set<string>();
+  let duplicateCount = 0;
+  if (transactions.length === 0) addConsistencyIssue(criticalErrors, 'empty_batch', 'O lote não possui registros extraídos.');
+
+  transactions.forEach((transaction, index) => {
+    const valueCents = cents(transaction.valor);
+    const fingerprint = [transaction.data_transacao, valueCents, transaction.descricao_banco.trim().toLocaleLowerCase(), transaction.numero_documento || ''].join('|');
+    if (!validateDate(transaction.data_transacao)) addConsistencyIssue(criticalErrors, 'invalid_date', `Data inválida na transação ${index + 1}.`, index);
+    if (!transaction.descricao_banco.trim()) addConsistencyIssue(criticalErrors, 'missing_description', `Descrição ausente na transação ${index + 1}.`, index);
+    if (!Number.isFinite(transaction.valor) || valueCents === 0 || !Number.isInteger(transaction.valor_centavos) || transaction.valor_centavos !== valueCents) addConsistencyIssue(criticalErrors, 'invalid_value', `Valor inválido ou inconsistente em centavos na transação ${index + 1}.`, index);
+    if (transaction.data_original !== undefined && !transaction.data_original.trim()) addConsistencyIssue(criticalErrors, 'invalid_original_date', `Data bruta ausente na transação ${index + 1}.`, index);
+    if (transaction.descricao_original !== undefined && !transaction.descricao_original.trim()) addConsistencyIssue(criticalErrors, 'invalid_original_description', `Descrição bruta ausente na transação ${index + 1}.`, index);
+    if ((transaction.valor > 0 && transaction.tipo_movimento !== 'credito') || (transaction.valor < 0 && transaction.tipo_movimento !== 'debito')) addConsistencyIssue(criticalErrors, 'direction_mismatch', `Direção incompatível com o sinal na transação ${index + 1}.`, index);
+    if (!/^[a-f0-9]{64}$/.test(transaction.hash_transacao)) addConsistencyIssue(criticalErrors, 'invalid_hash', `Hash inválido na transação ${index + 1}.`, index);
+    if (transaction.confianca_extracao !== undefined && (!Number.isFinite(transaction.confianca_extracao) || transaction.confianca_extracao < 0 || transaction.confianca_extracao > 1)) addConsistencyIssue(criticalErrors, 'invalid_confidence', `Confiança de extração inválida na transação ${index + 1}.`, index);
+    if (metadata.sourceOrigin && transaction.origem_extracao !== metadata.sourceOrigin) addConsistencyIssue(criticalErrors, 'origin_mismatch', `Origem de extração incompatível na transação ${index + 1}.`, index);
+    if (hashes.has(transaction.hash_transacao) || fingerprints.has(fingerprint)) {
+      duplicateCount += 1;
+      addConsistencyIssue(criticalErrors, 'duplicate_transaction', `Transação duplicada na posição ${index + 1}.`, index);
+    }
+    hashes.add(transaction.hash_transacao);
+    fingerprints.add(fingerprint);
+    if (metadata.pages !== undefined && (!Number.isInteger(transaction.pagina_origem) || !Number.isInteger(transaction.linha_origem) || transaction.pagina_origem! < 1 || transaction.linha_origem! < 1 || transaction.pagina_origem! > metadata.pages)) {
+      addConsistencyIssue(criticalErrors, 'missing_origin', `Origem página/linha ausente ou inválida na transação ${index + 1}.`, index);
+    }
+  });
+
+  const totalsDifferenceCents: { entries?: number; exits?: number } = {};
+  if (metadata.parserTotals?.entries !== undefined) {
+    const difference = cents(computedEntries) - cents(metadata.parserTotals.entries);
+    totalsDifferenceCents.entries = difference;
+    if (Math.abs(difference) > 1) addConsistencyIssue(criticalErrors, 'entries_total_mismatch', `Divergência crítica no total de entradas: ${Math.abs(difference)} centavo(s).`);
+    else if (difference !== 0) alerts.push({ code: 'entries_total_tolerance', message: 'Total de entradas dentro da tolerância de 1 centavo.', severity: 'warning' });
+  }
+  if (metadata.parserTotals?.exits !== undefined) {
+    const difference = cents(computedExits) - cents(metadata.parserTotals.exits);
+    totalsDifferenceCents.exits = difference;
+    if (Math.abs(difference) > 1) addConsistencyIssue(criticalErrors, 'exits_total_mismatch', `Divergência crítica no total de saídas: ${Math.abs(difference)} centavo(s).`);
+    else if (difference !== 0) alerts.push({ code: 'exits_total_tolerance', message: 'Total de saídas dentro da tolerância de 1 centavo.', severity: 'warning' });
+  }
+
+  let balanceDifferenceCents: number | undefined;
+  if (metadata.openingBalance !== undefined && metadata.closingBalance !== undefined) {
+    balanceDifferenceCents = cents(metadata.openingBalance) + cents(computedEntries) - cents(computedExits) - cents(metadata.closingBalance);
+    if (Math.abs(balanceDifferenceCents) > 1) addConsistencyIssue(criticalErrors, 'balance_mismatch', `Saldo inconsistente: saldo inicial + entradas - saídas difere do saldo final em ${Math.abs(balanceDifferenceCents)} centavo(s).`);
+    else if (balanceDifferenceCents !== 0) alerts.push({ code: 'balance_tolerance', message: 'Saldo dentro da tolerância de 1 centavo.', severity: 'warning' });
+  }
+
+  const periodMatches = metadata.periodStart && metadata.periodEnd
+    ? Boolean(dates.length && dates[0] >= metadata.periodStart && dates[dates.length - 1] <= metadata.periodEnd)
+    : null;
+  if (periodMatches === false) addConsistencyIssue(criticalErrors, 'period_mismatch', 'Há transações fora do período informado pelo banco.');
+
+  let continuityMatches: boolean | null = null;
+  if (metadata.pages && metadata.pages > 1) {
+    const pages = new Set(transactions.map(transaction => transaction.pagina_origem).filter((page): page is number => Number.isInteger(page)));
+    continuityMatches = pages.size === metadata.pages && Array.from({ length: metadata.pages }, (_, index) => pages.has(index + 1)).every(Boolean);
+    if (!continuityMatches) addConsistencyIssue(criticalErrors, 'page_continuity', 'A sequência de páginas do lote não é contínua ou possui páginas sem origem verificável.');
+  }
+
+  if (metadata.reportedTransactionCount !== undefined && metadata.reportedTransactionCount !== transactions.length) addConsistencyIssue(criticalErrors, 'count_mismatch', `Quantidade divergente: banco informou ${metadata.reportedTransactionCount} registro(s), mas ${transactions.length} foi(ram) extraído(s).`);
+  if ((metadata.pendingReviewCount || 0) > 0 || metadata.reviewState === 'has_pending_reviews') addConsistencyIssue(criticalErrors, 'pending_review', 'Existem pendências de revisão no lote.');
+  if (metadata.sourceOrigin === 'ocr') alerts.push({ code: 'ocr_origin', message: `${transactions.filter(transaction => transaction.origem_extracao === 'ocr').length} transação(ões) extraída(s) via OCR; confira os dados normalizados.`, severity: 'warning' });
+
+  return {
+    criticalErrors,
+    alerts,
+    extractedCount: transactions.length,
+    ocrCount: transactions.filter(transaction => transaction.origem_extracao === 'ocr').length,
+    duplicateCount,
+    computedEntries,
+    computedExits,
+    computedNet: computedEntries - computedExits,
+    totalsDifferenceCents: Object.keys(totalsDifferenceCents).length ? totalsDifferenceCents : undefined,
+    balanceDifferenceCents,
+    periodMatches,
+    continuityMatches,
   };
 };
 
@@ -337,7 +438,14 @@ export const conciliacoesService = {
           ? attachLotMetadata(await buildCsvTransactions(contaBancariaId, parsed.rows, mapping, 'ambos'), lot)
           : [];
         const summary = transactions.length ? summarize(transactions) : { periodStart: undefined, periodEnd: undefined, totalEntries: 0, totalExits: 0 };
-        return { lot, preview: { fileName: file.name, fileType, mimeType: lot.mimeType, ...summary, size: file.size, transactions, firstRows: parsed.rows.slice(0, 5), sourceRows: parsed.rows, sourceHeaders: parsed.headers } };
+        const consistencyMetadata: ImportConfirmationMetadata = {
+          periodStart: summary.periodStart,
+          periodEnd: summary.periodEnd,
+          extractedCount: transactions.length,
+          sourceOrigin: undefined,
+          reviewState: 'validated',
+        };
+        return { lot, preview: { fileName: file.name, fileType, mimeType: lot.mimeType, ...summary, size: file.size, transactions, firstRows: parsed.rows.slice(0, 5), sourceRows: parsed.rows, sourceHeaders: parsed.headers, consistency: validateImportConsistency(transactions, consistencyMetadata) } };
       }
 
       const { data, error: functionError } = await supabase.functions.invoke('parse-bank-statement', { body: { lot_id: lot.id, storage_path: storagePath, file_type: 'pdf', file_hash: lot.fileHash, mime_type: lot.mimeType } });
@@ -359,6 +467,7 @@ export const conciliacoesService = {
           data_transacao: normalizeDate(transaction.date),
           data_original: transaction.date,
           valor: Number(value.toFixed(2)),
+          valor_original: credit > 0 ? credit : -Math.abs(debit),
           valor_centavos: Math.round(value * 100),
           descricao_banco: transaction.description.trim(),
           descricao_original: transaction.description.trim(),
@@ -379,7 +488,19 @@ export const conciliacoesService = {
       transactions.forEach(transaction => { if (hashes.has(transaction.hash_transacao)) throw friendlyError('O PDF contém transações duplicadas.'); hashes.add(transaction.hash_transacao); });
       const summary = transactions.length ? summarize(transactions) : { periodStart: undefined, periodEnd: undefined, totalEntries: 0, totalExits: 0 };
       const pendingReviews = result.pendingReviews || [];
-      return { lot, preview: { fileName: file.name, fileType, mimeType: lot.mimeType, size: file.size, pages: result.pages, periodStart: result.periodStart || summary.periodStart, periodEnd: result.periodEnd || summary.periodEnd, openingBalance: result.openingBalance, closingBalance: result.closingBalance, totalEntries: result.totalEntries ?? summary.totalEntries, totalExits: result.totalExits ?? summary.totalExits, transactions, pendingReviews, sourceOrigin: result.sourceOrigin, firstRows: transactions.slice(0, 5).map(transaction => ({ data: transaction.data_transacao, descrição: transaction.descricao_banco, valor: transaction.valor.toFixed(2), origem: transaction.origem_extracao || 'texto' })), bankIdentified: result.bankIdentified, parserTotals: { entries: result.totalEntries, exits: result.totalExits } } };
+      const previewMetadata: ImportConfirmationMetadata = {
+        pages: result.pages,
+        periodStart: result.periodStart || summary.periodStart,
+        periodEnd: result.periodEnd || summary.periodEnd,
+        openingBalance: result.openingBalance,
+        closingBalance: result.closingBalance,
+        parserTotals: { entries: result.totalEntries, exits: result.totalExits },
+        reportedTransactionCount: result.reportedTransactionCount,
+        sourceOrigin: result.sourceOrigin,
+        pendingReviewCount: pendingReviews.length,
+        reviewState: pendingReviews.length ? 'has_pending_reviews' : 'validated',
+      };
+      return { lot, preview: { fileName: file.name, fileType, mimeType: lot.mimeType, size: file.size, pages: result.pages, periodStart: result.periodStart || summary.periodStart, periodEnd: result.periodEnd || summary.periodEnd, openingBalance: result.openingBalance, closingBalance: result.closingBalance, totalEntries: result.totalEntries ?? summary.totalEntries, totalExits: result.totalExits ?? summary.totalExits, transactions, pendingReviews, sourceOrigin: result.sourceOrigin, firstRows: transactions.slice(0, 5).map(transaction => ({ data: transaction.data_transacao, descrição: transaction.descricao_banco, valor: transaction.valor.toFixed(2), origem: transaction.origem_extracao || 'texto' })), bankIdentified: result.bankIdentified, parserTotals: { entries: result.totalEntries, exits: result.totalExits }, reportedTransactionCount: result.reportedTransactionCount, consistency: validateImportConsistency(transactions, previewMetadata) } };
     } catch (error) {
       await conciliacoesService.cleanupImport(lot);
       throw error;
@@ -390,6 +511,8 @@ export const conciliacoesService = {
     if (!lot.id || transactions.length === 0) throw friendlyError('O lote precisa conter ao menos uma transação.');
     if (transactions.some(transaction => transaction.estado_revisao === 'pendente_revisao')) throw friendlyError('Resolva explicitamente todas as transações pendentes antes de confirmar o lote.');
     if (metadata.reviewState === 'has_pending_reviews' || (metadata.pendingReviewCount || 0) > 0) throw friendlyError('O lote possui pendências de revisão que não podem ser importadas silenciosamente.');
+    const consistency = validateImportConsistency(transactions, metadata);
+    if (consistency.criticalErrors.length > 0) throw friendlyError(`A confirmação foi bloqueada: ${consistency.criticalErrors.map(issue => issue.message).join(' ')}`);
     if (lot.fileSize <= 0 || lot.fileSize > MAX_IMPORT_SIZE || !/^[a-f0-9]{64}$/.test(lot.fileHash)) throw friendlyError('Os metadados do arquivo são inválidos.');
     if (lot.storagePath.split('/')[0] !== lot.userId || lot.storagePath.split('/').length < 3) throw friendlyError('O caminho do arquivo não pertence ao lote.');
     getImportFileType(lot.fileName, lot.mimeType);
@@ -419,7 +542,11 @@ export const conciliacoesService = {
         importado_por: lot.userId,
       },
       p_transacoes: transactions,
-      p_metadata: metadata,
+      p_metadata: {
+        ...metadata,
+        consistency,
+        rawTransactions: transactions.map(({ data_original, descricao_original, valor_original, data_transacao, descricao_banco, valor, tipo_movimento, pagina_origem, linha_origem, origem_extracao }) => ({ data_original, descricao_original, valor_original, data_transacao, descricao_banco, valor, tipo_movimento, pagina_origem, linha_origem, origem_extracao })),
+      },
     });
     if (error) {
       const { data: persistedLot } = await supabase.from('extratos_bancarios').select('status').eq('id', lot.id).maybeSingle();

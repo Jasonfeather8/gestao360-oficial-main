@@ -31,8 +31,8 @@ import { useConciliacao, useContas, useLancamentos, useEntidades, useTransferenc
 import { useAuth } from '../hooks/useAuth';
 import { useUIStore } from '../store/uiStore';
 import { TransacaoBanco, LancamentoFinanceiro } from '../types';
-import { ImportLotDraft, ImportMode, ImportPreview } from '../types/extratoImportacao';
-import { buildCsvTransactions, parseCsv } from '../services/conciliacoesService';
+import { ImportConfirmationMetadata, ImportLotDraft, ImportMode, ImportPreview } from '../types/extratoImportacao';
+import { buildCsvTransactions, parseCsv, validateImportConsistency } from '../services/conciliacoesService';
 import Button from '../components/Button';
 import TransferenciaBancariaModal from '../components/TransferenciaBancariaModal';
 
@@ -99,6 +99,7 @@ export default function Conciliacao() {
   const [columnMapping, setColumnMapping] = useState({ data: '', valor: '', descricao: '', documento: '' });
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
   const [csvPreviewRows, setCsvPreviewRows] = useState<Array<Record<string, string>>>([]);
+  const [importPreviewTab, setImportPreviewTab] = useState<'entradas' | 'saidas' | 'pendencias'>('entradas');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Difference states
@@ -214,6 +215,7 @@ export default function Conciliacao() {
     setImportError('');
     setCsvHeaders([]);
     setCsvPreviewRows([]);
+    setImportPreviewTab('entradas');
     setColumnMapping({ data: '', valor: '', descricao: '', documento: '' });
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
@@ -230,24 +232,27 @@ export default function Conciliacao() {
         transactions = await buildCsvTransactions(importLot.contaBancariaId, rows, columnMapping, importMode);
       }
       if (!transactions.length) throw new Error('O arquivo precisa conter ao menos uma transação válida.');
-      await confirmImport({
-        lot: importLot,
-        transactions,
-        metadata: {
-          pages: importPreview.pages,
-          periodStart: importPreview.periodStart,
-          periodEnd: importPreview.periodEnd,
-          openingBalance: importPreview.openingBalance,
-          closingBalance: importPreview.closingBalance,
-          bankIdentified: importPreview.bankIdentified,
-          totalEntries: importPreview.totalEntries,
-          totalExits: importPreview.totalExits,
-          parserTotals: importPreview.parserTotals,
-          sourceOrigin: importPreview.sourceOrigin,
-          pendingReviewCount: importPreview.pendingReviews?.length || 0,
-          reviewState: importPreview.pendingReviews?.length ? 'has_pending_reviews' : 'validated',
-        },
-      });
+      const confirmationMetadata: ImportConfirmationMetadata = {
+        pages: importPreview.pages,
+        periodStart: importPreview.periodStart,
+        periodEnd: importPreview.periodEnd,
+        openingBalance: importPreview.openingBalance,
+        closingBalance: importPreview.closingBalance,
+        bankIdentified: importPreview.bankIdentified,
+        totalEntries: importPreview.totalEntries,
+        totalExits: importPreview.totalExits,
+        parserTotals: importPreview.parserTotals,
+        reportedTransactionCount: importPreview.reportedTransactionCount,
+        extractedCount: transactions.length,
+        ocrCount: transactions.filter(transaction => transaction.origem_extracao === 'ocr').length,
+        consistency: importPreview.consistency,
+        sourceOrigin: importPreview.sourceOrigin,
+        pendingReviewCount: importPreview.pendingReviews?.length || 0,
+        reviewState: importPreview.pendingReviews?.length ? 'has_pending_reviews' : 'validated',
+      };
+      const currentConsistency = validateImportConsistency(transactions, confirmationMetadata);
+      if (currentConsistency.criticalErrors.length > 0) throw new Error(`A confirmação foi bloqueada: ${currentConsistency.criticalErrors.map(issue => issue.message).join(' ')}`);
+      await confirmImport({ lot: importLot, transactions, metadata: confirmationMetadata });
       resetImportState();
       setModalOpen('isImportarCSVOpen', false);
     } catch (error) {
@@ -880,7 +885,29 @@ export default function Conciliacao() {
                         <span>Saldo final: {importPreview.closingBalance === undefined ? 'não disponível' : valueFormatter(importPreview.closingBalance)}</span>
                       </div>
                       {importPreview.bankIdentified && <p className="text-[10px] font-black text-primary uppercase">Banco identificado: {importPreview.bankIdentified}</p>}
+                      <div className="grid grid-cols-2 gap-3 text-[10px] font-black uppercase text-neutral-600">
+                        <span>Registros extraídos: {importPreview.consistency.extractedCount}</span>
+                        {importPreview.consistency.ocrCount > 0 && <span className="text-violet-700">Registros via OCR: {importPreview.consistency.ocrCount}</span>}
+                      </div>
                       {importPreview.fileType === 'pdf' && <p className="text-[10px] font-black uppercase text-neutral-500">Origem: {importPreview.sourceOrigin === 'ocr' ? 'OCR backend-only • confiança reduzida' : 'texto e layout do PDF'} • o nome do arquivo não classifica o movimento.</p>}
+                      {importPreview.consistency.criticalErrors.length > 0 && (
+                        <div className="border-2 border-red-200 bg-red-50 rounded-2xl p-4 space-y-2">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-red-800">Confirmação bloqueada: {importPreview.consistency.criticalErrors.length} erro(s) crítico(s)</p>
+                          {importPreview.consistency.criticalErrors.map(issue => <p key={`${issue.code}-${issue.transactionIndex ?? 'lote'}`} className="text-[9px] font-bold text-red-900 uppercase">{issue.message}</p>)}
+                        </div>
+                      )}
+                      {importPreview.consistency.alerts.length > 0 && (
+                        <div className="border-2 border-blue-200 bg-blue-50 rounded-2xl p-4 space-y-2">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-blue-800">Alertas de consistência</p>
+                          {importPreview.consistency.alerts.map(issue => <p key={issue.code} className="text-[9px] font-bold text-blue-900 uppercase">{issue.message}</p>)}
+                        </div>
+                      )}
+                      <div className="grid grid-cols-2 gap-2 text-[9px] font-black uppercase text-neutral-500">
+                        <span>Período informado: {importPreview.consistency.periodMatches === null ? 'não disponível' : importPreview.consistency.periodMatches ? 'consistente' : 'divergente'}</span>
+                        <span>Continuidade: {importPreview.consistency.continuityMatches === null ? 'não aplicável' : importPreview.consistency.continuityMatches ? 'consistente' : 'divergente'}</span>
+                        <span>Totais banco: {importPreview.consistency.totalsDifferenceCents ? `${importPreview.consistency.totalsDifferenceCents.entries ?? 0}¢ entradas / ${importPreview.consistency.totalsDifferenceCents.exits ?? 0}¢ saídas` : 'não informados'}</span>
+                        <span>Saldo: {importPreview.consistency.balanceDifferenceCents === undefined ? 'não informado' : `${importPreview.consistency.balanceDifferenceCents}¢ de diferença`}</span>
+                      </div>
                       {importPreview.pendingReviews && importPreview.pendingReviews.length > 0 && (
                         <div className="border-2 border-amber-200 bg-amber-50 rounded-2xl p-4 space-y-2">
                           <p className="text-[10px] font-black uppercase tracking-widest text-amber-800">{importPreview.pendingReviews.length} item(ns) pendente(s) de revisão — não serão importados</p>
@@ -900,6 +927,34 @@ export default function Conciliacao() {
                               Página {transaction.pagina_origem || '—'} • linha {transaction.linha_origem || '—'} • confiança {transaction.confianca_extracao === undefined ? '—' : `${Math.round(transaction.confianca_extracao * 100)}%`}: {transaction.motivo_alerta}
                             </p>
                           ))}
+                        </div>
+                      )}
+                    </div>
+                    <div className="space-y-4">
+                      <div className="flex bg-neutral-100 p-1 rounded-2xl">
+                        {([
+                          ['entradas', `Entradas (${importPreview.transactions.filter(transaction => transaction.tipo_movimento === 'credito').length})`],
+                          ['saidas', `Saídas (${importPreview.transactions.filter(transaction => transaction.tipo_movimento === 'debito').length})`],
+                          ['pendencias', `Pendências (${(importPreview.pendingReviews?.length || 0) + importPreview.consistency.criticalErrors.length})`],
+                        ] as const).map(([tab, label]) => <button key={tab} type="button" onClick={() => setImportPreviewTab(tab)} className={`flex-1 rounded-xl py-3 text-[9px] font-black uppercase transition-all ${importPreviewTab === tab ? 'bg-white text-primary shadow-sm' : 'text-neutral-400'}`}>{label}</button>)}
+                      </div>
+                      {importPreviewTab !== 'pendencias' ? (
+                        <div className="border-2 border-neutral-100 rounded-3xl overflow-hidden divide-y divide-neutral-100">
+                          {importPreview.transactions.filter(transaction => importPreviewTab === 'entradas' ? transaction.tipo_movimento === 'credito' : transaction.tipo_movimento === 'debito').map((transaction, index) => (
+                            <div key={`${transaction.hash_transacao}-${index}`} className="p-4 space-y-3 text-[9px]">
+                              <div className="flex justify-between gap-3 font-black uppercase text-neutral-500"><span>{transaction.data_transacao} • {valueFormatter(transaction.valor)}</span><span>Página {transaction.pagina_origem || '—'} • linha {transaction.linha_origem || '—'}</span></div>
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                <div><p className="font-black uppercase text-neutral-400">Bruto extraído</p><p className="font-bold text-neutral-700 break-words">{transaction.data_original || '—'} • {transaction.descricao_original || '—'} • {transaction.valor_original === undefined ? '—' : valueFormatter(transaction.valor_original)}</p></div>
+                                <div><p className="font-black uppercase text-neutral-400">Normalizado</p><p className="font-bold text-neutral-700 break-words">{transaction.data_transacao} • {transaction.descricao_banco} • {valueFormatter(transaction.valor)} • {transaction.tipo_movimento}</p></div>
+                                <div><p className="font-black uppercase text-neutral-400">Origem no arquivo</p><p className="font-bold text-neutral-700">Página {transaction.pagina_origem || '—'} • linha {transaction.linha_origem || '—'} • {transaction.origem_extracao || 'texto'}</p></div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="border-2 border-amber-200 bg-amber-50 rounded-3xl p-4 space-y-2">
+                          {[...(importPreview.pendingReviews || []).map((pending, index) => <p key={`review-${index}`} className="text-[9px] font-bold text-amber-900 uppercase">Página {pending.pagina_origem || '—'} • linha {pending.linha_origem || '—'}: {pending.motivos.join('; ')} • {pending.trecho}</p>), ...importPreview.consistency.criticalErrors.map(issue => <p key={`${issue.code}-${issue.transactionIndex ?? 'lote'}`} className="text-[9px] font-bold text-red-900 uppercase">{issue.message}</p>)]}
+                          {!importPreview.pendingReviews?.length && !importPreview.consistency.criticalErrors.length && <p className="text-[9px] font-black text-emerald-700 uppercase">Nenhuma pendência de revisão.</p>}
                         </div>
                       )}
                     </div>
@@ -950,8 +1005,8 @@ export default function Conciliacao() {
               <footer className="px-10 py-8 border-t bg-neutral-50/50 flex justify-end gap-4 shrink-0">
                 {importError && <p className="mr-auto max-w-[280px] text-[10px] font-black text-red-500 uppercase">{importError}</p>}
                 <button type="button" onClick={handleImportCancel} className="px-8 text-[10px] font-black uppercase text-neutral-400 tracking-widest hover:text-neutral-900 transition-colors">Cancelar</button>
-                <Button type="submit" disabled={!importPreview || isPreparingImport || isConfirmingImport || Boolean(importPreview?.pendingReviews?.length) || ((importPreview?.fileType === 'csv' || importPreview?.fileType === 'xlsx') && (!columnMapping.data || !columnMapping.valor || !columnMapping.descricao))}>
-                  {isPreparingImport || isConfirmingImport ? 'Processando...' : importPreview?.pendingReviews?.length ? 'Resolva as pendências' : 'Confirmar Importação'}
+                <Button type="submit" disabled={!importPreview || isPreparingImport || isConfirmingImport || Boolean(importPreview?.pendingReviews?.length) || Boolean(importPreview?.consistency.criticalErrors.length) || ((importPreview?.fileType === 'csv' || importPreview?.fileType === 'xlsx') && (!columnMapping.data || !columnMapping.valor || !columnMapping.descricao))}>
+                  {isPreparingImport || isConfirmingImport ? 'Processando...' : importPreview?.consistency.criticalErrors.length || importPreview?.pendingReviews?.length ? 'Resolva as pendências' : 'Confirmar Importação'}
                 </Button>
               </footer>
             </motion.form>

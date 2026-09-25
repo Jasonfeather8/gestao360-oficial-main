@@ -46,6 +46,7 @@ type ExtractedResult = {
   closingBalance?: number
   totalEntries?: number
   totalExits?: number
+  reportedTransactionCount?: number
   transactions: ParsedTransaction[]
   pendingReviews: PendingReview[]
   sourceOrigin: SourceOrigin
@@ -133,6 +134,14 @@ const findLabeledMoney = (text: string, label: RegExp): number | undefined => {
   if (!match) return undefined
   const value = parseMoney(match[1])
   return Number.isFinite(value) ? Math.abs(value) : undefined
+}
+
+const findLabeledCount = (text: string): number | undefined => {
+  const match = text.match(/(?:quantidade|qtd\.?)\s*(?:de\s*)?(?:transa[cç][oõ]es|lan[cç]amentos|registros)\s*[:=-]?\s*(\d{1,7})(?![\d/])/i)
+    || text.match(/total\s+(?:de\s+)?(?:transa[cç][oõ]es|lan[cç]amentos|registros)\s*:\s*(\d{1,7})(?![\d/])/i)
+  if (!match) return undefined
+  const value = Number(match[1])
+  return Number.isInteger(value) && value >= 0 ? value : undefined
 }
 
 const classifyBankName = (text: string): string | undefined => {
@@ -336,8 +345,9 @@ const extractText = (text: string, sourceOrigin: SourceOrigin, pages: number, la
   return {
     openingBalance: findLabeledMoney(allText, /saldo\s+(?:inicial|anterior)/i),
     closingBalance: findLabeledMoney(allText, /saldo\s+(?:final|atual)/i),
-    totalEntries: findLabeledMoney(allText, /total\s+(?:de\s+)?entradas?/i),
-    totalExits: findLabeledMoney(allText, /total\s+(?:de\s+)?sa[ií]das?/i),
+    totalEntries: findLabeledMoney(allText, /total\s+(?:de\s+)?(?:entradas?|cr[eé]ditos?|credits?|deposits?)/i),
+    totalExits: findLabeledMoney(allText, /total\s+(?:de\s+)?(?:sa[ií]das?|d[eé]bitos?|debits?|withdrawals?)/i),
+    reportedTransactionCount: findLabeledCount(allText),
     transactions, pendingReviews, sourceOrigin,
   }
 }
