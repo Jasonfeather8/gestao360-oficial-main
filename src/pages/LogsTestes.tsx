@@ -4,6 +4,8 @@ import {
   AlertTriangle,
   Check,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Clipboard,
   Copy,
   Database,
@@ -242,18 +244,24 @@ export default function LogsTestes() {
         </>
       )}
 
-      <section className="fixed bottom-4 right-4 z-30 w-[min(92vw,720px)] overflow-hidden rounded-2xl border border-surface-border bg-surface shadow-2xl">
-        <div className="flex items-center justify-between gap-3 border-b border-surface-border bg-surface-container-low px-4 py-3">
-          <button type="button" onClick={() => setIsPanelOpen(open => !open)} className="flex min-w-0 items-center gap-2 text-left">
+      <section className={`fixed bottom-4 right-4 z-30 overflow-hidden rounded-2xl border border-surface-border bg-surface shadow-2xl ${isPanelOpen ? 'w-[min(92vw,720px)]' : 'w-auto max-w-[calc(100vw-2rem)]'}`}>
+        {isPanelOpen ? <div className="flex items-center justify-between gap-3 border-b border-surface-border bg-surface-container-low px-4 py-3">
+          <div className="flex min-w-0 items-center gap-2">
             <Activity className="h-4 w-4 shrink-0 text-primary" />
             <span className="truncate text-xs font-black uppercase tracking-wider text-on-surface">Monitor administrativo flutuante</span>
             <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-black text-primary">{filteredEntries.length}</span>
-          </button>
+          </div>
           <div className="flex shrink-0 items-center gap-2">
             <button type="button" onClick={() => copyWithFeedback(json(filteredEntries), 'Eventos filtrados copiados em JSON.')} disabled={filteredEntries.length === 0} title="Copiar Tudo" className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-surface-border px-2 text-[10px] font-black text-on-surface-variant hover:bg-surface disabled:opacity-40"><Clipboard className="h-3.5 w-3.5" />Copiar Tudo</button>
             <button type="button" onClick={clearLogs} disabled={entries.length === 0} title="Limpar logs" className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-red-200 px-2 text-[10px] font-black text-red-700 hover:bg-red-50 disabled:opacity-40"><Trash2 className="h-3.5 w-3.5" />Limpar logs</button>
+            <button type="button" onClick={() => setIsPanelOpen(false)} aria-expanded={isPanelOpen} aria-label="Fechar monitor administrativo flutuante" className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-surface-border px-2 text-[10px] font-black text-on-surface-variant hover:bg-surface"><ChevronDown className="h-3.5 w-3.5" />Fechar</button>
           </div>
-        </div>
+        </div> : <button type="button" onClick={() => setIsPanelOpen(true)} aria-expanded={isPanelOpen} aria-label="Abrir monitor administrativo flutuante" className="inline-flex h-10 items-center gap-2 px-3 text-xs font-black uppercase tracking-wide text-on-surface hover:bg-surface-container">
+          <Activity className="h-4 w-4 text-primary" />
+          <span>Monitor administrativo</span>
+          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-black text-primary">{filteredEntries.length}</span>
+          <ChevronUp className="h-4 w-4 text-primary" />
+        </button>}
         {isPanelOpen && <>
           <div role="tablist" aria-label="Monitor administrativo" className="flex border-b border-surface-border px-3 pt-2">
             <button type="button" role="tab" aria-selected={panelTab === 'events'} onClick={() => setPanelTab('events')} className={`border-b-2 px-3 py-2 text-[10px] font-black uppercase tracking-wide ${panelTab === 'events' ? 'border-primary text-primary' : 'border-transparent text-on-surface-variant hover:text-on-surface'}`}>Eventos</button>
