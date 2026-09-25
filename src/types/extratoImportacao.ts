@@ -1,7 +1,8 @@
-export type ImportFileType = 'csv' | 'xlsx' | 'pdf';
+export type ImportFileFormat = 'csv' | 'xlsx' | 'pdf' | 'ofx';
+export type ImportFileType = Exclude<ImportFileFormat, 'ofx'>;
 export type ImportMode = 'entrada' | 'saida' | 'ambos';
-export type ImportSourceOrigin = 'texto' | 'ocr';
-export type ImportFileOrigin = 'pdf_texto' | 'pdf_ocr' | 'csv' | 'xlsx';
+export type ImportSourceOrigin = 'texto' | 'ocr' | 'estruturado';
+export type ImportFileOrigin = 'pdf_texto' | 'pdf_ocr' | 'csv' | 'xlsx' | 'ofx_estruturado';
 export type ImportReviewStatus = 'valida' | 'pendente_revisao';
 
 export interface ImportTransaction {
@@ -22,6 +23,7 @@ export interface ImportTransaction {
   confianca_extracao?: number;
   motivo_alerta?: string | null;
   extrato_lote_id?: string;
+  formato_arquivo?: ImportFileFormat;
   origem_extracao?: ImportSourceOrigin;
   origem_arquivo?: ImportFileOrigin;
   estado_revisao?: ImportReviewStatus;
@@ -98,6 +100,8 @@ export interface ImportLotDraft {
   mimeType: string;
   fileHash: string;
   storagePath: string;
+  formatoArquivo?: ImportFileFormat;
+  origemExtracao?: ImportSourceOrigin;
   status?: ImportLotStatus;
 }
 
@@ -115,7 +119,7 @@ export interface ImportConfirmationMetadata {
   extractedCount?: number;
   ocrCount?: number;
   consistency?: ImportConsistencyState;
-  rawTransactions?: Array<Pick<ImportTransaction, 'data_original' | 'descricao_original' | 'valor_original' | 'data_transacao' | 'descricao_banco' | 'valor' | 'tipo_movimento' | 'pagina_origem' | 'linha_origem' | 'origem_extracao' | 'origem_arquivo'>>;
+  rawTransactions?: Array<Pick<ImportTransaction, 'data_original' | 'descricao_original' | 'valor_original' | 'data_transacao' | 'descricao_banco' | 'valor' | 'tipo_movimento' | 'pagina_origem' | 'linha_origem' | 'formato_arquivo' | 'origem_extracao' | 'origem_arquivo'>>;
   sourceOrigin?: ImportSourceOrigin;
   pendingReviewCount?: number;
   reviewState?: 'validated' | 'has_pending_reviews';

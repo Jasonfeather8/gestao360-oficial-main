@@ -19,8 +19,12 @@ const mapping = { data: 'Data', valor: 'Valor', descricao: 'Descrição', docume
 
 const etapa8Transaction = (overrides: Partial<ImportTransaction> = {}): ImportTransaction => ({
   data_transacao: '2026-09-21',
+  data_original: '21/09/2026',
   valor: 123.45,
+  valor_original: 123.45,
+  valor_centavos: 12345,
   descricao_banco: 'Transação de teste contratual',
+  descricao_original: 'Transação de teste contratual',
   tipo_movimento: 'credito',
   hash_transacao: 'a'.repeat(64),
   ...overrides,
@@ -56,7 +60,7 @@ const withMockRpc = async <T>(
   }
 };
 
-test('Etapa 8 — fixtures reais disponíveis e contrato do PDF sem alegar OCR', () => {
+test('Etapa 8 — fixtures reais disponíveis e contrato do PDF textual/OCR', () => {
   const entradasPath = fixturePath('entradas-2026-09-21.csv');
   const saidasPath = fixturePath('saidas-2026-09-21.csv');
   const pdfPath = fixturePath('cora-mesquita-administracoes-14092026-a-22092026.pdf');
@@ -70,8 +74,8 @@ test('Etapa 8 — fixtures reais disponíveis e contrato do PDF sem alegar OCR',
   assert.equal(pdf.subarray(0, 5).toString('ascii'), '%PDF-');
   assert.ok(pdf.length > 0);
   assert.match(parserSource, /serve\(async \(req\)/);
-  assert.match(parserSource, /pdfParse\(new Uint8Array\(fileBytes\)\)/);
-  assert.match(parserSource, /PDF escaneado\/OCR não é suportado nesta versão/);
+  assert.match(parserSource, /pdfParse\(new Uint8Array\(bytes\)/);
+  assert.match(parserSource, /runBankStatementOcr/);
   assert.match(parserSource, /Token de autenticação ausente ou inválido/);
   assert.match(parserSource, /body\.storage_path[\s\S]*Caminho do arquivo não pertence ao usuário autenticado/);
 });
@@ -141,25 +145,23 @@ test('Etapa 8 — confirmação de importação usa RPC server-side e preserva o
     });
     assert.equal(calls.length, 1);
     assert.equal(calls[0].name, 'confirmar_importacao_extrato');
-    assert.deepEqual(calls[0].args, {
-      p_lote: {
-        id: etapa8Lot.id,
-        conta_bancaria_id: etapa8Lot.contaBancariaId,
-        arquivo_nome: etapa8Lot.fileName,
-        arquivo_tamanho: etapa8Lot.fileSize,
-        arquivo_mime_type: etapa8Lot.mimeType,
-        arquivo_hash: etapa8Lot.fileHash,
-        storage_path: etapa8Lot.storagePath,
-        importado_por: etapa8Lot.userId,
-      },
-      p_transacoes: [transaction],
-      p_metadata: {
-        periodStart: '2026-09-21',
-        periodEnd: '2026-09-21',
-        totalEntries: 123.45,
-        totalExits: 0,
-      },
+    const args = calls[0].args as { p_lote: Record<string, unknown>; p_transacoes: ImportTransaction[]; p_metadata: Record<string, unknown> };
+    assert.deepEqual(args.p_lote, {
+      id: etapa8Lot.id,
+      conta_bancaria_id: etapa8Lot.contaBancariaId,
+      arquivo_nome: etapa8Lot.fileName,
+      arquivo_tamanho: etapa8Lot.fileSize,
+      arquivo_mime_type: etapa8Lot.mimeType,
+      arquivo_hash: etapa8Lot.fileHash,
+      storage_path: etapa8Lot.storagePath,
+      importado_por: etapa8Lot.userId,
     });
+    assert.deepEqual(args.p_transacoes, [transaction]);
+    assert.equal(args.p_metadata.periodStart, '2026-09-21');
+    assert.equal(args.p_metadata.periodEnd, '2026-09-21');
+    assert.equal(args.p_metadata.totalEntries, 123.45);
+    assert.equal(args.p_metadata.totalExits, 0);
+    assert.deepEqual((args.p_metadata.rawTransactions as unknown[]).length, 1);
   });
 });
 
@@ -328,6 +330,6 @@ test('Etapa 8 — contratos críticos permanecem no código e a suíte não exec
   assert.match(serviceSource, /desvincular_conciliacao_atomica/);
   assert.match(serviceSource, /fechar_periodo_conciliacao/);
   assert.match(serviceSource, /decidir_fechamento_conciliacao/);
-  assert.match(parserSource, /PDF escaneado\/OCR não é suportado nesta versão/);
+  assert.match(parserSource, /runBankStatementOcr/);
   assert.doesNotMatch(source('tests/etapa-8.test.ts'), /supabase\.storage\.[a-z]+\(/);
 });

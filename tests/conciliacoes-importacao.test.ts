@@ -61,7 +61,7 @@ test('contratos verificáveis dos fixtures PDF e XLSX permanecem na Edge Functio
   const pdf = readFileSync(resolve(here, 'fixtures/fase-1/cora-mesquita-administracoes-14092026-a-22092026.pdf'));
   const parserSource = readFileSync(resolve(here, '../supabase/functions/parse-bank-statement/index.ts'), 'utf8');
   assert.equal(pdf.subarray(0, 5).toString('ascii'), '%PDF-');
-  assert.match(parserSource, /PDF escaneado\/OCR não é suportado nesta versão/);
+  assert.match(parserSource, /runBankStatementOcr/);
   assert.match(parserSource, /npm:xlsx@0\.18\.5/);
   assert.match(parserSource, /sheet_to_json/);
   assert.match(parserSource, /file_type === 'xlsx'/);

@@ -131,7 +131,9 @@ export interface TransacaoBanco {
   arquivo_hash?: string | null;
   confianca_extracao?: number | null;
   motivo_alerta?: string | null;
-  origem_arquivo?: 'pdf_texto' | 'pdf_ocr' | 'csv' | 'xlsx' | null;
+  formato_arquivo?: 'pdf' | 'csv' | 'xlsx' | 'ofx' | null;
+  origem_extracao?: 'texto' | 'ocr' | 'estruturado' | null;
+  origem_arquivo?: 'pdf_texto' | 'pdf_ocr' | 'csv' | 'xlsx' | 'ofx_estruturado' | null;
   created_at?: string;
 }
 

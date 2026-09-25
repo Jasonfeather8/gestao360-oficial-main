@@ -5,6 +5,7 @@ import {
   ImportConfirmationMetadata,
   ImportConsistencyIssue,
   ImportConsistencyState,
+  ImportFileFormat,
   ImportFileOrigin,
   ImportFileType,
   ImportLotDraft,
@@ -216,6 +217,8 @@ export const buildCsvTransactions = async (
       linha_origem: index + 2,
       confianca_extracao: 1,
       motivo_alerta: null,
+      formato_arquivo: origemArquivo,
+      origem_extracao: 'estruturado' as const,
       origem_arquivo: origemArquivo,
     };
     const hash = await buildHash(accountId, base);
@@ -342,6 +345,8 @@ const attachLotMetadata = (transactions: ImportTransaction[], lot: ImportLotDraf
     arquivo_nome: lot.fileName,
     arquivo_hash: lot.fileHash,
     extrato_lote_id: lot.id,
+    formato_arquivo: transaction.formato_arquivo || lot.formatoArquivo,
+    origem_extracao: transaction.origem_extracao || lot.origemExtracao,
   }));
 
 export const conciliacoesService = {
@@ -403,6 +408,8 @@ export const conciliacoesService = {
       mimeType: fileType === 'pdf' ? PDF_MIME_TYPE : fileType === 'xlsx' ? XLSX_MIME_TYPE : 'text/csv',
       fileHash,
       storagePath,
+      formatoArquivo: fileType as ImportFileFormat,
+      origemExtracao: fileType === 'pdf' ? undefined : 'estruturado',
       status: 'em_validacao',
     };
 
@@ -420,6 +427,8 @@ export const conciliacoesService = {
           arquivo_hash: lot.fileHash,
           storage_path: lot.storagePath,
           importado_por: lot.userId,
+          ...(lot.formatoArquivo ? { formato_arquivo: lot.formatoArquivo } : {}),
+          ...(lot.origemExtracao ? { origem_extracao: lot.origemExtracao } : {}),
         },
       });
       if (lotError) throw lotError;
@@ -445,10 +454,10 @@ export const conciliacoesService = {
           periodStart: summary.periodStart,
           periodEnd: summary.periodEnd,
           extractedCount: transactions.length,
-          sourceOrigin: undefined,
+          sourceOrigin: 'estruturado',
           reviewState: 'validated',
         };
-        return { lot, preview: { fileName: file.name, fileType, mimeType: lot.mimeType, ...summary, size: file.size, transactions, firstRows: parsed.rows.slice(0, 5), sourceRows: parsed.rows, sourceHeaders: parsed.headers, consistency: validateImportConsistency(transactions, consistencyMetadata) } };
+        return { lot, preview: { fileName: file.name, fileType, mimeType: lot.mimeType, ...summary, size: file.size, transactions, sourceOrigin: 'estruturado', firstRows: parsed.rows.slice(0, 5), sourceRows: parsed.rows, sourceHeaders: parsed.headers, consistency: validateImportConsistency(transactions, consistencyMetadata) } };
       }
 
       const { data, error: functionError } = await supabase.functions.invoke('parse-bank-statement', { body: { lot_id: lot.id, storage_path: storagePath, file_type: 'pdf', file_hash: lot.fileHash, mime_type: lot.mimeType } });
@@ -480,6 +489,7 @@ export const conciliacoesService = {
           linha_origem: transaction.linha,
           confianca_extracao: transaction.confidence,
           motivo_alerta: transaction.alert || null,
+          formato_arquivo: 'pdf' as const,
           origem_extracao: transaction.origem,
           origem_arquivo: transaction.origem === 'ocr' ? 'pdf_ocr' as const : 'pdf_texto' as const,
           estado_revisao: 'valida' as const,
@@ -492,6 +502,7 @@ export const conciliacoesService = {
       transactions.forEach(transaction => { if (hashes.has(transaction.hash_transacao)) throw friendlyError('O PDF contém transações duplicadas.'); hashes.add(transaction.hash_transacao); });
       const summary = transactions.length ? summarize(transactions) : { periodStart: undefined, periodEnd: undefined, totalEntries: 0, totalExits: 0 };
       const pendingReviews = result.pendingReviews || [];
+      lot.origemExtracao = result.sourceOrigin;
       const previewMetadata: ImportConfirmationMetadata = {
         pages: result.pages,
         periodStart: result.periodStart || summary.periodStart,
@@ -544,12 +555,14 @@ export const conciliacoesService = {
         arquivo_hash: lot.fileHash,
         storage_path: lot.storagePath,
         importado_por: lot.userId,
+        ...(lot.formatoArquivo ? { formato_arquivo: lot.formatoArquivo } : {}),
+        ...(lot.origemExtracao ? { origem_extracao: lot.origemExtracao } : {}),
       },
       p_transacoes: transactions,
       p_metadata: {
         ...metadata,
         consistency,
-        rawTransactions: transactions.map(({ data_original, descricao_original, valor_original, data_transacao, descricao_banco, valor, tipo_movimento, pagina_origem, linha_origem, origem_extracao, origem_arquivo }) => ({ data_original, descricao_original, valor_original, data_transacao, descricao_banco, valor, tipo_movimento, pagina_origem, linha_origem, origem_extracao, origem_arquivo })),
+        rawTransactions: transactions.map(({ data_original, descricao_original, valor_original, data_transacao, descricao_banco, valor, tipo_movimento, pagina_origem, linha_origem, formato_arquivo, origem_extracao, origem_arquivo }) => ({ data_original, descricao_original, valor_original, data_transacao, descricao_banco, valor, tipo_movimento, pagina_origem, linha_origem, formato_arquivo, origem_extracao, origem_arquivo })),
       },
     });
     if (error) {
