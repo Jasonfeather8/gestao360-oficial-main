@@ -1,6 +1,7 @@
 export type ImportFileType = 'csv' | 'xlsx' | 'pdf';
 export type ImportMode = 'entrada' | 'saida' | 'ambos';
 export type ImportSourceOrigin = 'texto' | 'ocr';
+export type ImportFileOrigin = 'pdf_texto' | 'pdf_ocr' | 'csv' | 'xlsx';
 export type ImportReviewStatus = 'valida' | 'pendente_revisao';
 
 export interface ImportTransaction {
@@ -22,6 +23,7 @@ export interface ImportTransaction {
   motivo_alerta?: string | null;
   extrato_lote_id?: string;
   origem_extracao?: ImportSourceOrigin;
+  origem_arquivo?: ImportFileOrigin;
   estado_revisao?: ImportReviewStatus;
 }
 
@@ -113,7 +115,7 @@ export interface ImportConfirmationMetadata {
   extractedCount?: number;
   ocrCount?: number;
   consistency?: ImportConsistencyState;
-  rawTransactions?: Array<Pick<ImportTransaction, 'data_original' | 'descricao_original' | 'valor_original' | 'data_transacao' | 'descricao_banco' | 'valor' | 'tipo_movimento' | 'pagina_origem' | 'linha_origem' | 'origem_extracao'>>;
+  rawTransactions?: Array<Pick<ImportTransaction, 'data_original' | 'descricao_original' | 'valor_original' | 'data_transacao' | 'descricao_banco' | 'valor' | 'tipo_movimento' | 'pagina_origem' | 'linha_origem' | 'origem_extracao' | 'origem_arquivo'>>;
   sourceOrigin?: ImportSourceOrigin;
   pendingReviewCount?: number;
   reviewState?: 'validated' | 'has_pending_reviews';
@@ -146,6 +148,7 @@ export interface PdfParseResult {
     confidence: number;
     alert?: string | null;
     origem: ImportSourceOrigin;
+    origem_arquivo?: ImportFileOrigin;
   }>;
   pendingReviews: ImportReviewItem[];
 }

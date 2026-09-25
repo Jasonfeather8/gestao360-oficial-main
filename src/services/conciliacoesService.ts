@@ -5,6 +5,7 @@ import {
   ImportConfirmationMetadata,
   ImportConsistencyIssue,
   ImportConsistencyState,
+  ImportFileOrigin,
   ImportFileType,
   ImportLotDraft,
   ImportMode,
@@ -182,6 +183,7 @@ export const buildCsvTransactions = async (
   rows: Array<Record<string, string>>,
   mapping: { data: string; valor: string; descricao: string; documento: string },
   importMode: ImportMode,
+  origemArquivo: Extract<ImportFileOrigin, 'csv' | 'xlsx'> = 'csv',
 ): Promise<ImportTransaction[]> => {
   if (!mapping.data || !mapping.valor || !mapping.descricao) {
     throw friendlyError('Selecione data, valor e descrição para continuar.');
@@ -214,6 +216,7 @@ export const buildCsvTransactions = async (
       linha_origem: index + 2,
       confianca_extracao: 1,
       motivo_alerta: null,
+      origem_arquivo: origemArquivo,
     };
     const hash = await buildHash(accountId, base);
     if (hashes.has(hash)) throw friendlyError(`A linha ${index + 2} é duplicada dentro do arquivo.`);
@@ -435,7 +438,7 @@ export const conciliacoesService = {
             })();
         const mapping = { data: parsed.headers.find(header => /dat/i.test(header)) || '', valor: parsed.headers.find(header => /val/i.test(header)) || '', descricao: parsed.headers.find(header => /desc/i.test(header)) || '', documento: parsed.headers.find(header => /doc/i.test(header)) || '' };
         const transactions = mapping.data && mapping.valor && mapping.descricao
-          ? attachLotMetadata(await buildCsvTransactions(contaBancariaId, parsed.rows, mapping, 'ambos'), lot)
+          ? attachLotMetadata(await buildCsvTransactions(contaBancariaId, parsed.rows, mapping, 'ambos', fileType), lot)
           : [];
         const summary = transactions.length ? summarize(transactions) : { periodStart: undefined, periodEnd: undefined, totalEntries: 0, totalExits: 0 };
         const consistencyMetadata: ImportConfirmationMetadata = {
@@ -476,8 +479,9 @@ export const conciliacoesService = {
           pagina_origem: transaction.pagina,
           linha_origem: transaction.linha,
           confianca_extracao: transaction.confidence,
-          motivo_alerta: [`origem_${transaction.origem}`, transaction.alert].filter(Boolean).join('; ') || null,
+          motivo_alerta: transaction.alert || null,
           origem_extracao: transaction.origem,
+          origem_arquivo: transaction.origem === 'ocr' ? 'pdf_ocr' as const : 'pdf_texto' as const,
           estado_revisao: 'valida' as const,
         };
         if (!base.descricao_banco || !Number.isFinite(base.valor) || base.valor === 0) throw friendlyError('O parser retornou uma transação PDF sem data, valor ou descrição válida.');
@@ -545,7 +549,7 @@ export const conciliacoesService = {
       p_metadata: {
         ...metadata,
         consistency,
-        rawTransactions: transactions.map(({ data_original, descricao_original, valor_original, data_transacao, descricao_banco, valor, tipo_movimento, pagina_origem, linha_origem, origem_extracao }) => ({ data_original, descricao_original, valor_original, data_transacao, descricao_banco, valor, tipo_movimento, pagina_origem, linha_origem, origem_extracao })),
+        rawTransactions: transactions.map(({ data_original, descricao_original, valor_original, data_transacao, descricao_banco, valor, tipo_movimento, pagina_origem, linha_origem, origem_extracao, origem_arquivo }) => ({ data_original, descricao_original, valor_original, data_transacao, descricao_banco, valor, tipo_movimento, pagina_origem, linha_origem, origem_extracao, origem_arquivo })),
       },
     });
     if (error) {

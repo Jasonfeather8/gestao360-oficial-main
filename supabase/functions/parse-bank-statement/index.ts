@@ -13,6 +13,7 @@ import * as XLSX from 'npm:xlsx@0.18.5'
 import { runBankStatementOcr } from '../_shared/ocrBankStatement.ts'
 
 type SourceOrigin = 'texto' | 'ocr'
+type FileOrigin = 'pdf_texto' | 'pdf_ocr' | 'csv' | 'xlsx'
 type LayoutToken = { text: string; x: number; y: number; width: number }
 type LayoutPage = { page: number; lines: Array<{ text: string; tokens: LayoutToken[] }> }
 type PendingReview = {
@@ -39,6 +40,7 @@ type ParsedTransaction = {
   confidence: number
   alert?: string | null
   origem: SourceOrigin
+  origem_arquivo: FileOrigin
 }
 
 type ExtractedResult = {
@@ -257,6 +259,7 @@ const extractText = (text: string, sourceOrigin: SourceOrigin, pages: number, la
       credit: row.direction === 'credito' ? Math.abs(row.amount!) : undefined,
       debit: row.direction === 'debito' ? Math.abs(row.amount!) : undefined,
       confidence, alert, origem: sourceOrigin,
+      origem_arquivo: sourceOrigin === 'ocr' ? 'pdf_ocr' : 'pdf_texto',
     })
   }
 

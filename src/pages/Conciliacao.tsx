@@ -74,6 +74,7 @@ export default function Conciliacao() {
   const [selectedContaId, setSelectedContaId] = useState<string>('');
   const [selectedLancamentoIds, setSelectedLancamentoIds] = useState<string[]>([]);
   const [directionFilter, setDirectionFilter] = useState<'todos' | 'entrada' | 'saida'>('todos');
+  const [reviewFilter, setReviewFilter] = useState<'todos' | 'pendencias'>('todos');
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -114,6 +115,25 @@ export default function Conciliacao() {
   }, [contas, selectedContaId]);
 
   const valueFormatter = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+  const normalizedTransacoes = useMemo(() => transacoes.filter(transaction => {
+    const valueCents = Math.round(Number(transaction.valor) * 100);
+    return /^\d{4}-\d{2}-\d{2}$/.test(transaction.data_transacao)
+      && Number.isFinite(transaction.valor)
+      && Number.isInteger(transaction.valor_centavos)
+      && transaction.valor_centavos === valueCents
+      && Boolean(transaction.data_original?.trim())
+      && Boolean(transaction.descricao_banco?.trim())
+      && Boolean(transaction.descricao_original?.trim())
+      && /^[a-f0-9]{64}$/.test(transaction.hash_transacao)
+      && ((transaction.valor > 0 && transaction.tipo_movimento === 'credito') || (transaction.valor < 0 && transaction.tipo_movimento === 'debito'));
+  }), [transacoes]);
+  const hasReviewAlert = (transaction: TransacaoBanco) => Boolean(transaction.motivo_alerta?.trim()) || (transaction.confianca_extracao !== null && transaction.confianca_extracao !== undefined && transaction.confianca_extracao < 0.9);
+  const fileOriginLabel = (origin: TransacaoBanco['origem_arquivo']) => ({
+    pdf_texto: 'PDF textual',
+    pdf_ocr: 'PDF OCR',
+    csv: 'CSV',
+    xlsx: 'XLSX',
+  }[origin || ''] || 'Origem anterior');
 
   const periodoAtual = useMemo(() => {
     const [year, month] = selectedMonth.split('-').map(Number);
@@ -229,7 +249,7 @@ export default function Conciliacao() {
         const rows = importPreview.fileType === 'csv'
           ? parseCsv(csvContentText).rows
           : importPreview.sourceRows || [];
-        transactions = await buildCsvTransactions(importLot.contaBancariaId, rows, columnMapping, importMode);
+        transactions = await buildCsvTransactions(importLot.contaBancariaId, rows, columnMapping, importMode, importPreview.fileType);
       }
       if (!transactions.length) throw new Error('O arquivo precisa conter ao menos uma transação válida.');
       const confirmationMetadata: ImportConfirmationMetadata = {
@@ -272,7 +292,7 @@ export default function Conciliacao() {
   const executeConciliationLink = async () => {
     if (!selectedTransacaoForConciliationId || selectedLancamentoIds.length === 0) return;
     try {
-      const tx = transacoes.find(t => t.id === selectedTransacaoForConciliationId);
+      const tx = normalizedTransacoes.find(t => t.id === selectedTransacaoForConciliationId);
       const selected = lancamentos.filter(l => selectedLancamentoIds.includes(l.id));
       if (!tx || selected.length !== selectedLancamentoIds.length) return;
       const txCents = Math.round(Number(tx.valor.toFixed(2)) * 100);
@@ -317,7 +337,7 @@ export default function Conciliacao() {
   };
 
   const handleConfirmTransferSuggestion = async (transferenciaId: string, lado: 'origem' | 'destino') => {
-    const tx = transacoes.find(transaction => transaction.id === selectedTransacaoForConciliationId);
+    const tx = normalizedTransacoes.find(transaction => transaction.id === selectedTransacaoForConciliationId);
     if (!tx || isReconcilingTransferencia) return;
     if (!confirm(`Confirmar esta sugestão e conciliar ${lado === 'origem' ? 'a saída de origem' : 'a entrada de destino'} da transferência?`)) return;
     try {
@@ -344,19 +364,20 @@ export default function Conciliacao() {
 
   // 1. Processar Transações do Banco
   const bankStatements = useMemo(() => {
-    return transacoes
+    return normalizedTransacoes
       .filter(tx => {
         const matchConta = tx.conta_bancaria_id === selectedContaId;
         const matchMonth = tx.data_transacao.startsWith(selectedMonth);
-        const matchDirection = directionFilter === 'todos' ? true : 
+        const matchDirection = directionFilter === 'todos' ? true :
                               directionFilter === 'entrada' ? tx.valor > 0 : tx.valor < 0;
-        return matchConta && matchMonth && matchDirection;
+        const matchReview = reviewFilter === 'todos' || hasReviewAlert(tx);
+        return matchConta && matchMonth && matchDirection && matchReview;
       })
-      .map(tx => ({ 
-        ...tx, 
-        conciliation: conciliacoes.find(c => c.transacao_banco_id === tx.id) || null 
+      .map(tx => ({
+        ...tx,
+        conciliation: conciliacoes.find(c => c.transacao_banco_id === tx.id) || null
       }));
-  }, [transacoes, selectedContaId, selectedMonth, directionFilter, conciliacoes]);
+  }, [normalizedTransacoes, selectedContaId, selectedMonth, directionFilter, reviewFilter, conciliacoes]);
 
   // 2. Processar Lançamentos do ERP
   const availableLaunches = useMemo(() => {
@@ -373,7 +394,7 @@ export default function Conciliacao() {
   // 3. Lógica de Smart Match (Sugestão Visual)
   const smartMatches = useMemo(() => {
     if (!selectedTransacaoForConciliationId) return [];
-    const tx = transacoes.find(t => t.id === selectedTransacaoForConciliationId);
+    const tx = normalizedTransacoes.find(t => t.id === selectedTransacaoForConciliationId);
     if (!tx) return [];
 
     return availableLaunches.filter(l => {
@@ -382,9 +403,9 @@ export default function Conciliacao() {
       const sameDate = l.data_vencimento === tx.data_transacao;
       return sameVal || (sameVal && sameDate);
     }).map(l => l.id);
-  }, [selectedTransacaoForConciliationId, transacoes, availableLaunches]);
+  }, [selectedTransacaoForConciliationId, normalizedTransacoes, availableLaunches]);
 
-  const selectedTxForWorkspace = useMemo(() => transacoes.find(t => t.id === selectedTransacaoForConciliationId) || null, [selectedTransacaoForConciliationId, transacoes]);
+  const selectedTxForWorkspace = useMemo(() => normalizedTransacoes.find(t => t.id === selectedTransacaoForConciliationId) || null, [selectedTransacaoForConciliationId, normalizedTransacoes]);
   const originTransferSuggestions = useMemo(() => {
     if (!selectedTxForWorkspace || selectedTxForWorkspace.valor >= 0) return [];
     const txCents = Math.round(Math.abs(selectedTxForWorkspace.valor) * 100);
@@ -435,11 +456,18 @@ export default function Conciliacao() {
             >
               Entradas
             </button>
-            <button 
+            <button
               onClick={() => setDirectionFilter('saida')}
               className={`px-4 h-9 rounded-xl text-[10px] font-black uppercase transition-all ${directionFilter === 'saida' ? 'bg-red-500 text-white shadow-lg' : 'text-neutral-400 hover:text-red-500'}`}
             >
               Saídas
+            </button>
+            <button
+              onClick={() => setReviewFilter(current => current === 'pendencias' ? 'todos' : 'pendencias')}
+              className={`px-4 h-9 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-1 ${reviewFilter === 'pendencias' ? 'bg-amber-500 text-white shadow-lg' : 'text-neutral-400 hover:text-amber-600'}`}
+              title="Mostrar somente transações com alerta de revisão"
+            >
+              <AlertTriangle className="w-3 h-3" /> Pendências
             </button>
           </div>
 
@@ -648,18 +676,28 @@ export default function Conciliacao() {
                   }`}>
                     {tx.valor > 0 ? <ArrowUpRight className="w-5 h-5" /> : <ArrowDownLeft className="w-5 h-5" />}
                   </div>
-                  <div>
-                    <p className="text-xs font-black uppercase text-neutral-900 leading-tight truncate max-w-[250px]">{tx.descricao_banco}</p>
-                    <div className="flex items-center gap-3 mt-1">
+                  <div className="min-w-0">
+                    <p className="text-xs font-black uppercase text-neutral-900 leading-tight truncate max-w-[250px]">{tx.descricao_original || tx.descricao_banco}</p>
+                    {tx.descricao_original && tx.descricao_original !== tx.descricao_banco && (
+                      <p className="text-[9px] font-bold text-neutral-500 truncate max-w-[250px] mt-0.5">Normalizado: {tx.descricao_banco}</p>
+                    )}
+                    <div className="flex flex-wrap items-center gap-3 mt-1">
                       <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest flex items-center gap-1">
-                        <Calendar className="w-3 h-3" /> {tx.data_transacao.split('-').reverse().join('/')}
+                        <Calendar className="w-3 h-3" /> {tx.data_original || tx.data_transacao}
                       </span>
+                      {tx.data_original && tx.data_original !== tx.data_transacao && <span className="text-[9px] font-bold text-neutral-400 uppercase">Normalizada: {tx.data_transacao}</span>}
                       {tx.numero_documento && (
                         <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest flex items-center gap-1">
                           <Hash className="w-3 h-3" /> {tx.numero_documento}
                         </span>
                       )}
                     </div>
+                    <div className="flex flex-wrap items-center gap-2 mt-2">
+                      <span className="px-2 py-1 rounded-lg bg-neutral-100 text-[8px] font-black uppercase tracking-widest text-neutral-500">{fileOriginLabel(tx.origem_arquivo)}</span>
+                      {tx.confianca_extracao !== null && tx.confianca_extracao !== undefined && <span className="text-[8px] font-black uppercase tracking-widest text-neutral-400">Confiança {Math.round(tx.confianca_extracao * 100)}%</span>}
+                      {hasReviewAlert(tx) && <span className="flex items-center gap-1 text-[8px] font-black uppercase tracking-widest text-amber-600"><AlertTriangle className="w-3 h-3" /> Revisar</span>}
+                    </div>
+                    {hasReviewAlert(tx) && <p className="text-[9px] font-bold text-amber-700 mt-1 truncate max-w-[280px]">{tx.motivo_alerta}</p>}
                   </div>
                 </div>
 
@@ -946,7 +984,7 @@ export default function Conciliacao() {
                               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                                 <div><p className="font-black uppercase text-neutral-400">Bruto extraído</p><p className="font-bold text-neutral-700 break-words">{transaction.data_original || '—'} • {transaction.descricao_original || '—'} • {transaction.valor_original === undefined ? '—' : valueFormatter(transaction.valor_original)}</p></div>
                                 <div><p className="font-black uppercase text-neutral-400">Normalizado</p><p className="font-bold text-neutral-700 break-words">{transaction.data_transacao} • {transaction.descricao_banco} • {valueFormatter(transaction.valor)} • {transaction.tipo_movimento}</p></div>
-                                <div><p className="font-black uppercase text-neutral-400">Origem no arquivo</p><p className="font-bold text-neutral-700">Página {transaction.pagina_origem || '—'} • linha {transaction.linha_origem || '—'} • {transaction.origem_extracao || 'texto'}</p></div>
+                                <div><p className="font-black uppercase text-neutral-400">Origem no arquivo</p><p className="font-bold text-neutral-700">Página {transaction.pagina_origem || '—'} • linha {transaction.linha_origem || '—'} • {fileOriginLabel(transaction.origem_arquivo ? transaction.origem_arquivo : transaction.origem_extracao === 'ocr' ? 'pdf_ocr' : transaction.origem_extracao === 'texto' ? 'pdf_texto' : null)}</p></div>
                               </div>
                             </div>
                           ))}
