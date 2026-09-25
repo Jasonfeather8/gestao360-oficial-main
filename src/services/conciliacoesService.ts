@@ -343,15 +343,18 @@ export const conciliacoesService = {
       const { data, error: functionError } = await supabase.functions.invoke('parse-bank-statement', { body: { lot_id: lot.id, storage_path: storagePath, file_type: 'pdf', file_hash: lot.fileHash, mime_type: lot.mimeType } });
       if (functionError) throw friendlyError(`Não foi possível extrair o PDF: ${await functionErrorMessage(functionError, 'Falha ao processar o PDF')}`);
       const result = data as PdfParseResult;
+      if (!result || !Array.isArray(result.transactions) || !Array.isArray(result.pendingReviews) || !['texto', 'ocr'].includes(result.sourceOrigin)) {
+        throw friendlyError('O parser PDF retornou uma prévia inválida.');
+      }
       const parserNumbers = [result.openingBalance, result.closingBalance, result.totalEntries, result.totalExits].filter((value): value is number => value !== undefined);
       if (parserNumbers.some(value => !Number.isFinite(value))) throw friendlyError('O PDF contém totais ou saldos inválidos.');
-      const parsedTransactions = await Promise.all(result.transactions.map(async (transaction, index) => {
+      const parsedTransactions = await Promise.all(result.transactions.map(async (transaction) => {
         const credit = transaction.credit ?? 0;
         const debit = transaction.debit ?? 0;
-        if ((credit > 0 && debit > 0) || (credit === 0 && debit === 0) || !Number.isFinite(credit) || !Number.isFinite(debit)) {
-          throw friendlyError('O PDF contém uma transação com direção ou valor inválido.');
+        if ((credit > 0 && debit > 0) || (credit <= 0 && debit <= 0) || !Number.isFinite(credit) || !Number.isFinite(debit)) {
+          throw friendlyError('O parser retornou uma transação PDF válida sem direção exclusiva.');
         }
-        const value = credit > 0 ? credit : -Math.abs(debit);
+        const value = credit > 0 ? Math.abs(credit) : -Math.abs(debit);
         const base = {
           data_transacao: normalizeDate(transaction.date),
           data_original: transaction.date,
@@ -361,25 +364,22 @@ export const conciliacoesService = {
           descricao_original: transaction.description.trim(),
           numero_documento: transaction.document?.trim() || undefined,
           tipo_movimento: value > 0 ? 'credito' as const : 'debito' as const,
-          linha_origem: index + 1,
-          confianca_extracao: 1,
-          motivo_alerta: null,
+          pagina_origem: transaction.pagina,
+          linha_origem: transaction.linha,
+          confianca_extracao: transaction.confidence,
+          motivo_alerta: [`origem_${transaction.origem}`, transaction.alert].filter(Boolean).join('; ') || null,
+          origem_extracao: transaction.origem,
+          estado_revisao: 'valida' as const,
         };
-        if (!base.descricao_banco || !Number.isFinite(base.valor) || base.valor === 0) throw friendlyError('O PDF contém uma transação sem data, valor ou descrição válida.');
+        if (!base.descricao_banco || !Number.isFinite(base.valor) || base.valor === 0) throw friendlyError('O parser retornou uma transação PDF sem data, valor ou descrição válida.');
         return { ...base, hash_transacao: await buildHash(contaBancariaId, base) };
       }));
       const transactions = attachLotMetadata(parsedTransactions, lot);
       const hashes = new Set<string>();
       transactions.forEach(transaction => { if (hashes.has(transaction.hash_transacao)) throw friendlyError('O PDF contém transações duplicadas.'); hashes.add(transaction.hash_transacao); });
-      if (!transactions.length) throw friendlyError('Não foi possível encontrar transações no PDF.');
-      const summary = summarize(transactions);
-      if (result.totalEntries !== undefined && Math.abs(result.totalEntries - summary.totalEntries) > 0.01) throw friendlyError('O total de entradas do PDF não bate com as transações extraídas.');
-      if (result.totalExits !== undefined && Math.abs(result.totalExits - summary.totalExits) > 0.01) throw friendlyError('O total de saídas do PDF não bate com as transações extraídas.');
-      if (result.openingBalance !== undefined && result.closingBalance !== undefined && result.totalEntries !== undefined && result.totalExits !== undefined) {
-        const expectedClosing = result.openingBalance + result.totalEntries - result.totalExits;
-        if (Math.abs(expectedClosing - result.closingBalance) > 0.02) throw friendlyError('O saldo final do PDF não é compatível com o saldo inicial e os totais extraídos.');
-      }
-      return { lot, preview: { fileName: file.name, fileType, mimeType: lot.mimeType, size: file.size, pages: result.pages, periodStart: result.periodStart || summary.periodStart, periodEnd: result.periodEnd || summary.periodEnd, openingBalance: result.openingBalance, closingBalance: result.closingBalance, totalEntries: result.totalEntries ?? summary.totalEntries, totalExits: result.totalExits ?? summary.totalExits, transactions, firstRows: transactions.slice(0, 5).map(transaction => ({ data: transaction.data_transacao, descrição: transaction.descricao_banco, valor: transaction.valor.toFixed(2) })), bankIdentified: result.bankIdentified, parserTotals: { entries: result.totalEntries, exits: result.totalExits } } };
+      const summary = transactions.length ? summarize(transactions) : { periodStart: undefined, periodEnd: undefined, totalEntries: 0, totalExits: 0 };
+      const pendingReviews = result.pendingReviews || [];
+      return { lot, preview: { fileName: file.name, fileType, mimeType: lot.mimeType, size: file.size, pages: result.pages, periodStart: result.periodStart || summary.periodStart, periodEnd: result.periodEnd || summary.periodEnd, openingBalance: result.openingBalance, closingBalance: result.closingBalance, totalEntries: result.totalEntries ?? summary.totalEntries, totalExits: result.totalExits ?? summary.totalExits, transactions, pendingReviews, sourceOrigin: result.sourceOrigin, firstRows: transactions.slice(0, 5).map(transaction => ({ data: transaction.data_transacao, descrição: transaction.descricao_banco, valor: transaction.valor.toFixed(2), origem: transaction.origem_extracao || 'texto' })), bankIdentified: result.bankIdentified, parserTotals: { entries: result.totalEntries, exits: result.totalExits } } };
     } catch (error) {
       await conciliacoesService.cleanupImport(lot);
       throw error;
@@ -388,6 +388,8 @@ export const conciliacoesService = {
 
   confirmImport: async (lot: ImportLotDraft, transactions: ImportTransaction[], metadata: ImportConfirmationMetadata = {}) => {
     if (!lot.id || transactions.length === 0) throw friendlyError('O lote precisa conter ao menos uma transação.');
+    if (transactions.some(transaction => transaction.estado_revisao === 'pendente_revisao')) throw friendlyError('Resolva explicitamente todas as transações pendentes antes de confirmar o lote.');
+    if (metadata.reviewState === 'has_pending_reviews' || (metadata.pendingReviewCount || 0) > 0) throw friendlyError('O lote possui pendências de revisão que não podem ser importadas silenciosamente.');
     if (lot.fileSize <= 0 || lot.fileSize > MAX_IMPORT_SIZE || !/^[a-f0-9]{64}$/.test(lot.fileHash)) throw friendlyError('Os metadados do arquivo são inválidos.');
     if (lot.storagePath.split('/')[0] !== lot.userId || lot.storagePath.split('/').length < 3) throw friendlyError('O caminho do arquivo não pertence ao lote.');
     getImportFileType(lot.fileName, lot.mimeType);
@@ -397,7 +399,7 @@ export const conciliacoesService = {
       if (transaction.data_original !== undefined && !transaction.data_original.trim()) throw friendlyError(`A data original da transação ${index + 1} não pode ficar vazia.`);
       if (transaction.descricao_original !== undefined && !transaction.descricao_original.trim()) throw friendlyError(`A descrição original da transação ${index + 1} não pode ficar vazia.`);
       if (!Number.isFinite(transaction.valor) || transaction.valor === 0) throw friendlyError(`Valor inválido na transação ${index + 1}.`);
-      if (transaction.valor_centavos !== undefined && (!Number.isInteger(transaction.valor_centavos) || transaction.valor_centavos !== Math.round(transaction.valor * 100))) throw friendlyError(`Valor em centavos inválido na transação ${index + 1}.`);
+      if (!Number.isInteger(transaction.valor_centavos) || transaction.valor_centavos !== Math.round(transaction.valor * 100) || transaction.valor_centavos === 0) throw friendlyError(`Valor em centavos inválido na transação ${index + 1}.`);
       if (transaction.confianca_extracao !== undefined && (!Number.isFinite(transaction.confianca_extracao) || transaction.confianca_extracao < 0 || transaction.confianca_extracao > 1)) throw friendlyError(`Confiança de extração inválida na transação ${index + 1}.`);
       if (transaction.arquivo_nome !== undefined && (transaction.arquivo_nome !== lot.fileName || transaction.arquivo_hash !== lot.fileHash || transaction.extrato_lote_id !== lot.id)) throw friendlyError(`A origem do arquivo da transação ${index + 1} não corresponde ao lote.`);
       if (!transaction.descricao_banco.trim()) throw friendlyError(`A descrição da transação ${index + 1} não pode ficar vazia.`);

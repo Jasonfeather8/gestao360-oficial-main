@@ -222,13 +222,14 @@ export default function Conciliacao() {
     if (!importLot || !importPreview) return;
     try {
       let transactions = importPreview.transactions;
+      if (importPreview.pendingReviews?.length) throw new Error('Existem itens pendentes de revisão. Nenhum item ambíguo pode ser confirmado silenciosamente.');
       if (importPreview.fileType === 'csv' || importPreview.fileType === 'xlsx') {
         const rows = importPreview.fileType === 'csv'
           ? parseCsv(csvContentText).rows
           : importPreview.sourceRows || [];
         transactions = await buildCsvTransactions(importLot.contaBancariaId, rows, columnMapping, importMode);
       }
-      if (!transactions.length) throw new Error('O arquivo precisa conter ao menos uma transação.');
+      if (!transactions.length) throw new Error('O arquivo precisa conter ao menos uma transação válida.');
       await confirmImport({
         lot: importLot,
         transactions,
@@ -242,6 +243,9 @@ export default function Conciliacao() {
           totalEntries: importPreview.totalEntries,
           totalExits: importPreview.totalExits,
           parserTotals: importPreview.parserTotals,
+          sourceOrigin: importPreview.sourceOrigin,
+          pendingReviewCount: importPreview.pendingReviews?.length || 0,
+          reviewState: importPreview.pendingReviews?.length ? 'has_pending_reviews' : 'validated',
         },
       });
       resetImportState();
@@ -836,12 +840,18 @@ export default function Conciliacao() {
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[10px] font-black text-secondary uppercase tracking-widest">Direcionador de Fluxo</label>
-                    <div className="flex bg-neutral-100 p-1 rounded-2xl h-14">
-                      {(['ambos', 'entrada', 'saida'] as ImportMode[]).map(m => (
-                        <button key={m} type="button" onClick={() => setImportMode(m)} className={`flex-1 rounded-xl text-[10px] font-black uppercase transition-all ${importMode === m ? 'bg-white text-primary shadow-sm' : 'text-neutral-400'}`}>{m}</button>
-                      ))}
-                    </div>
+                    <label className="text-[10px] font-black text-secondary uppercase tracking-widest">Direcionador (somente CSV/XLSX)</label>
+                    {importPreview?.fileType === 'pdf' ? (
+                      <div className="h-14 rounded-2xl bg-emerald-50 border-2 border-emerald-100 px-4 flex items-center text-[9px] font-black uppercase tracking-widest text-emerald-700">
+                        Classificação automática por evidência
+                      </div>
+                    ) : (
+                      <div className="flex bg-neutral-100 p-1 rounded-2xl h-14">
+                        {(['ambos', 'entrada', 'saida'] as ImportMode[]).map(m => (
+                          <button key={m} type="button" onClick={() => setImportMode(m)} className={`flex-1 rounded-xl text-[10px] font-black uppercase transition-all ${importMode === m ? 'bg-white text-primary shadow-sm' : 'text-neutral-400'}`}>{m}</button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -870,6 +880,28 @@ export default function Conciliacao() {
                         <span>Saldo final: {importPreview.closingBalance === undefined ? 'não disponível' : valueFormatter(importPreview.closingBalance)}</span>
                       </div>
                       {importPreview.bankIdentified && <p className="text-[10px] font-black text-primary uppercase">Banco identificado: {importPreview.bankIdentified}</p>}
+                      {importPreview.fileType === 'pdf' && <p className="text-[10px] font-black uppercase text-neutral-500">Origem: {importPreview.sourceOrigin === 'ocr' ? 'OCR backend-only • confiança reduzida' : 'texto e layout do PDF'} • o nome do arquivo não classifica o movimento.</p>}
+                      {importPreview.pendingReviews && importPreview.pendingReviews.length > 0 && (
+                        <div className="border-2 border-amber-200 bg-amber-50 rounded-2xl p-4 space-y-2">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-amber-800">{importPreview.pendingReviews.length} item(ns) pendente(s) de revisão — não serão importados</p>
+                          {importPreview.pendingReviews.slice(0, 8).map((pending, index) => (
+                            <p key={`${pending.pagina_origem}-${pending.linha_origem}-${index}`} className="text-[9px] font-bold text-amber-900 uppercase">
+                              Página {pending.pagina_origem || '—'} • linha {pending.linha_origem || '—'}: {pending.motivos.join('; ')}
+                            </p>
+                          ))}
+                          {importPreview.pendingReviews.length > 8 && <p className="text-[9px] font-black text-amber-800 uppercase">Mais {importPreview.pendingReviews.length - 8} pendência(s).</p>}
+                        </div>
+                      )}
+                      {importPreview.transactions.some(transaction => transaction.motivo_alerta) && (
+                        <div className="border-2 border-blue-200 bg-blue-50 rounded-2xl p-4 space-y-2">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-blue-800">Avisos de extração — confira antes de confirmar</p>
+                          {importPreview.transactions.filter(transaction => transaction.motivo_alerta).slice(0, 8).map((transaction, index) => (
+                            <p key={`${transaction.pagina_origem}-${transaction.linha_origem}-${index}`} className="text-[9px] font-bold text-blue-900 uppercase">
+                              Página {transaction.pagina_origem || '—'} • linha {transaction.linha_origem || '—'} • confiança {transaction.confianca_extracao === undefined ? '—' : `${Math.round(transaction.confianca_extracao * 100)}%`}: {transaction.motivo_alerta}
+                            </p>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     {(importPreview.fileType === 'csv' || importPreview.fileType === 'xlsx') && <div className="space-y-4">
                       <h4 className="text-[10px] font-black text-primary uppercase tracking-[0.2em] border-b pb-2">Mapeamento de Colunas</h4>
@@ -918,8 +950,8 @@ export default function Conciliacao() {
               <footer className="px-10 py-8 border-t bg-neutral-50/50 flex justify-end gap-4 shrink-0">
                 {importError && <p className="mr-auto max-w-[280px] text-[10px] font-black text-red-500 uppercase">{importError}</p>}
                 <button type="button" onClick={handleImportCancel} className="px-8 text-[10px] font-black uppercase text-neutral-400 tracking-widest hover:text-neutral-900 transition-colors">Cancelar</button>
-                <Button type="submit" disabled={!importPreview || isPreparingImport || isConfirmingImport || ((importPreview?.fileType === 'csv' || importPreview?.fileType === 'xlsx') && (!columnMapping.data || !columnMapping.valor || !columnMapping.descricao))}>
-                  {isPreparingImport || isConfirmingImport ? 'Processando...' : 'Confirmar Importação'}
+                <Button type="submit" disabled={!importPreview || isPreparingImport || isConfirmingImport || Boolean(importPreview?.pendingReviews?.length) || ((importPreview?.fileType === 'csv' || importPreview?.fileType === 'xlsx') && (!columnMapping.data || !columnMapping.valor || !columnMapping.descricao))}>
+                  {isPreparingImport || isConfirmingImport ? 'Processando...' : importPreview?.pendingReviews?.length ? 'Resolva as pendências' : 'Confirmar Importação'}
                 </Button>
               </footer>
             </motion.form>

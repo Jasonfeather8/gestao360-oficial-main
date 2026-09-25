@@ -1,5 +1,7 @@
 export type ImportFileType = 'csv' | 'xlsx' | 'pdf';
 export type ImportMode = 'entrada' | 'saida' | 'ambos';
+export type ImportSourceOrigin = 'texto' | 'ocr';
+export type ImportReviewStatus = 'valida' | 'pendente_revisao';
 
 export interface ImportTransaction {
   data_transacao: string;
@@ -18,6 +20,22 @@ export interface ImportTransaction {
   confianca_extracao?: number;
   motivo_alerta?: string | null;
   extrato_lote_id?: string;
+  origem_extracao?: ImportSourceOrigin;
+  estado_revisao?: ImportReviewStatus;
+}
+
+export interface ImportReviewItem {
+  data_original?: string;
+  data_transacao?: string;
+  valor?: number;
+  tipo_movimento?: 'credito' | 'debito';
+  descricao?: string;
+  pagina_origem?: number;
+  linha_origem?: number;
+  origem_extracao: ImportSourceOrigin;
+  confianca_extracao: number;
+  motivos: string[];
+  trecho: string;
 }
 
 export interface ImportPreview {
@@ -33,6 +51,8 @@ export interface ImportPreview {
   totalEntries: number;
   totalExits: number;
   transactions: ImportTransaction[];
+  pendingReviews?: ImportReviewItem[];
+  sourceOrigin?: ImportSourceOrigin;
   firstRows: Array<Record<string, string>>;
   sourceRows?: Array<Record<string, string>>;
   sourceHeaders?: string[];
@@ -64,6 +84,9 @@ export interface ImportConfirmationMetadata {
   totalEntries?: number;
   totalExits?: number;
   parserTotals?: { entries?: number; exits?: number };
+  sourceOrigin?: ImportSourceOrigin;
+  pendingReviewCount?: number;
+  reviewState?: 'validated' | 'has_pending_reviews';
 }
 
 export interface CsvParseResult {
@@ -80,11 +103,18 @@ export interface PdfParseResult {
   totalEntries?: number;
   totalExits?: number;
   bankIdentified?: string;
+  sourceOrigin: ImportSourceOrigin;
   transactions: Array<{
     date: string;
     description: string;
     credit?: number;
     debit?: number;
     document?: string;
+    pagina?: number;
+    linha?: number;
+    confidence: number;
+    alert?: string | null;
+    origem: ImportSourceOrigin;
   }>;
+  pendingReviews: ImportReviewItem[];
 }
