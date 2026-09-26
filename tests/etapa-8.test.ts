@@ -171,6 +171,7 @@ test('Etapa 8 — cancelamento/limpeza permanece um contrato seguro sem mock que
   assert.match(serviceSource, /cleanupImport: async \(lot: ImportLotDraft\)/);
   assert.match(serviceSource, /storage\.from\('bank-statements'\)\.remove\(\[lot\.storagePath\]\)/);
   assert.match(serviceSource, /if \(!persistedLot\) await conciliacoesService\.cleanupImport\(lot\)/);
+  assert.match(serviceSource, /persistedLot\?\.status === 'em_validacao'/);
 });
 
 test('Etapa 8 — diferenças aceitam tipos válidos, justificativa e múltiplos lançamentos no payload atômico', async () => {

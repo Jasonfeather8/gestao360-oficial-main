@@ -583,11 +583,13 @@ export const conciliacoesService = {
     if (!statusLookupError && persistedLot?.status === 'confirmado') return;
 
     let cancelError: unknown = statusLookupError;
-    try {
-      const { error } = await supabase.rpc('cancelar_importacao_extrato', { p_lote_id: lot.id });
-      cancelError = error;
-    } catch (error) {
-      cancelError = error;
+    if (!statusLookupError && persistedLot?.status === 'em_validacao') {
+      try {
+        const { error } = await supabase.rpc('cancelar_importacao_extrato', { p_lote_id: lot.id });
+        cancelError = error;
+      } catch (error) {
+        cancelError = error;
+      }
     }
 
     let storageError: unknown = null;
