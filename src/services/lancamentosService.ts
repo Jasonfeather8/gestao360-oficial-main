@@ -404,18 +404,21 @@ export const lancamentosService = {
     if (hasReceivedPayment && (valorRecebido < 0 || valorRecebido > saldoDisponivel + 0.005)) {
       throw new Error('O valor recebido não pode ser maior que o saldo disponível do lançamento.');
     }
-    await assertOperationalBalance({
-      tipo: item.tipo,
-      tipoBaixa: item.tipo_baixa,
-      contaId: item.conta_bancaria_id,
-      amount: valorRecebido
-    });
+    if (item.ja_recebido !== true) {
+      await assertOperationalBalance({
+        tipo: item.tipo,
+        tipoBaixa: item.tipo_baixa,
+        contaId: item.conta_bancaria_id,
+        amount: valorRecebido
+      });
+    }
 
     const lancamentoData = {
       ...item,
       user_id: user.id,
       usuario_criador_id: user.id,
-      // Se não for master, garante que não entra como confirmado
+      // A sinalização de previsão nunca é uma baixa financeira.
+      status_pagamento: 'aberto',
       status_aprovacao: isMaster ? (item.status_aprovacao || 'confirmado_master') : 'digital'
     };
 
@@ -446,13 +449,17 @@ export const lancamentosService = {
         (total: number, parcela: any) => total + (Number(parcela.valor_previsto) || 0),
         0
       );
-      const recorrenciaRecebida = item.ja_recebido === true || item.status_pagamento === 'pago' || item.status_pagamento === 'pago_parcial';
+      const parcelaSinalizada = item.ja_recebido === true;
       const parcelas = recorrencia.parcelas.map((p: any, index: number) => ({
         ...lancamentoData,
-        ...(recorrenciaRecebida && index === 0 ? {} : {
-          status_pagamento: 'aberto',
-          valor_recebido: 0,
+        status_pagamento: 'aberto',
+        ...(parcelaSinalizada && index === 0 ? {
+          ja_recebido: true,
+          valor_recebido: valorRecebido,
+          data_pagamento: item.data_pagamento || null
+        } : {
           ja_recebido: false,
+          valor_recebido: 0,
           data_pagamento: null
         }),
         data_vencimento: index === 0 ? item.data_vencimento : p.data_vencimento,
@@ -495,9 +502,21 @@ export const lancamentosService = {
 
     const { data: current } = await supabase
       .from('lancamentos_financeiros')
-      .select('recorrencia_id, tipo, conta_bancaria_id, valor_previsto, desconto_valor, desconto_tipo, acrescimo_valor, acrescimo_tipo, valor_recebido, status_pagamento, tipo_baixa, observacoes')
+      .select('recorrencia_id, tipo, conta_bancaria_id, valor_previsto, desconto_valor, desconto_tipo, acrescimo_valor, acrescimo_tipo, valor_recebido, status_pagamento, status_aprovacao, ja_recebido, data_pagamento, tipo_baixa, observacoes')
       .eq('id', id)
       .single();
+
+    const currentHasConfirmedPayment = current?.status_aprovacao === 'confirmado_master' &&
+      (current.status_pagamento === 'pago' || current.status_pagamento === 'pago_parcial');
+    if (
+      (safeData.status_pagamento === 'pago' || safeData.status_pagamento === 'pago_parcial') &&
+      !currentHasConfirmedPayment
+    ) {
+      throw new Error('A baixa definitiva deve ocorrer pela conciliação ou aprovação autorizada.');
+    }
+    if ((safeData.ja_recebido === true || current?.ja_recebido === true) && !currentHasConfirmedPayment) {
+      safeData.status_pagamento = 'aberto';
+    }
 
     const isAVRUpdate = safeData.tipo_baixa === 'avr' || current?.tipo_baixa === 'avr';
     const valorPrevisto = Number(safeData.valor_previsto ?? current?.valor_previsto) || 0;
@@ -553,13 +572,15 @@ export const lancamentosService = {
     const saldoAtualDoLancamento = currentIsFinancialDebit && contaBancariaEfetiva === current?.conta_bancaria_id
       ? Number(current?.valor_recebido) || 0
       : 0;
-    await assertOperationalBalance({
-      tipo: safeData.tipo ?? current?.tipo,
-      tipoBaixa: safeData.tipo_baixa ?? current?.tipo_baixa,
-      contaId: contaBancariaEfetiva,
-      amount: valorRecebido,
-      saldoAdicionado: saldoAtualDoLancamento
-    });
+    if (safeData.ja_recebido !== true && current?.ja_recebido !== true) {
+      await assertOperationalBalance({
+        tipo: safeData.tipo ?? current?.tipo,
+        tipoBaixa: safeData.tipo_baixa ?? current?.tipo_baixa,
+        contaId: contaBancariaEfetiva,
+        amount: valorRecebido,
+        saldoAdicionado: saldoAtualDoLancamento
+      });
+    }
 
     if (mode === 'all' && current?.recorrencia_id) {
       const { data: updated, error } = await supabase
@@ -643,6 +664,9 @@ export const lancamentosService = {
     const isBPI = data.tipo_baixa === 'bpi';
     const isAVR = data.tipo_baixa === 'avr';
     const isBaixaFinanceira = !isBPI && !isAVR;
+    if (isBaixaFinanceira && current.ja_recebido === true) {
+      throw new Error('Títulos sinalizados como já pagos/recebidos só podem ser baixados pela conciliação bancária.');
+    }
     if (isAVR && (current.status_pagamento !== 'aberto' || Number(current.valor_recebido) > 0)) {
       throw new Error('Somente parcelas abertas e sem valor recebido podem ser ajustadas.');
     }
@@ -965,12 +989,8 @@ export const lancamentosService = {
     }
   },
 
-  confirmarQuitacao: async (id: string, isMaster: boolean = false): Promise<void> => {
-    const { error } = await supabase
-      .from('lancamentos_financeiros')
-      .update({ status_pagamento: isMaster ? 'pago' : 'quitação_pendente' })
-      .eq('id', id);
-    if (error) throw error;
+  confirmarQuitacao: async (_id: string, _isMaster: boolean = false): Promise<void> => {
+    throw new Error('A quitação deve ocorrer pelo fluxo de conciliação bancária e sua aprovação posterior.');
   },
 
   getAnexos: async (lancamentoId: string): Promise<any[]> => {

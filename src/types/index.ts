@@ -70,6 +70,7 @@ export interface LancamentoFinanceiro {
   tipo: 'entrada' | 'saida';
   valor_previsto: number;
   valor_recebido?: number;
+  ja_recebido?: boolean;
   data_vencimento: string;
   data_emissao: string;
   data_competencia?: string;
@@ -214,6 +215,8 @@ export interface ConciliacaoAtomicaResult {
   grupo_conciliacao_id: string;
   conciliacoes: Conciliacao[];
   diferenca_centavos: number;
+  status_pagamento?: StatusPagamento;
+  status_aprovacao?: StatusAprovacao;
 }
 
 export interface DiferencaFinanceira {

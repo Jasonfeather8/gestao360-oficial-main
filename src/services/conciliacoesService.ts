@@ -622,7 +622,14 @@ export const conciliacoesService = {
       p_justificativa: payload.justificativa || null,
     });
     if (error) throw error;
-    return data as ConciliacaoAtomicaResult;
+    const result = data as ConciliacaoAtomicaResult;
+    if (
+      (result.status_pagamento && result.status_pagamento !== 'quitação_pendente') ||
+      (result.status_aprovacao && result.status_aprovacao !== 'digital')
+    ) {
+      throw friendlyError('A conciliação retornou um estado incompatível; a aprovação Master deve ocorrer depois.');
+    }
+    return result;
   },
 
   unlinkConciliacao: async (conciliacaoId: string): Promise<boolean> => {

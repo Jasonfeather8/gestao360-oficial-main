@@ -493,6 +493,9 @@ export default function NovoLancamentoDrawer() {
   ]);
 
   // Financial Calculations
+  const isDefinitivePayment = editingItem?.status_aprovacao === 'confirmado_master' &&
+    (editingItem.status_pagamento === 'pago' || editingItem.status_pagamento === 'pago_parcial');
+
   const calculations = useMemo(() => {
     const valorBase = parseMoney(lancamentoFormDraft.valor_previsto);
     
@@ -533,15 +536,15 @@ export default function NovoLancamentoDrawer() {
         number: parcel.numero,
         dueDate: parcel.data,
         amount: parseMoney(parcel.valor),
-        paidAmount: 0,
-        status: lancamentoFormDraft.ja_recebido ? 'pago' : 'aberto'
+        paidAmount: isDefinitivePayment ? parseMoney(lancamentoFormDraft.valor_recebido) : 0,
+        status: isDefinitivePayment ? editingItem?.status_pagamento || 'pago' : 'aberto'
       }))
       : [{
         number: 1,
         dueDate: lancamentoFormDraft.data_vencimento,
         amount: parseMoney(lancamentoFormDraft.valor_previsto),
         paidAmount: parseMoney(lancamentoFormDraft.valor_recebido),
-        status: lancamentoFormDraft.ja_recebido ? 'pago' : 'aberto'
+        status: isDefinitivePayment ? editingItem?.status_pagamento || 'pago' : 'aberto'
       }];
     const recipient = entidades.find(entity => entity.id === lancamentoFormDraft.entidade_id)?.nome_razao_social || 'Não informado';
     const category = categorias.find(categoryItem => categoryItem.id === lancamentoFormDraft.categoria_id)?.nome;
@@ -558,7 +561,7 @@ export default function NovoLancamentoDrawer() {
       description: lancamentoFormDraft.observacoes,
       issueDate: lancamentoFormDraft.data_emissao,
       dueDate: lancamentoFormDraft.data_vencimento,
-      paymentDate: lancamentoFormDraft.ja_recebido ? lancamentoFormDraft.data_pagamento : undefined,
+      paymentDate: isDefinitivePayment ? lancamentoFormDraft.data_pagamento : undefined,
       amount: baseAmount,
       receivedAmount: parseMoney(lancamentoFormDraft.valor_recebido),
       adjustedAmount: calculations.subtotal,
@@ -567,15 +570,15 @@ export default function NovoLancamentoDrawer() {
         { label: 'Acréscimo', value: `${lancamentoFormDraft.acrescimo_valor || '0,00'} ${lancamentoFormDraft.acrescimo_tipo === 'porcentagem' ? '%' : ''}`.trim() }
       ],
       parcels: draftParcels,
-      status: lancamentoFormDraft.ja_recebido ? 'pago' : 'aberto',
+      status: isDefinitivePayment ? editingItem?.status_pagamento || 'pago' : 'aberto',
       approvalStatus: editingItem?.status_aprovacao || 'Rascunho não salvo',
-      provisional: true
+      provisional: !isDefinitivePayment
     };
   }, [contas, categorias, calculations.subtotal, editingItem, entidades, lancamentoFormDraft, parcelasManuais, user?.email]);
 
   // Saldo Insuficiente validation (Item 1)
   const selectedConta = contas.find(c => c.id === lancamentoFormDraft.conta_bancaria_id);
-  const isSaidaImediata = lancamentoFormDraft.tipo === 'saida' && lancamentoFormDraft.ja_recebido && !isAVREdit;
+  const isSaidaImediata = false;
   const saldoRecebimento = Math.max(0, calculations.subtotal);
   const valorRecebido = parseMoney(lancamentoFormDraft.valor_recebido);
   const valorOperacaoSaida = isSaidaImediata && valorRecebido > 0 ? valorRecebido : 0;
@@ -803,7 +806,10 @@ export default function NovoLancamentoDrawer() {
       centro_custo_id: lancamentoFormDraft.centro_custo_id || null,
       categoria_id: lancamentoFormDraft.categoria_id || null,
       conta_bancaria_id: lancamentoFormDraft.conta_bancaria_id || null,
-      status_pagamento: lancamentoFormDraft.ja_recebido ? (pagamentoParcial ? 'pago_parcial' : 'pago') : 'aberto',
+      status_pagamento: editingItem?.status_aprovacao === 'confirmado_master' &&
+        (editingItem.status_pagamento === 'pago' || editingItem.status_pagamento === 'pago_parcial')
+        ? editingItem.status_pagamento
+        : 'aberto',
       status_aprovacao: editingItem?.status_aprovacao || 'pendente_digital',
       descricao_bancaria_original: editingItem?.descricao_bancaria_original || lancamentoFormDraft.descricao_bancaria_original || null,
       observacoes: lancamentoFormDraft.observacoes,
@@ -1158,7 +1164,9 @@ export default function NovoLancamentoDrawer() {
                       onChange={(e) => setLancamentoFormDraft({ ja_recebido: e.target.checked })}
                       className="rounded-md border-neutral-300 text-primary focus:ring-primary w-5 h-5 transition-all"
                     />
-                    <span className="font-black text-[10px] text-on-background uppercase tracking-wider">Já foi recebido / pago?</span>
+                    <span className="font-black text-[10px] text-on-background uppercase tracking-wider">
+                      {lancamentoFormDraft.tipo === 'saida' ? 'Já foi pago?' : 'Já foi recebido?'}
+                    </span>
                   </label>
 
                   {lancamentoFormDraft.ja_recebido && (
@@ -1190,7 +1198,7 @@ export default function NovoLancamentoDrawer() {
                         <div className="p-3 bg-neutral-100 border border-neutral-200 rounded-xl flex items-center gap-2">
                           <Clock className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
                           <span className="text-[8px] font-black text-neutral-500 uppercase tracking-tighter">
-                            Este pagamento afetará apenas o <span className="text-primary">Saldo Operacional</span> até ser validado pelo Master.
+                            Esta sinalização mantém o título como previsão, sem baixa ou efeito no saldo. A conciliação registrará a data bancária real.
                           </span>
                         </div>
                       )}
@@ -1321,7 +1329,7 @@ export default function NovoLancamentoDrawer() {
                   {lancamentoFormDraft.ja_recebido && (
                     <div className="flex justify-between items-center px-2 mt-2">
                       <span className={`text-[10px] font-black uppercase tracking-widest ${recebimentoAcimaSaldo ? 'text-alert-red' : pagamentoParcial ? 'text-alert-red' : 'text-bank-truth-green'}`}>
-                        {recebimentoAcimaSaldo ? 'Valor acima do saldo' : pagamentoParcial ? 'Pago Parcial' : 'Liquidado, Pago'}
+                        {recebimentoAcimaSaldo ? 'Valor acima do saldo' : pagamentoParcial ? 'Valor informado parcialmente' : 'Previsão sinalizada'}
                       </span>
                       <span className={`text-sm font-black ${recebimentoAcimaSaldo || pagamentoParcial ? 'text-alert-red' : 'text-bank-truth-green'}`}>
                         R$ {formatBRL(recebimentoAcimaSaldo ? valorRecebido - saldoRecebimento : Math.max(0, saldoRecebimento - valorRecebido))}
@@ -1723,7 +1731,7 @@ export default function NovoLancamentoDrawer() {
                 <div className="px-6 py-3 bg-neutral-50 border-t border-neutral-100 flex items-center gap-3 shrink-0">
                   <Shield className="w-4 h-4 text-neutral-400 shrink-0" />
                   <span className="text-[9px] font-bold text-secondary uppercase tracking-tighter">
-                    Esta operação atualizará apenas o <span className="text-primary font-black">Saldo Operacional</span>. A consolidação no saldo real depende da aprovação Master.
+                    A sinalização permanece como previsão: não baixa nem altera saldo. A conciliação e a aprovação Master seguem seus próprios estados.
                   </span>
                 </div>
               )}
