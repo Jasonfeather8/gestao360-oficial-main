@@ -14,8 +14,7 @@ export type TabType =
   | 'relatorios'
   | 'configuracoes'
   | 'notificacoes'
-  | 'cofre'
-  | 'logs-testes';
+  | 'cofre';
 
 interface UIState {
   // Theme and routing
