@@ -30,7 +30,7 @@ import {
 import { useConciliacao, useContas, useLancamentos, useEntidades, useTransferencias } from '../hooks/useData';
 import { useAuth } from '../hooks/useAuth';
 import { useUIStore } from '../store/uiStore';
-import { TransacaoBanco, LancamentoFinanceiro } from '../types';
+import { LancamentoFinanceiro, TransacaoBanco, TransferenciaBancaria, TransferenciaDestinoSugestao } from '../types';
 import { ImportConfirmationMetadata, ImportLotDraft, ImportMode, ImportPreview } from '../types/extratoImportacao';
 import { attachImportLotMetadata, buildCsvTransactions, parseCsv, validateImportConsistency } from '../services/conciliacoesService';
 import Button from '../components/Button';
@@ -592,6 +592,32 @@ export default function Conciliacao() {
         && Math.abs(transferDate - txDate) <= 7 * 24 * 60 * 60 * 1000;
     });
   }, [selectedTxForWorkspace, transferencias]);
+
+  const getTransferSuggestionDetails = (suggestion: TransferenciaBancaria | TransferenciaDestinoSugestao, transaction: TransacaoBanco) => {
+    const transactionDate = new Date(`${transaction.data_transacao}T00:00:00Z`).getTime();
+    const transferDate = new Date(`${suggestion.data_transferencia}T00:00:00Z`).getTime();
+    const providedDayDifference = 'diferenca_dias' in suggestion ? suggestion.diferenca_dias : undefined;
+    const originName = 'conta_origem_nome' in suggestion ? suggestion.conta_origem_nome : undefined;
+    const destinationName = 'conta_destino_nome' in suggestion ? suggestion.conta_destino_nome : undefined;
+    const dayDifference = typeof providedDayDifference === 'number'
+      ? Math.abs(providedDayDifference)
+      : Math.round(Math.abs(transferDate - transactionDate) / (24 * 60 * 60 * 1000));
+    return {
+      id: suggestion.id.slice(0, 8),
+      origin: originName || contas.find(conta => conta.id === suggestion.conta_origem_id)?.nome || 'Conta de origem',
+      destination: destinationName || contas.find(conta => conta.id === suggestion.conta_destino_id)?.nome || 'Conta de destino',
+      amount: valueFormatter(Number(suggestion.valor)),
+      dayDifference,
+      status: {
+        aberta: 'Aberta',
+        aguardando_destino: 'Aguardando destino',
+        conciliada_pendente_master: 'Aguardando Master',
+        conciliada: 'Conciliada',
+        estornada: 'Estornada',
+      }[suggestion.status] || suggestion.status,
+    };
+  };
+
   const selectedLancsForWorkspace = useMemo(() => lancamentos.filter(l => selectedLancamentoIds.includes(l.id)), [selectedLancamentoIds, lancamentos]);
 
   const draftDifferenceAmount = useMemo(() => {
@@ -919,22 +945,43 @@ export default function Conciliacao() {
                     )
                   ) : selectedTransacaoForConciliationId === tx.id ? (
                     <div className="flex flex-col items-end gap-2">
-                      {suggestionsForTx.length > 0 && (
-                        <div className="flex flex-col items-end gap-1">
-                          <span className="text-[8px] font-black uppercase tracking-widest text-emerald-600">
-                            {isLoadingTransferSuggestions && tx.valor > 0 ? 'Buscando transferência...' : 'Sugestão de transferência'}
-                          </span>
-                          {suggestionsForTx.map(suggestion => (
-                            <button
-                              key={suggestion.id}
-                              type="button"
-                              disabled={isReconcilingTransferencia}
-                              onClick={(event) => { event.stopPropagation(); void handleConfirmTransferSuggestion(suggestion.id, suggestionSide); }}
-                              className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[8px] font-black uppercase tracking-wide text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
-                            >
-                              Confirmar {suggestion.conta_origem_nome || 'transferência'} • {valueFormatter(suggestion.valor)}
-                            </button>
-                          ))}
+                      {(suggestionsForTx.length > 0 || (isLoadingTransferSuggestions && tx.valor > 0)) && (
+                        <div className="flex flex-col items-end gap-2">
+                          <div className={`flex items-center gap-1 text-[8px] font-black uppercase tracking-widest ${suggestionsForTx.length > 1 ? 'text-sky-700' : 'text-emerald-600'}`}>
+                            {isLoadingTransferSuggestions && tx.valor > 0
+                              ? 'Buscando transferência...'
+                              : suggestionsForTx.length === 1
+                                ? 'Correspondência única encontrada'
+                                : `${suggestionsForTx.length} correspondências encontradas — escolha uma opção`}
+                          </div>
+                          {suggestionsForTx.map(suggestion => {
+                            const details = getTransferSuggestionDetails(suggestion, tx);
+                            return (
+                              <button
+                                key={suggestion.id}
+                                type="button"
+                                disabled={isReconcilingTransferencia}
+                                onClick={(event) => { event.stopPropagation(); void handleConfirmTransferSuggestion(suggestion.id, suggestionSide); }}
+                                className={`w-full max-w-[360px] rounded-xl border px-3 py-2 text-left transition-colors disabled:opacity-50 ${
+                                  suggestionsForTx.length > 1
+                                    ? 'border-sky-200 bg-sky-50 text-sky-800 hover:bg-sky-100'
+                                    : 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                                }`}
+                              >
+                                <span className="flex items-center justify-between gap-3 text-[8px] font-black uppercase tracking-wide">
+                                  <span>Confirmar correspondência</span>
+                                  <span className="shrink-0">ID {details.id}</span>
+                                </span>
+                                <span className="mt-1 flex items-center gap-1 text-[9px] font-black uppercase tracking-wide">
+                                  <ArrowRightLeft className="h-3 w-3 shrink-0" />
+                                  {details.origin} → {details.destination}
+                                </span>
+                                <span className="mt-1 block text-[8px] font-bold uppercase tracking-wide">
+                                  Valor {details.amount} • Diferença de {details.dayDifference} {details.dayDifference === 1 ? 'dia' : 'dias'} • Status: {details.status}
+                                </span>
+                              </button>
+                            );
+                          })}
                         </div>
                       )}
                       <div className="flex items-center gap-2">
