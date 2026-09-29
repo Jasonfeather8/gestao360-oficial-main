@@ -21,7 +21,13 @@ export const masterApprovalService = {
       p_justificativa: decision.aprovado ? null : decision.justificativa.trim(),
     });
     if (error) throw error;
-    return (data || {}) as Record<string, unknown>;
+
+    const result = (data || {}) as Record<string, unknown>;
+    if (result.bloqueada === true) {
+      throw new Error(String(result.mensagem));
+    }
+
+    return result;
   },
 };
 
