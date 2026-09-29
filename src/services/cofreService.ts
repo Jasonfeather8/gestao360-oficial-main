@@ -6,6 +6,8 @@ import {
   TransferenciaCofre,
   CriarMovimentacaoCofrePayload,
   CriarTransferenciaCofrePayload,
+  SituacaoBancariaTransferenciaCofre,
+  TransacaoBanco,
 } from '../types';
 
 const toCents = (value: number): number => {
@@ -49,6 +51,34 @@ export const cofreService = {
       .order('created_at', { ascending: false });
     if (error) throw error;
     return (data || []) as TransferenciaCofre[];
+  },
+
+  listarTransacoesCandidatas: async (transferenciaId: string): Promise<TransacaoBanco[]> => {
+    if (!transferenciaId) throw new Error('Transferência é obrigatória.');
+    const { data, error } = await supabase.rpc('listar_transacoes_candidatas_cofre', {
+      p_transferencia_id: transferenciaId,
+    });
+    if (error) throw error;
+    return (data || []) as TransacaoBanco[];
+  },
+
+  consultarSituacaoBancaria: async (transferenciaId: string): Promise<SituacaoBancariaTransferenciaCofre> => {
+    if (!transferenciaId) throw new Error('Transferência é obrigatória.');
+    const { data, error } = await supabase.rpc('get_situacao_bancaria_transferencia_cofre', {
+      p_transferencia_id: transferenciaId,
+    });
+    if (error) throw error;
+    return data as SituacaoBancariaTransferenciaCofre;
+  },
+
+  conciliarTransferencia: async (transferenciaId: string, transacaoBancoId: string): Promise<TransferenciaCofre> => {
+    if (!transferenciaId || !transacaoBancoId) throw new Error('Transferência e transação bancária são obrigatórias.');
+    const { data, error } = await supabase.rpc('conciliar_transferencia_cofre', {
+      p_transferencia_id: transferenciaId,
+      p_transacao_banco_id: transacaoBancoId,
+    });
+    if (error) throw error;
+    return data as TransferenciaCofre;
   },
 
   criarCofre: async ({ nome, saldoInicial }: { nome: string; saldoInicial: number }): Promise<CofreLocal> => {

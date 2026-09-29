@@ -261,9 +261,15 @@ export interface AuditoriaLog {
   tabela_afetada: string;
   registro_id: string;
   usuario_id: string;
-  acao: 'INSERT' | 'UPDATE' | 'DELETE';
+  acao: string;
   dados_anteriores?: Record<string, any>;
   dados_novos?: Record<string, any>;
+  origem_alteracao?: string | null;
+  lancamento_id?: string | null;
+  transacao_bancaria_id?: string | null;
+  status_anterior?: string | null;
+  status_novo?: string | null;
+  justificativa?: string | null;
   data_hora: string;
 }
 
@@ -280,6 +286,7 @@ export type OrigemMovimentacaoCofre = 'manual' | 'baixa_direta' | 'transferencia
 export type StatusMovimentacaoCofre = 'aguardando_master' | 'aprovado' | 'reprovado' | 'estornado';
 export type DirecaoTransferenciaCofre = 'banco_para_cofre' | 'cofre_para_banco';
 export type StatusTransferenciaCofre = 'aguardando_recebimento' | 'aguardando_master' | 'aprovada' | 'reprovada' | 'estornada';
+export type StatusBancarioCofre = 'aguardando_conciliacao' | 'conciliada';
 
 export interface CofreLocal {
   id: string;
@@ -322,6 +329,10 @@ export interface TransferenciaCofre {
   status: StatusTransferenciaCofre;
   lancamento_bancario_id: string;
   movimentacao_cofre_id: string;
+  transacao_banco_id?: string | null;
+  status_bancario?: StatusBancarioCofre;
+  conciliado_por?: string | null;
+  conciliado_em?: string | null;
   criado_por: string;
   recebido_por?: string | null;
   recebido_em?: string | null;
@@ -331,6 +342,20 @@ export interface TransferenciaCofre {
   motivo_estorno?: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface SituacaoBancariaTransferenciaCofre {
+  transferencia_id: string;
+  transacao_banco_id?: string | null;
+  status_bancario: StatusBancarioCofre;
+  conciliado_por?: string | null;
+  conciliado_em?: string | null;
+  conta_bancaria_id: string;
+  valor: number;
+  direcao: DirecaoTransferenciaCofre;
+  recebido_por?: string | null;
+  recebido_em?: string | null;
+  status: StatusTransferenciaCofre;
 }
 
 export type TransferenciaFinanceira =
@@ -343,6 +368,15 @@ export interface CofreSaldo {
   saldo_pendente: number;
   movimentos_pendentes: number;
   transferencias_pendentes: number;
+  saldo_aprovado?: number;
+  saldo_comprometido?: number;
+  saldo_disponivel?: number;
+  transferencias_aguardando_recebimento?: number;
+  transferencias_aguardando_master?: number;
+  transferencias_nao_conciliadas?: number;
+  valor_transferencias_aguardando_recebimento?: number;
+  valor_transferencias_aguardando_master?: number;
+  valor_transferencias_nao_conciliadas?: number;
 }
 
 export interface ConsolidatedFinancialSummary {

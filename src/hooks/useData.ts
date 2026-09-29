@@ -533,7 +533,7 @@ export function useCofreLocal(cofreId?: string) {
   const transferenciasQuery = useQuery({ queryKey: ['transferenciasCofre'], queryFn: cofreService.listarTransferencias });
 
   const invalidate = () => {
-    ['cofres', 'cofresSaldos', 'movimentacoesCofre', 'transferenciasCofre', 'lancamentos', 'contasSaldos', 'financialSummary', 'dashboardStats', 'consolidatedFinancialSummary', 'auditoriaLogs'].forEach(queryKey => {
+    ['cofres', 'cofresSaldos', 'movimentacoesCofre', 'transferenciasCofre', 'lancamentos', 'contasSaldos', 'conciliacoes', 'transacoes', 'diferencasConciliacao', 'fechamentos', 'financialSummary', 'dashboardStats', 'consolidatedFinancialSummary', 'auditoriaLogs'].forEach(queryKey => {
       queryClient.invalidateQueries({ queryKey: [queryKey] });
     });
   };
@@ -545,6 +545,13 @@ export function useCofreLocal(cofreId?: string) {
   const confirmarMutation = useMutation({ mutationFn: cofreService.confirmarRecebimento, onSuccess: invalidate });
   const decidirMovimentacaoMutation = useMutation({ mutationFn: cofreService.decidirMovimentacao, onSuccess: invalidate });
   const decidirTransferenciaMutation = useMutation({ mutationFn: cofreService.decidirTransferencia, onSuccess: invalidate });
+  const conciliarTransferenciaMutation = useMutation({
+    mutationFn: ({ transferenciaId, transacaoBancoId }: { transferenciaId: string; transacaoBancoId: string }) =>
+      cofreService.conciliarTransferencia(transferenciaId, transacaoBancoId),
+    onSuccess: invalidate,
+  });
+  const listarCandidatasMutation = useMutation({ mutationFn: cofreService.listarTransacoesCandidatas });
+  const situacaoBancariaMutation = useMutation({ mutationFn: cofreService.consultarSituacaoBancaria });
   const estornarMovimentacaoMutation = useMutation({ mutationFn: ({ id, motivo }: { id: string; motivo: string }) => cofreService.estornarMovimentacao(id, motivo), onSuccess: invalidate });
   const estornarTransferenciaMutation = useMutation({ mutationFn: ({ id, motivo }: { id: string; motivo: string }) => cofreService.estornarTransferencia(id, motivo), onSuccess: invalidate });
 
@@ -562,9 +569,13 @@ export function useCofreLocal(cofreId?: string) {
     confirmarRecebimento: confirmarMutation.mutateAsync,
     decidirMovimentacao: decidirMovimentacaoMutation.mutateAsync,
     decidirTransferencia: decidirTransferenciaMutation.mutateAsync,
+    conciliarTransferencia: conciliarTransferenciaMutation.mutateAsync,
+    listarTransacoesCandidatas: listarCandidatasMutation.mutateAsync,
+    consultarSituacaoBancaria: situacaoBancariaMutation.mutateAsync,
     estornarMovimentacao: estornarMovimentacaoMutation.mutateAsync,
     estornarTransferencia: estornarTransferenciaMutation.mutateAsync,
-    isMutating: [criarCofreMutation, atualizarCofreMutation, movimentacaoMutation, transferenciaMutation, confirmarMutation, decidirMovimentacaoMutation, decidirTransferenciaMutation, estornarMovimentacaoMutation, estornarTransferenciaMutation].some(mutation => mutation.isPending),
+    isConciliandoTransferencia: conciliarTransferenciaMutation.isPending,
+    isMutating: [criarCofreMutation, atualizarCofreMutation, movimentacaoMutation, transferenciaMutation, confirmarMutation, decidirMovimentacaoMutation, decidirTransferenciaMutation, conciliarTransferenciaMutation, estornarMovimentacaoMutation, estornarTransferenciaMutation].some(mutation => mutation.isPending),
   };
 }
 
