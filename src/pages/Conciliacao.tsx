@@ -66,6 +66,7 @@ export default function Conciliacao() {
     isConfirmingImport,
     isFechandoPeriodo,
     isDecidindoFechamento,
+    workspaceDataUpdatedAt,
     linkConciliacao,
     unlinkConciliacao,
     cleanupTransacoes,
@@ -80,7 +81,7 @@ export default function Conciliacao() {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   });
   const { data: contas = [] } = useContas();
-  const { data: lancamentos = [] } = useLancamentos({
+  const { data: lancamentos = [], dataUpdatedAt: lancamentosDataUpdatedAt } = useLancamentos({
     conciliationWorkspace: {
       accountId: selectedContaId,
       periodStart: `${selectedMonth}-01`,
@@ -95,12 +96,18 @@ export default function Conciliacao() {
     setSelectedTransacaoForConciliationId,
     setTransacaoBancoParaLancamento,
     setCurrentConciliationDifferenceValue,
-    currentConciliationDifferenceValue
+    currentConciliationDifferenceValue,
+    conciliacaoOperacaoSucesso,
+    sinalizarConciliacaoOperacao,
+    limparConciliacaoOperacaoSucesso
   } = useUIStore();
 
   const [selectedLancamentoIds, setSelectedLancamentoIds] = useState<string[]>([]);
   const [directionFilter, setDirectionFilter] = useState<'todos' | 'entrada' | 'saida'>('todos');
   const [reviewFilter, setReviewFilter] = useState<'todos' | 'pendencias'>('todos');
+  const [operationNotice, setOperationNotice] = useState<string | null>(null);
+  const [completionCandidate, setCompletionCandidate] = useState<{ id: number; requestedAt: number; contaId: string; mes: string } | null>(null);
+  const [completionNotice, setCompletionNotice] = useState<string | null>(null);
   const {
     transferencias,
     suggestions: transferSuggestions,
@@ -327,6 +334,12 @@ export default function Conciliacao() {
       }
 
       await linkConciliacao({ transacaoBancoId: tx.id, lancamentoIds: selectedLancamentoIds });
+      sinalizarConciliacaoOperacao({
+        tipo: 'conciliacao',
+        contaId: tx.conta_bancaria_id,
+        mes: tx.data_transacao.slice(0, 7),
+        quantidade: selectedLancamentoIds.length,
+      });
       clearConciliationSelection();
     } catch (err: any) { alert('Erro: ' + err.message); }
   };
@@ -341,6 +354,15 @@ export default function Conciliacao() {
         tipoDiferenca: diffType,
         justificativa: diffJustification.trim(),
       });
+      const transaction = periodTransactions.find(item => item.id === selectedTransacaoForConciliationId);
+      if (transaction) {
+        sinalizarConciliacaoOperacao({
+          tipo: 'classificacao_diferenca',
+          contaId: transaction.conta_bancaria_id,
+          mes: transaction.data_transacao.slice(0, 7),
+          quantidade: selectedLancamentoIds.length,
+        });
+      }
       setDiffJustification('');
       clearConciliationSelection();
     } catch (err: any) { alert('Erro: ' + err.message); }
@@ -385,7 +407,6 @@ export default function Conciliacao() {
   [normalizedTransacoes, selectedContaId, selectedMonth, conciliacoes]);
 
   const isTransactionIdentified = (transaction: (typeof periodTransactions)[number]) => {
-    if (!transaction.status_conciliacao) return false;
     const hasConciliationLink = Boolean(transaction.conciliation);
     const hasTransferLink = transferencias.some(transferencia =>
       transferencia.status !== 'estornada' &&
@@ -406,18 +427,113 @@ export default function Conciliacao() {
 
   const periodProgress = useMemo(() => {
     const identified = periodTransactions.filter(isTransactionIdentified);
-    const identifiedConciliacaoIds = new Set(identified.flatMap(tx => conciliacoes.filter(c => c.transacao_banco_id === tx.id).map(c => c.id)));
-    const residualCents = diferencas
-      .filter(diferenca => identifiedConciliacaoIds.has(diferenca.conciliacao_id))
-      .reduce((total, diferenca) => total + Math.round(Number(diferenca.valor_diferenca) * 100), 0);
+    const periodConciliacoes = conciliacoes.filter(conciliacao =>
+      periodTransactions.some(transaction => transaction.id === conciliacao.transacao_banco_id)
+    );
+    const periodConciliacaoIds = new Set(periodConciliacoes.map(conciliacao => conciliacao.id));
+    const periodDifferences = diferencas.filter(diferenca => periodConciliacaoIds.has(diferenca.conciliacao_id));
+    const differenceCents = periodDifferences.reduce(
+      (total, diferenca) => total + Math.abs(Math.round(Number(diferenca.valor_diferenca || 0) * 100)),
+      0,
+    );
+    const unclassifiedDifferences = periodDifferences.filter(diferenca =>
+      !diferenca.tipo_diferenca?.trim() || !diferenca.observacao_justificativa?.trim()
+    );
+    const residualCents = periodTransactions.reduce((total, transaction) => {
+      const transactionConciliacoes = periodConciliacoes.filter(conciliacao => conciliacao.transacao_banco_id === transaction.id);
+      const hasTransferLink = transferencias.some(transferencia =>
+        transferencia.status !== 'estornada' &&
+        ((transferencia.transacao_origem_id === transaction.id && transferencia.conta_origem_id === transaction.conta_bancaria_id) ||
+          (transferencia.transacao_destino_id === transaction.id && transferencia.conta_destino_id === transaction.conta_bancaria_id))
+      );
+      if (hasTransferLink) return total;
+      const linkedLaunchesCents = transactionConciliacoes.reduce((sum, conciliacao) => {
+        const lancamento = lancamentos.find(item => item.id === conciliacao.lancamento_id);
+        return sum + (lancamento ? getLancamentoAdjustedCents(lancamento) : 0);
+      }, 0);
+      const linkedDifferencesCents = periodDifferences
+        .filter(diferenca => transactionConciliacoes.some(conciliacao => conciliacao.id === diferenca.conciliacao_id))
+        .reduce((sum, diferenca) => sum + Math.round(Number(diferenca.valor_diferenca || 0) * 100), 0);
+      return total + getTransactionCents(transaction) - linkedLaunchesCents - linkedDifferencesCents;
+    }, 0);
+    const total = periodTransactions.length;
+    const pending = total - identified.length;
+    const readyForClosing = total > 0 && pending === 0 && residualCents === 0 && unclassifiedDifferences.length === 0;
+    const state = total === 0 || identified.length === 0
+      ? 'Aguardando conciliação'
+      : unclassifiedDifferences.length > 0
+        ? 'Bloqueado por diferença sem classificação'
+        : pending > 0
+          ? 'Existem pendências'
+          : readyForClosing && periodDifferences.length > 0
+            ? '100% com diferenças justificadas/pronto para fechamento'
+            : readyForClosing
+              ? '100% identificado'
+              : '100% identificado, residual não explicado';
     return {
-      total: periodTransactions.length,
+      total,
       identified: identified.length,
-      pending: periodTransactions.length - identified.length,
+      pending,
+      percentage: total ? Math.round((identified.length / total) * 100) : 0,
+      differenceCount: periodDifferences.length,
+      differenceCents,
+      unclassifiedDifferenceCount: unclassifiedDifferences.length,
       residualCents,
-      complete: periodTransactions.length > 0 && identified.length === periodTransactions.length,
+      readyForClosing,
+      state,
+      fechamentoStatus: fechamentoAtual?.status || 'aberto',
     };
-  }, [periodTransactions, conciliacoes, diferencas, transferencias]);
+  }, [periodTransactions, conciliacoes, diferencas, transferencias, lancamentos, fechamentoAtual]);
+
+  const realDataUpdatedAt = Math.max(workspaceDataUpdatedAt, lancamentosDataUpdatedAt);
+  const handledOperationId = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!conciliacaoOperacaoSucesso || handledOperationId.current === conciliacaoOperacaoSucesso.id || !selectedContaId) return;
+    if (conciliacaoOperacaoSucesso.contaId !== selectedContaId || conciliacaoOperacaoSucesso.mes !== selectedMonth) {
+      limparConciliacaoOperacaoSucesso();
+      return;
+    }
+
+    handledOperationId.current = conciliacaoOperacaoSucesso.id;
+    const operationMessages = {
+      conciliacao: `Conciliação 1:${conciliacaoOperacaoSucesso.quantidade || 1} concluída com sucesso.`,
+      classificacao_diferenca: 'Diferença classificada e justificada com sucesso.',
+      novo_lancamento: 'Novo lançamento criado e vinculado à transação do extrato.',
+    };
+    setOperationNotice(operationMessages[conciliacaoOperacaoSucesso.tipo]);
+    setCompletionCandidate({
+      id: conciliacaoOperacaoSucesso.id,
+      requestedAt: conciliacaoOperacaoSucesso.id,
+      contaId: conciliacaoOperacaoSucesso.contaId,
+      mes: conciliacaoOperacaoSucesso.mes,
+    });
+    limparConciliacaoOperacaoSucesso();
+  }, [conciliacaoOperacaoSucesso, selectedContaId, selectedMonth, limparConciliacaoOperacaoSucesso]);
+
+  useEffect(() => {
+    if (
+      !completionCandidate ||
+      completionCandidate.contaId !== selectedContaId ||
+      completionCandidate.mes !== selectedMonth ||
+      realDataUpdatedAt <= completionCandidate.requestedAt ||
+      !periodProgress.readyForClosing
+    ) return;
+    setCompletionNotice('Competência 100% conciliada e pronta para fechamento.');
+    setCompletionCandidate(null);
+  }, [completionCandidate, realDataUpdatedAt, periodProgress.readyForClosing, selectedContaId, selectedMonth]);
+
+  useEffect(() => {
+    if (!operationNotice) return;
+    const timeout = window.setTimeout(() => setOperationNotice(null), 7000);
+    return () => window.clearTimeout(timeout);
+  }, [operationNotice]);
+
+  useEffect(() => {
+    if (!completionNotice) return;
+    const timeout = window.setTimeout(() => setCompletionNotice(null), 9000);
+    return () => window.clearTimeout(timeout);
+  }, [completionNotice]);
 
   // 2. Processar Lançamentos do ERP, com competência e vencimento legado.
   const eligibleLaunches = useMemo(() => lancamentos.filter(l => {
@@ -543,20 +659,28 @@ export default function Conciliacao() {
       <div className="bg-white border-2 border-neutral-100 p-4 rounded-3xl shadow-sm space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-[10px] font-black text-neutral-900 uppercase tracking-widest">Progresso da competência</p>
+            <p className="text-[10px] font-black text-neutral-900 uppercase tracking-widest">Estado da competência</p>
             <p className="text-[9px] font-bold text-neutral-400 uppercase mt-0.5">Conta e mês inteiros; filtros não alteram estes números.</p>
           </div>
-          <span className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest ${periodProgress.complete ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
-            {periodProgress.identified}/{periodProgress.total} identificadas
+          <span className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest ${
+            periodProgress.readyForClosing ? 'bg-emerald-50 text-emerald-700' :
+              periodProgress.state.startsWith('Bloqueado') ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'
+          }`}>
+            {periodProgress.state}
           </span>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-[10px] font-black uppercase tracking-widest">
-          <span className="rounded-xl bg-neutral-50 px-3 py-2 text-neutral-600">Total: {periodProgress.total}</span>
+          <span className="rounded-xl bg-neutral-50 px-3 py-2 text-neutral-600">Extrato: {periodProgress.total}</span>
+          <span className="rounded-xl bg-emerald-50 px-3 py-2 text-emerald-700">Identificadas: {periodProgress.identified}</span>
           <span className="rounded-xl bg-amber-50 px-3 py-2 text-amber-700">Pendentes: {periodProgress.pending}</span>
-          <span className="rounded-xl bg-neutral-50 px-3 py-2 text-neutral-600">Residual: {valueFormatter(periodProgress.residualCents / 100)} ({periodProgress.residualCents}¢)</span>
-          <span className="rounded-xl bg-emerald-50 px-3 py-2 text-emerald-700">{periodProgress.complete ? '100% identificado' : `${periodProgress.total ? Math.round((periodProgress.identified / periodProgress.total) * 100) : 0}% identificado`}</span>
+          <span className="rounded-xl bg-neutral-50 px-3 py-2 text-neutral-600">Conciliado: {periodProgress.percentage}%</span>
+          <span className="rounded-xl bg-neutral-50 px-3 py-2 text-neutral-600">Diferenças: {periodProgress.differenceCount} • {valueFormatter(periodProgress.differenceCents / 100)}</span>
+          <span className={`rounded-xl px-3 py-2 ${periodProgress.residualCents === 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>Residual global: {periodProgress.residualCents}¢ ({valueFormatter(periodProgress.residualCents / 100)})</span>
+          <span className={`rounded-xl px-3 py-2 ${periodProgress.unclassifiedDifferenceCount === 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>Não classificadas: {periodProgress.unclassifiedDifferenceCount}</span>
+          <span className="rounded-xl bg-neutral-100 px-3 py-2 text-neutral-600">Fechamento: {periodProgress.fechamentoStatus === 'aguardando_master' ? 'Aguardando Master' : periodProgress.fechamentoStatus === 'aprovado' ? 'Aprovado' : periodProgress.fechamentoStatus === 'reprovado' ? 'Reprovado' : 'Aberto'}</span>
         </div>
-        {periodProgress.complete && <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">Competência 100% identificada. Você pode solicitar o fechamento.</p>}
+        {operationNotice && <p className="rounded-xl bg-blue-50 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-blue-700">{operationNotice}</p>}
+        {completionNotice && <p className="rounded-xl bg-emerald-100 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-emerald-800">{completionNotice}</p>}
       </div>
 
       {/* Fechamento formal da competência */}

@@ -423,6 +423,12 @@ export function useConciliacao() {
     transacoes: transacoesQuery.data || [],
     diferencas: diferencasQuery.data || [],
     fechamentos: fechamentosQuery.data || [],
+    workspaceDataUpdatedAt: Math.max(
+      conciliacoesQuery.dataUpdatedAt,
+      transacoesQuery.dataUpdatedAt,
+      diferencasQuery.dataUpdatedAt,
+      fechamentosQuery.dataUpdatedAt,
+    ),
     isFetchingTransacoes: transacoesQuery.isPending,
     isFetchingFechamentos: fechamentosQuery.isPending,
     isLinking: linkMutation.isPending,

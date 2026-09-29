@@ -214,7 +214,8 @@ export default function NovoLancamentoDrawer() {
     lancamentoFormDraft,
     setLancamentoFormDraft,
     setEntidadeFormDraft,
-    resetAllDrafts
+    resetAllDrafts,
+    sinalizarConciliacaoOperacao
   } = useUIStore();
 
   const { createLancamento, createLancamentoFromTransaction, updateLancamento, baixaLancamento, isCreating, isUpdating, data: lancamentos = [] } = useLancamentos();
@@ -833,6 +834,11 @@ export default function NovoLancamentoDrawer() {
         createdItem = await createLancamentoFromTransaction({
           transacaoBancoId: transacaoBancoParaLancamento.id,
           dadosComerciais: itemDetails,
+        });
+        sinalizarConciliacaoOperacao({
+          tipo: 'novo_lancamento',
+          contaId: transacaoBancoParaLancamento.conta_bancaria_id,
+          mes: transacaoBancoParaLancamento.data_transacao.slice(0, 7),
         });
       } else {
         let recurrencePayload = undefined;

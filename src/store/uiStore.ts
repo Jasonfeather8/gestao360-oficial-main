@@ -16,6 +16,14 @@ export type TabType =
   | 'notificacoes'
   | 'cofre';
 
+export type ConciliacaoOperacaoSucesso = {
+  id: number;
+  tipo: 'conciliacao' | 'classificacao_diferenca' | 'novo_lancamento';
+  contaId: string;
+  mes: string;
+  quantidade?: number;
+};
+
 interface UIState {
   // Theme and routing
   theme: 'light' | 'dark';
@@ -52,6 +60,7 @@ interface UIState {
   selectedLancamentoForConciliationId: string | null;
   currentConciliationDifferenceValue: number;
   currentConciliationId: string | null;
+  conciliacaoOperacaoSucesso: ConciliacaoOperacaoSucesso | null;
 
   // Temp Draft states so users don't lose typed progress
   lancamentoFormDraft: {
@@ -109,7 +118,7 @@ interface UIState {
   setActiveConfigSubTab: (sub: 'equipe' | 'auditoria' | 'legacy') => void;
   setCurrentUserId: (id: string) => void;
   
-  setModalOpen: (modal: keyof Omit<UIState, 'theme' | 'activeTab' | 'activeConfigSubTab' | 'currentUserId' | 'scrollPositions' | 'selectedLancamentoIdForModal' | 'selectedRecorrenciaAction' | 'selectedTransacaoForConciliationId' | 'transacaoBancoParaLancamento' | 'selectedLancamentoForConciliationId' | 'currentConciliationDifferenceValue' | 'currentConciliationId' | 'lancamentoFormDraft' | 'entidadeFormDraft' | 'setTheme' | 'setActiveTab' | 'setActiveConfigSubTab' | 'setCurrentUserId' | 'setModalOpen' | 'setSelectedLancamentoIdForModal' | 'setSelectedRecorrenciaAction' | 'setSelectedTransacaoForConciliaId' | 'setSelectedLancamentoForConciliaId' | 'setCurrentConciliationId' | 'setLancamentoFormDraft' | 'setEntidadeFormDraft' | 'setScrollPosition'>, value: boolean) => void;
+  setModalOpen: (modal: keyof Omit<UIState, 'theme' | 'activeTab' | 'activeConfigSubTab' | 'currentUserId' | 'scrollPositions' | 'selectedLancamentoIdForModal' | 'selectedRecorrenciaAction' | 'selectedTransacaoForConciliationId' | 'transacaoBancoParaLancamento' | 'selectedLancamentoForConciliationId' | 'currentConciliationDifferenceValue' | 'currentConciliationId' | 'conciliacaoOperacaoSucesso' | 'lancamentoFormDraft' | 'entidadeFormDraft' | 'setTheme' | 'setActiveTab' | 'setActiveConfigSubTab' | 'setCurrentUserId' | 'setModalOpen' | 'setSelectedLancamentoIdForModal' | 'setSelectedRecorrenciaAction' | 'setSelectedTransacaoForConciliaId' | 'setSelectedLancamentoForConciliaId' | 'setCurrentConciliationId' | 'setLancamentoFormDraft' | 'setEntidadeFormDraft' | 'setScrollPosition'>, value: boolean) => void;
   
   setSelectedLancamentoIdForModal: (id: string | null) => void;
   setSelectedLancamentoIdsForBatch: (ids: string[]) => void;
@@ -120,6 +129,8 @@ interface UIState {
   setSelectedLancamentoForConciliationId: (id: string | null) => void;
   setCurrentConciliationDifferenceValue: (val: number) => void;
   setCurrentConciliationId: (id: string | null) => void;
+  sinalizarConciliacaoOperacao: (operacao: Omit<ConciliacaoOperacaoSucesso, 'id'>) => void;
+  limparConciliacaoOperacaoSucesso: () => void;
 
   setLancamentoFormDraft: (draft: Partial<UIState['lancamentoFormDraft']>) => void;
   setEntidadeFormDraft: (draft: Partial<UIState['entidadeFormDraft']>) => void;
@@ -210,6 +221,7 @@ export const useUIStore = create<UIState>()(
       selectedLancamentoForConciliationId: null,
       currentConciliationDifferenceValue: 0,
       currentConciliationId: null,
+      conciliacaoOperacaoSucesso: null,
 
       lancamentoFormDraft: initialDrafts.lancamentoFormDraft,
       entidadeFormDraft: initialDrafts.entidadeFormDraft,
@@ -231,9 +243,11 @@ export const useUIStore = create<UIState>()(
       setSelectedLancamentoForConciliationId: (id) => set({ selectedLancamentoForConciliationId: id }),
       setCurrentConciliationDifferenceValue: (currentConciliationDifferenceValue) => set({ currentConciliationDifferenceValue }),
       setCurrentConciliationId: (currentConciliationId) => set({ currentConciliationId }),
+      sinalizarConciliacaoOperacao: (operacao) => set({ conciliacaoOperacaoSucesso: { ...operacao, id: Date.now() } }),
+      limparConciliacaoOperacaoSucesso: () => set({ conciliacaoOperacaoSucesso: null }),
 
-      setLancamentoFormDraft: (draft) => set((state) => ({ 
-        lancamentoFormDraft: { ...state.lancamentoFormDraft, ...draft } 
+      setLancamentoFormDraft: (draft) => set((state) => ({
+        lancamentoFormDraft: { ...state.lancamentoFormDraft, ...draft }
       })),
       
       setEntidadeFormDraft: (draft) => set((state) => ({ 
@@ -253,7 +267,7 @@ export const useUIStore = create<UIState>()(
     }),
     {
       name: 'gestao360_ui_state',
-      partialize: (state) => ({ ...state, transacaoBancoParaLancamento: null }),
+      partialize: (state) => ({ ...state, transacaoBancoParaLancamento: null, conciliacaoOperacaoSucesso: null }),
     }
   )
 );

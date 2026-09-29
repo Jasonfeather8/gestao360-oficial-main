@@ -422,12 +422,12 @@ export const conciliacoesService = {
     return { data: data as TransacaoBanco[] | null, error };
   }),
 
-  getDiferencas: async (): Promise<Array<Pick<import('../types').DiferencaFinanceira, 'conciliacao_id' | 'valor_diferenca'>>> => fetchAllRows(async (from, to) => {
+  getDiferencas: async (): Promise<Array<Pick<import('../types').DiferencaFinanceira, 'id' | 'conciliacao_id' | 'tipo_diferenca' | 'valor_diferenca' | 'observacao_justificativa'>>> => fetchAllRows(async (from, to) => {
     const { data, error } = await supabase
       .from('diferencas_financeiras')
-      .select('conciliacao_id, valor_diferenca')
+      .select('id, conciliacao_id, tipo_diferenca, valor_diferenca, observacao_justificativa')
       .range(from, to);
-    return { data: data as Array<Pick<import('../types').DiferencaFinanceira, 'conciliacao_id' | 'valor_diferenca'>> | null, error };
+    return { data: data as Array<Pick<import('../types').DiferencaFinanceira, 'id' | 'conciliacao_id' | 'tipo_diferenca' | 'valor_diferenca' | 'observacao_justificativa'>> | null, error };
   }),
 
   getFechamentos: async (): Promise<FechamentoConciliacao[]> => fetchAllRows<FechamentoConciliacao>(async (from, to) => {

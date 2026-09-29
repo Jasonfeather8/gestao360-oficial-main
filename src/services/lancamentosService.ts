@@ -205,7 +205,6 @@ export const lancamentosService = {
     if (isConciliationWorkspace && filters?.conciliationWorkspace) {
       query = query
         .eq('conta_bancaria_id', filters.conciliationWorkspace.accountId)
-        .eq('status_pagamento', 'aberto')
         .or(`and(data_competencia.gte.${filters.conciliationWorkspace.periodStart},data_competencia.lte.${filters.conciliationWorkspace.periodEnd}),and(data_competencia.is.null,data_vencimento.gte.${filters.conciliationWorkspace.periodStart},data_vencimento.lte.${filters.conciliationWorkspace.periodEnd})`);
     }
 

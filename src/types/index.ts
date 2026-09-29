@@ -222,9 +222,9 @@ export interface ConciliacaoAtomicaResult {
 export interface DiferencaFinanceira {
   id: string;
   conciliacao_id: string;
-  tipo_diferenca: TipoDiferenca;
+  tipo_diferenca: TipoDiferenca | null;
   valor_diferenca: number;
-  observacao_justificativa: string;
+  observacao_justificativa: string | null;
 }
 
 export interface Recorrencia {
