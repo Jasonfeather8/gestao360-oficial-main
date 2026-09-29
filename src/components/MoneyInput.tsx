@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef } from 'react';
 
 interface MoneyInputProps {
   value: string;
@@ -8,39 +8,51 @@ interface MoneyInputProps {
   required?: boolean;
   autoFocus?: boolean;
   disabled?: boolean;
+  mode?: 'money' | 'percentage';
 }
 
-export default function MoneyInput({ value, onChange, className, placeholder, required, autoFocus, disabled }: MoneyInputProps) {
+const formatNumber = (value: number): string => new Intl.NumberFormat('pt-BR', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+}).format(value);
+
+export default function MoneyInput({
+  value,
+  onChange,
+  className,
+  placeholder,
+  required,
+  autoFocus,
+  disabled,
+  mode = 'money',
+}: MoneyInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const formatValue = (val: string) => {
-    // Remove non-digits
-    const digits = val.replace(/\D/g, '');
+  const formatValue = (rawValue: string) => {
+    if (mode === 'percentage') {
+      const trimmed = rawValue.trim();
+      if (!trimmed) return '';
+      const normalized = trimmed.includes(',')
+        ? trimmed.replace(/\./g, '').replace(',', '.')
+        : trimmed;
+      if (!normalized || !/^\d+(?:\.\d*)?$/.test(normalized)) return value;
+      const number = Number(normalized);
+      return Number.isFinite(number) ? formatNumber(number) : value;
+    }
+
+    const digits = rawValue.replace(/\D/g, '');
     if (!digits) return '';
-    
-    // Convert to number and format
-    const number = parseInt(digits, 10) / 100;
-    return new Intl.NumberFormat('pt-BR', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(number);
+    return formatNumber(parseInt(digits, 10) / 100);
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const rawValue = e.target.value;
-    const formatted = formatValue(rawValue);
-    onChange(formatted);
+    onChange(formatValue(e.target.value));
   };
 
   const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
-    // If value is empty or 0,00, move cursor to end
     if (!value || value === '0,00') {
       const len = e.target.value.length;
-      setTimeout(() => {
-        if (inputRef.current) {
-          inputRef.current.setSelectionRange(len, len);
-        }
-      }, 0);
+      setTimeout(() => inputRef.current?.setSelectionRange(len, len), 0);
     }
   };
 
@@ -56,8 +68,7 @@ export default function MoneyInput({ value, onChange, className, placeholder, re
       required={required}
       autoFocus={autoFocus}
       disabled={disabled}
-      inputMode="numeric"
+      inputMode={mode === 'percentage' ? 'decimal' : 'numeric'}
     />
   );
-
 }

@@ -32,7 +32,7 @@ import type { PrintableDocumentData } from './printing/types';
 
 import { supabase } from '@/integrations/supabase/client';
 import Button from './Button';
-import { calculateAdjustmentAmount } from '../utils/adjustments';
+import { calculateFinalAmount } from '../utils/adjustments';
 
 function formatBRL(value: any): string {
   if (value === null || value === undefined) return '';
@@ -499,19 +499,13 @@ export default function NovoLancamentoDrawer() {
   const calculations = useMemo(() => {
     const valorBase = parseMoney(lancamentoFormDraft.valor_previsto);
     
-    const desconto = calculateAdjustmentAmount(
-      lancamentoFormDraft.desconto_valor,
-      lancamentoFormDraft.desconto_tipo,
-      valorBase
-    );
-
-    const acrescimo = calculateAdjustmentAmount(
-      lancamentoFormDraft.acrescimo_valor,
-      lancamentoFormDraft.acrescimo_tipo,
-      valorBase
-    );
-
-    const subtotal = valorBase - desconto + acrescimo;
+    const subtotal = calculateFinalAmount({
+      original: valorBase,
+      discount: lancamentoFormDraft.desconto_valor,
+      discountType: lancamentoFormDraft.desconto_tipo,
+      increase: lancamentoFormDraft.acrescimo_valor,
+      increaseType: lancamentoFormDraft.acrescimo_tipo,
+    });
     const recebido = parseMoney(lancamentoFormDraft.valor_recebido);
     const diferenca = recebido - subtotal;
     
@@ -1245,6 +1239,7 @@ export default function NovoLancamentoDrawer() {
                     <MoneyInput
                       value={lancamentoFormDraft.desconto_valor}
                       onChange={(val) => setLancamentoFormDraft({ desconto_valor: val })}
+                      mode={lancamentoFormDraft.desconto_tipo === 'porcentagem' ? 'percentage' : 'money'}
                       className="w-full h-12 px-4 bg-white border-2 border-neutral-200 rounded-xl font-mono text-sm font-black text-on-surface focus:outline-none focus:border-primary transition-all shadow-xs"
                     />
 
@@ -1287,6 +1282,7 @@ export default function NovoLancamentoDrawer() {
                     <MoneyInput
                       value={lancamentoFormDraft.acrescimo_valor}
                       onChange={(val) => setLancamentoFormDraft({ acrescimo_valor: val })}
+                      mode={lancamentoFormDraft.acrescimo_tipo === 'porcentagem' ? 'percentage' : 'money'}
                       className="w-full h-12 px-4 bg-white border-2 border-neutral-200 rounded-xl font-mono text-sm font-black text-on-surface focus:outline-none focus:border-primary transition-all shadow-xs"
                     />
 

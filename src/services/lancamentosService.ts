@@ -2,7 +2,11 @@ import { supabase } from '@/integrations/supabase/client';
 import { diagnosticLogger } from './diagnosticLogger';
 import { transferenciasService } from './transferenciasService';
 import { LancamentoFinanceiro } from '../types';
-import { calculateAdjustmentAmount } from '../utils/adjustments';
+import {
+  calculateFinalAmount,
+  parseFinancialInput,
+  validateAdjustment,
+} from '../utils/adjustments';
 
 export interface LancamentoFilters {
   searchTerm?: string;
@@ -46,13 +50,31 @@ const combineOrGroups = (groups: string[][]): string => {
     .join(',')})`;
 };
 
-const normalizeAdjustmentType = (type: unknown): 'valor' | 'porcentagem' =>
-  type === 'porcentagem' ? 'porcentagem' : 'valor';
+const normalizeAdjustmentType = (type: unknown): 'valor' | 'porcentagem' => {
+  if (type === undefined || type === null || type === '') return 'valor';
+  if (type === 'valor' || type === 'porcentagem') return type;
+  throw new Error('Tipo de ajuste inválido.');
+};
 
-const parseAVRValue = (value: string | number | null | undefined): number => {
-  if (typeof value === 'number') return value;
-  if (value === null || value === undefined) return 0;
-  return Number(value.replace(/\./g, '').replace(',', '.')) || 0;
+const parseAVRValue = (value: string | number | null | undefined): number =>
+  parseFinancialInput(value, { required: true, maxFractionDigits: 2 });
+
+const validateLaunchAdjustments = (item: Record<string, any>, base: number): void => {
+  const descontoTipo = normalizeAdjustmentType(item.desconto_tipo);
+  const acrescimoTipo = normalizeAdjustmentType(item.acrescimo_tipo);
+  if (item.desconto_valor !== undefined && item.desconto_valor !== null && item.desconto_valor !== '') {
+    validateAdjustment(item.desconto_valor, descontoTipo, 'Desconto');
+  }
+  if (item.acrescimo_valor !== undefined && item.acrescimo_valor !== null && item.acrescimo_valor !== '') {
+    validateAdjustment(item.acrescimo_valor, acrescimoTipo, 'Acréscimo');
+  }
+  calculateFinalAmount({
+    original: base,
+    discount: item.desconto_valor,
+    discountType: descontoTipo,
+    increase: item.acrescimo_valor,
+    increaseType: acrescimoTipo,
+  });
 };
 
 const formatAdjustmentValue = (value: unknown, type: unknown, base: number): string => {
@@ -374,6 +396,8 @@ export const lancamentosService = {
 
   criarAPartirDeTransacao: async (transacaoBancoId: string, dadosComerciais: Record<string, unknown>): Promise<LancamentoFinanceiro> => {
     if (!transacaoBancoId) throw new Error('Transação bancária é obrigatória.');
+    const valorPrevisto = parseFinancialInput(dadosComerciais.valor_previsto as number | string | null | undefined, { required: true, maxFractionDigits: 2 });
+    validateLaunchAdjustments(dadosComerciais, valorPrevisto);
     const { data, error } = await supabase.rpc('criar_lancamento_a_partir_transacao_atomico', {
       p_transacao_id: transacaoBancoId,
       p_dados_comerciais: dadosComerciais,
@@ -394,14 +418,19 @@ export const lancamentosService = {
       .single();
 
     const isMaster = profile?.role === 'master';
-    const valorPrevisto = Number(item.valor_previsto) || 0;
-    const desconto = calculateAdjustmentAmount(item.desconto_valor, item.desconto_tipo, valorPrevisto);
-    const acrescimo = calculateAdjustmentAmount(item.acrescimo_valor, item.acrescimo_tipo, valorPrevisto);
-    const saldoDisponivel = Math.max(0, valorPrevisto - desconto + acrescimo);
-    const valorRecebido = Number(item.valor_recebido) || 0;
+    const valorPrevisto = parseFinancialInput(item.valor_previsto, { required: true, maxFractionDigits: 2 });
+    validateLaunchAdjustments(item, valorPrevisto);
+    const saldoDisponivel = calculateFinalAmount({
+      original: valorPrevisto,
+      discount: item.desconto_valor,
+      discountType: normalizeAdjustmentType(item.desconto_tipo),
+      increase: item.acrescimo_valor,
+      increaseType: normalizeAdjustmentType(item.acrescimo_tipo),
+    });
+    const valorRecebido = parseFinancialInput(item.valor_recebido, { maxFractionDigits: 2 });
     const hasReceivedPayment = item.ja_recebido === true || item.status_pagamento === 'pago' || item.status_pagamento === 'pago_parcial' || item.valor_recebido !== undefined;
 
-    if (hasReceivedPayment && (valorRecebido < 0 || valorRecebido > saldoDisponivel + 0.005)) {
+    if (hasReceivedPayment && valorRecebido > saldoDisponivel) {
       throw new Error('O valor recebido não pode ser maior que o saldo disponível do lançamento.');
     }
     if (item.ja_recebido !== true) {
@@ -519,15 +548,20 @@ export const lancamentosService = {
     }
 
     const isAVRUpdate = safeData.tipo_baixa === 'avr' || current?.tipo_baixa === 'avr';
-    const valorPrevisto = Number(safeData.valor_previsto ?? current?.valor_previsto) || 0;
+    const valorPrevisto = parseFinancialInput(safeData.valor_previsto ?? current?.valor_previsto, { required: true, maxFractionDigits: 2 });
     const descontoValor = safeData.desconto_valor ?? current?.desconto_valor;
     const acrescimoValor = safeData.acrescimo_valor ?? current?.acrescimo_valor;
-    const descontoTipo = safeData.desconto_tipo ?? current?.desconto_tipo;
-    const acrescimoTipo = safeData.acrescimo_tipo ?? current?.acrescimo_tipo;
-    const desconto = calculateAdjustmentAmount(descontoValor, descontoTipo, valorPrevisto);
-    const acrescimo = calculateAdjustmentAmount(acrescimoValor, acrescimoTipo, valorPrevisto);
-    const saldoDisponivel = Math.max(0, valorPrevisto - desconto + acrescimo);
-    const valorRecebido = Number(safeData.valor_recebido ?? current?.valor_recebido) || 0;
+    const descontoTipo = normalizeAdjustmentType(safeData.desconto_tipo ?? current?.desconto_tipo);
+    const acrescimoTipo = normalizeAdjustmentType(safeData.acrescimo_tipo ?? current?.acrescimo_tipo);
+    validateLaunchAdjustments({ desconto_valor: descontoValor, desconto_tipo: descontoTipo, acrescimo_valor: acrescimoValor, acrescimo_tipo: acrescimoTipo }, valorPrevisto);
+    const saldoDisponivel = calculateFinalAmount({
+      original: valorPrevisto,
+      discount: descontoValor,
+      discountType: descontoTipo,
+      increase: acrescimoValor,
+      increaseType: acrescimoTipo,
+    });
+    const valorRecebido = parseFinancialInput(safeData.valor_recebido ?? current?.valor_recebido, { maxFractionDigits: 2 });
     const persistedDescontoTipo = normalizeAdjustmentType(current?.desconto_tipo);
     const persistedAcrescimoTipo = normalizeAdjustmentType(current?.acrescimo_tipo);
     const nextDescontoTipo = normalizeAdjustmentType(safeData.desconto_tipo ?? current?.desconto_tipo);
@@ -670,7 +704,12 @@ export const lancamentosService = {
     if (isAVR && (current.status_pagamento !== 'aberto' || Number(current.valor_recebido) > 0)) {
       throw new Error('Somente parcelas abertas e sem valor recebido podem ser ajustadas.');
     }
-    const valorPagoEfetivo = (isBPI || isAVR) ? (data.valor_pago > 0 ? data.valor_pago : (isBPI ? 0 : current.valor_previsto)) : (data.valor_pago > 0 ? data.valor_pago : current.valor_previsto);
+    const valorPagoInformado = parseFinancialInput(data.valor_pago, { maxFractionDigits: 2 });
+    const valorPagoEfetivo = isBPI
+      ? 0
+      : isAVR
+        ? (valorPagoInformado > 0 ? valorPagoInformado : parseFinancialInput(current.valor_previsto, { required: true, maxFractionDigits: 2 }))
+        : valorPagoInformado;
     const parcelaSelecionadaAVR = data.parcelas?.find(parcela => parcela.id === id);
     if (isAVR && current.recorrencia_id && !parcelaSelecionadaAVR) {
       throw new Error('A parcela selecionada não foi encontrada na grade AVR.');
@@ -695,18 +734,26 @@ export const lancamentosService = {
         return total + (shouldUseSelectedValue ? valorParcelaSelecionadaAVR : Number(row.valor_previsto) || 0);
       }, 0);
     }
-    const descontoValor = Number(current.desconto_valor) || 0;
-    const acrescimoValor = Number(current.acrescimo_valor) || 0;
+    const valorBase = parseFinancialInput(current.valor_previsto, { required: true, maxFractionDigits: 2 });
+    const descontoValor = parseFinancialInput(current.desconto_valor, { maxFractionDigits: 2 });
+    const acrescimoValor = parseFinancialInput(current.acrescimo_valor, { maxFractionDigits: 2 });
     const descontoTipo = normalizeAdjustmentType(current.desconto_tipo);
     const acrescimoTipo = normalizeAdjustmentType(current.acrescimo_tipo);
-    const descontoAplicado = calculateAdjustmentAmount(descontoValor, descontoTipo, current.valor_previsto);
-    const acrescimoAplicado = calculateAdjustmentAmount(acrescimoValor, acrescimoTipo, current.valor_previsto);
-    const taxaAplicada = Number(data.taxa_bancaria) || 0;
-    const subtotal = Math.max(0, current.valor_previsto - descontoAplicado + acrescimoAplicado + taxaAplicada);
-    const valorRecebidoAnterior = Number(current.valor_recebido) || 0;
-    const saldoDisponivel = Math.max(0, subtotal - valorRecebidoAnterior);
-    const totalValorRecebido = valorRecebidoAnterior + valorPagoEfetivo;
-    if (isBaixaFinanceira && (data.valor_pago < 0 || data.valor_pago > saldoDisponivel + 0.005)) {
+    validateLaunchAdjustments({ desconto_valor: descontoValor, desconto_tipo: descontoTipo, acrescimo_valor: acrescimoValor, acrescimo_tipo: acrescimoTipo }, valorBase);
+    const taxaAplicada = parseFinancialInput(data.taxa_bancaria, { maxFractionDigits: 2 });
+    const subtotal = calculateFinalAmount({
+      original: valorBase,
+      discount: descontoValor,
+      discountType: descontoTipo,
+      increase: acrescimoValor,
+      increaseType: acrescimoTipo,
+      fee: taxaAplicada,
+    });
+    const valorRecebidoAnterior = parseFinancialInput(current.valor_recebido, { maxFractionDigits: 2 });
+    const saldoDisponivel = Math.round((subtotal - valorRecebidoAnterior) * 100) / 100;
+    if (saldoDisponivel < 0) throw new Error('O valor recebido histórico é maior que o valor final do lançamento.');
+    const totalValorRecebido = Math.round((valorRecebidoAnterior + valorPagoEfetivo) * 100) / 100;
+    if (isBaixaFinanceira && (data.valor_pago <= 0 || data.valor_pago > saldoDisponivel)) {
       throw new Error('O valor pago não pode ser maior que o saldo disponível do título.');
     }
     const isPartial = isBaixaFinanceira && totalValorRecebido < subtotal - 0.005;
@@ -962,15 +1009,17 @@ export const lancamentosService = {
       throw new Error('Apenas usuários Master podem confirmar saldos.');
     }
 
+    let selectedRows: any[] = [];
     if (targetStatus === 'confirmado_master') {
-      const { data: selectedRows, error: selectedRowsError } = await supabase
+      const { data: fetchedSelectedRows, error: selectedRowsError } = await supabase
         .from('lancamentos_financeiros')
-        .select('id, ja_recebido')
+        .select('id, ja_recebido, status_pagamento, vinculo_residuo_id, valor_previsto, desconto_valor, desconto_tipo, acrescimo_valor, acrescimo_tipo')
         .in('id', uniqueIds);
       if (selectedRowsError) throw selectedRowsError;
-      if ((selectedRows || []).length !== uniqueIds.length) throw new Error('Um ou mais lançamentos não foram encontrados.');
+      selectedRows = fetchedSelectedRows || [];
+      if (selectedRows.length !== uniqueIds.length) throw new Error('Um ou mais lançamentos não foram encontrados.');
 
-      const sinalizados = (selectedRows || []).filter(row => row.ja_recebido === true).map(row => row.id);
+      const sinalizados = selectedRows.filter(row => row.ja_recebido === true).map(row => row.id);
       if (sinalizados.length > 0) {
         const { data: vinculos, error: vinculosError } = await supabase
           .from('conciliacoes')
@@ -1000,22 +1049,24 @@ export const lancamentosService = {
     }
 
     if (targetStatus === 'confirmado_master') {
-      const { data: partialRows, error: partialRowsError } = await supabase
-        .from('lancamentos_financeiros')
-        .select('id, status_pagamento, vinculo_residuo_id')
-        .in('id', ids);
-      if (partialRowsError) throw partialRowsError;
-
-      const partialIds = new Set((partialRows || [])
+      const partialIds = new Set((selectedRows || [])
         .filter(row => row.status_pagamento === 'pago_parcial' || row.vinculo_residuo_id)
         .map(row => row.id));
       const regularIds = ids.filter(id => !partialIds.has(id));
 
-      if (regularIds.length > 0) {
+      for (const regularId of regularIds) {
+        const row = (selectedRows || []).find(selectedRow => selectedRow.id === regularId);
+        const valorAjustado = calculateFinalAmount({
+          original: row?.valor_previsto,
+          discount: row?.desconto_valor,
+          discountType: row?.desconto_tipo,
+          increase: row?.acrescimo_valor,
+          increaseType: row?.acrescimo_tipo,
+        });
         const { error } = await supabase
           .from('lancamentos_financeiros')
-          .update(updatePayload)
-          .in('id', regularIds);
+          .update({ ...updatePayload, valor_recebido: valorAjustado })
+          .eq('id', regularId);
         if (error) throw error;
       }
 

@@ -35,6 +35,18 @@ import { ImportConfirmationMetadata, ImportLotDraft, ImportMode, ImportPreview }
 import { buildCsvTransactions, parseCsv, validateImportConsistency } from '../services/conciliacoesService';
 import Button from '../components/Button';
 import TransferenciaBancariaModal from '../components/TransferenciaBancariaModal';
+import { calculateFinalAmount } from '../utils/adjustments';
+
+const getLancamentoAdjustedCents = (lancamento: LancamentoFinanceiro): number => {
+  const adjustedCents = Math.round(calculateFinalAmount({
+    original: lancamento.valor_previsto,
+    discount: lancamento.desconto_valor,
+    discountType: lancamento.desconto_tipo,
+    increase: lancamento.acrescimo_valor,
+    increaseType: lancamento.acrescimo_tipo,
+  }) * 100);
+  return lancamento.tipo === 'saida' ? -adjustedCents : adjustedCents;
+};
 
 export default function Conciliacao() {
   const { 
@@ -296,10 +308,7 @@ export default function Conciliacao() {
       const selected = lancamentos.filter(l => selectedLancamentoIds.includes(l.id));
       if (!tx || selected.length !== selectedLancamentoIds.length) return;
       const txCents = Math.round(Number(tx.valor.toFixed(2)) * 100);
-      const erpCents = selected.reduce((sum, lanc) => {
-        const value = lanc.tipo === 'saida' ? -Math.abs(lanc.valor_previsto) : Math.abs(lanc.valor_previsto);
-        return sum + Math.round(Number(value.toFixed(2)) * 100);
-      }, 0);
+      const erpCents = selected.reduce((sum, lanc) => sum + getLancamentoAdjustedCents(lanc), 0);
       const differenceCents = txCents - erpCents;
       const difference = differenceCents / 100;
 
@@ -398,7 +407,7 @@ export default function Conciliacao() {
     if (!tx) return [];
 
     return availableLaunches.filter(l => {
-      const erpVal = l.tipo === 'saida' ? -Math.abs(l.valor_previsto) : Math.abs(l.valor_previsto);
+      const erpVal = getLancamentoAdjustedCents(l) / 100;
       const sameVal = Math.abs(erpVal - tx.valor) < 0.01;
       const sameDate = l.data_vencimento === tx.data_transacao;
       return sameVal || (sameVal && sameDate);
@@ -424,10 +433,7 @@ export default function Conciliacao() {
   const draftDifferenceAmount = useMemo(() => {
     if (!selectedTxForWorkspace || selectedLancsForWorkspace.length === 0) return 0;
     const txCents = Math.round(Number(selectedTxForWorkspace.valor.toFixed(2)) * 100);
-    const erpCents = selectedLancsForWorkspace.reduce((sum, lanc) => {
-      const value = lanc.tipo === 'saida' ? -Math.abs(lanc.valor_previsto) : Math.abs(lanc.valor_previsto);
-      return sum + Math.round(Number(value.toFixed(2)) * 100);
-    }, 0);
+    const erpCents = selectedLancsForWorkspace.reduce((sum, lanc) => sum + getLancamentoAdjustedCents(lanc), 0);
     return (txCents - erpCents) / 100;
   }, [selectedTxForWorkspace, selectedLancsForWorkspace]);
 
@@ -1094,7 +1100,7 @@ export default function Conciliacao() {
                         <tr><th className="py-2 pr-3">Campo</th><th className="py-2">Banco</th><th className="py-2">ERP</th></tr>
                       </thead>
                       <tbody className="font-bold text-neutral-700">
-                        <tr className="border-b border-primary/10"><td className="py-2 pr-3">Valor (centavos)</td><td className="py-2 font-mono">{Math.round(Number(selectedTxForWorkspace.valor.toFixed(2)) * 100)}¢</td><td className="py-2 font-mono">{selectedLancsForWorkspace.reduce((sum, lanc) => sum + Math.round(Number((lanc.tipo === 'saida' ? -Math.abs(lanc.valor_previsto) : Math.abs(lanc.valor_previsto)).toFixed(2)) * 100), 0)}¢</td></tr>
+                        <tr className="border-b border-primary/10"><td className="py-2 pr-3">Valor (centavos)</td><td className="py-2 font-mono">{Math.round(Number(selectedTxForWorkspace.valor.toFixed(2)) * 100)}¢</td><td className="py-2 font-mono">{selectedLancsForWorkspace.reduce((sum, lanc) => sum + getLancamentoAdjustedCents(lanc), 0)}¢</td></tr>
                         <tr className="border-b border-primary/10"><td className="py-2 pr-3">Data</td><td className="py-2">{selectedTxForWorkspace.data_transacao}</td><td className="py-2">{selectedLancsForWorkspace.map(l => l.data_vencimento).join(', ')}</td></tr>
                         <tr className="border-b border-primary/10"><td className="py-2 pr-3">Natureza</td><td className="py-2">{selectedTxForWorkspace.tipo_movimento === 'credito' ? 'entrada' : 'saida'}</td><td className="py-2">{selectedLancsForWorkspace.map(l => l.tipo).join(', ')}</td></tr>
                         <tr className="border-b border-primary/10"><td className="py-2 pr-3">Descrição</td><td className="py-2">{selectedTxForWorkspace.descricao_banco}</td><td className="py-2">{selectedLancsForWorkspace.map(l => l.observacoes || 'Sem descrição').join(' • ')}</td></tr>

@@ -37,7 +37,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useUIStore } from '../store/uiStore';
 import { useDragScroll } from '../hooks/useDragScroll';
 import { LancamentoFinanceiro } from '../types';
-import { calculateAdjustmentAmount } from '../utils/adjustments';
+import { calculateAdjustmentAmount, calculateFinalAmount } from '../utils/adjustments';
 import { motion, AnimatePresence } from 'motion/react';
 import Button from '../components/Button';
 import MultiSelectDropdown from '../components/MultiSelectDropdown';
@@ -343,17 +343,25 @@ export default function Lancamentos({
     if ((item.status_pagamento === 'pago' || item.status_pagamento === 'pago_parcial') && item.valor_recebido) {
       return item.valor_recebido;
     }
-    const desconto = calculateAdjustmentAmount(item.desconto_valor, item.desconto_tipo, item.valor_previsto);
-    const acrescimo = calculateAdjustmentAmount(item.acrescimo_valor, item.acrescimo_tipo, item.valor_previsto);
-    const liquido = item.valor_previsto - desconto + acrescimo;
-    return liquido;
+    return calculateFinalAmount({
+      original: item.valor_previsto,
+      discount: item.desconto_valor,
+      discountType: item.desconto_tipo,
+      increase: item.acrescimo_valor,
+      increaseType: item.acrescimo_tipo,
+    });
   };
 
   const getSaldoAPagar = (item: LancamentoFinanceiro): number => {
-    const desconto = calculateAdjustmentAmount(item.desconto_valor, item.desconto_tipo, item.valor_previsto);
-    const acrescimo = calculateAdjustmentAmount(item.acrescimo_valor, item.acrescimo_tipo, item.valor_previsto);
+    const valorAjustado = calculateFinalAmount({
+      original: item.valor_previsto,
+      discount: item.desconto_valor,
+      discountType: item.desconto_tipo,
+      increase: item.acrescimo_valor,
+      increaseType: item.acrescimo_tipo,
+    });
     const valorPago = Number(item.valor_recebido) || 0;
-    return Math.max(0, item.valor_previsto - desconto + acrescimo - valorPago);
+    return Math.max(0, valorAjustado - valorPago);
   };
 
   const hasAjuste = (item: LancamentoFinanceiro): boolean => {
@@ -499,7 +507,7 @@ export default function Lancamentos({
       totals.desconto += desconto;
       totals.acrescimo += acrescimo;
       totals.valorPago += valorPago;
-      totals.aPagar += Math.max(0, item.valor_previsto - desconto + acrescimo - valorPago);
+      totals.aPagar += getSaldoAPagar(item);
       return totals;
     },
     { valorDocOriginal: 0, valorParcOriginal: 0, desconto: 0, acrescimo: 0, valorPago: 0, aPagar: 0 }
@@ -516,7 +524,7 @@ export default function Lancamentos({
       totals.acrescimo += acrescimo;
       totals.valorPago += valorPago;
       totals.liquido += liquido;
-      totals.aPagar += Math.max(0, item.valor_previsto - desconto + acrescimo - valorPago);
+      totals.aPagar += getSaldoAPagar(item);
       if (item.tipo === 'entrada') totals.entradas += liquido;
       if (item.tipo === 'saida') totals.saidas += liquido;
       return totals;

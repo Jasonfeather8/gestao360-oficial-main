@@ -31,7 +31,7 @@ import { useLancamentos, useLancamento, useContas, useEntidades, useCategorias, 
 import { useAuth } from '../hooks/useAuth';
 import MoneyInput from './MoneyInput';
 import Button from './Button';
-import { calculateAdjustmentAmount } from '../utils/adjustments';
+import { calculateAdjustmentAmount, calculateFinalAmount } from '../utils/adjustments';
 import { supabase } from '@/integrations/supabase/client';
 
 interface LocalFile {
@@ -255,7 +255,14 @@ export default function BaixaLancamentoModal() {
   const isAVR = tipoBaixa === 'avr';
   const hasAnexo = attachments.length > 0 || (existingAnexos?.length || 0) > 0;
 
-  const subtotalCalculado = Math.max(0, totalOriginal - calculatedDesconto + calculatedAcrescimo + numericTaxa);
+  const subtotalCalculado = calculateFinalAmount({
+    original: totalOriginal,
+    discount: numericDesconto,
+    discountType: descontoTipo,
+    increase: numericAcrescimo,
+    increaseType: acrescimoTipo,
+    fee: numericTaxa,
+  });
   const valorDigitado = parseMoney(valorPago);
   const valorRecebidoAnterior = Number(lancamento.valor_recebido) || 0;
   const saldoDisponivel = Math.max(0, subtotalCalculado - valorRecebidoAnterior);
@@ -600,6 +607,7 @@ export default function BaixaLancamentoModal() {
                       disabled={!isGerenteOrMaster || isBpi}
                       value={descontoValor}
                       onChange={setDescontoValor}
+                      mode={descontoTipo === 'porcentagem' ? 'percentage' : 'money'}
                       className="w-full h-12 bg-transparent border-none text-xs font-black text-on-surface focus:outline-none px-4 disabled:opacity-50"
                       placeholder="0,00"
                     />
@@ -652,6 +660,7 @@ export default function BaixaLancamentoModal() {
                       disabled={isBpi}
                       value={acrescimoValor}
                       onChange={setAcrescimoValor}
+                      mode={acrescimoTipo === 'porcentagem' ? 'percentage' : 'money'}
                       className="w-full h-12 bg-transparent border-none text-xs font-black text-on-surface focus:outline-none px-4 disabled:opacity-50"
                       placeholder="0,00"
                     />
@@ -696,11 +705,22 @@ export default function BaixaLancamentoModal() {
                   <button
                     type="button"
                     onClick={() => {
-                      const onePercent = totalOriginal * 0.01;
+                      const onePercent = calculateFinalAmount({
+                        original: totalOriginal,
+                        discount: numericDesconto,
+                        discountType: descontoTipo,
+                        increase: numericAcrescimo,
+                        increaseType: acrescimoTipo,
+                        fee: totalOriginal * 0.01,
+                      }) - calculateFinalAmount({
+                        original: totalOriginal,
+                        discount: numericDesconto,
+                        discountType: descontoTipo,
+                        increase: numericAcrescimo,
+                        increaseType: acrescimoTipo,
+                      });
                       setTaxaBancaria(formatBRL(onePercent));
-                      // Update valorPago to match new subtotal with tax
-                      const newSubtotal = Math.max(0, totalOriginal - calculatedDesconto + calculatedAcrescimo + onePercent);
-                      setValorPago(formatBRL(newSubtotal));
+                      setValorPago(formatBRL(subtotalCalculado + onePercent));
                     }}
                     className="text-[9px] font-black uppercase text-primary hover:underline"
                   >

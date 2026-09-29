@@ -72,9 +72,9 @@ Não foram adicionadas colunas de pagamento/recebimento. Em particular, `data_re
 
 ## 3. Ajustes financeiros
 
-O modelo possui `desconto_valor` + `desconto_tipo`, `acrescimo_valor` + `acrescimo_tipo` e os respectivos motivos. Os tipos aceitos pela aplicação são `valor` e `porcentagem`. A correção detalhada da interpretação R$ versus % não faz parte deste módulo; nesta etapa os campos apenas são preservados e usados pelo fluxo existente, sem alteração de cálculo além do necessário para não transformar uma previsão sinalizada em baixa.
+O modelo possui `desconto_valor` + `desconto_tipo`, `acrescimo_valor` + `acrescimo_tipo` e os respectivos motivos. Os tipos aceitos pela aplicação são `valor` e `porcentagem`. Valores fixos são tratados em centavos; percentuais incidem sobre `valor_previsto`, com cada componente arredondado financeiramente a duas casas antes da composição. A entrada rejeita valores negativos, percentuais fora de `0..100`, precisão superior a centavos e tipos inválidos. A fórmula da baixa é `valor_original - desconto + acrescimo + tarifa`, sem permitir resultado final negativo.
 
-Tarifa bancária aparece no fluxo de baixa/conciliação como diferença financeira e não como coluna própria de `lancamentos_financeiros`. Os tipos de diferença da conciliação incluem `juros`, `multa`, `desconto`, `tarifa`, `pagamento_parcial` e `ajuste_manual`.
+Tarifa bancária aparece no fluxo de baixa/conciliação como diferença financeira e não como coluna própria de `lancamentos_financeiros`. Os tipos de diferença da conciliação incluem `juros`, `multa`, `desconto`, `tarifa`, `pagamento_parcial` e `ajuste_manual`. A tarifa informada na baixa também é validada e arredondada em centavos antes da composição.
 
 ## 4. Vínculos do domínio
 
@@ -172,8 +172,10 @@ As funções de conciliação vigentes são `SECURITY DEFINER`, usam `search_pat
 8. A RPC `conciliar_transacao_atomica` tinha ramificação que pagava imediatamente quando a role era Master, e `criar_lancamento_a_partir_transacao_atomico` fazia o mesmo. No schema remoto auditado, ambas já terminam em `quitação_pendente` + `digital` e a aplicação cliente rejeita retorno incompatível. A proteção de banco vigente é `proteger_previsao_sinalizada`, acionada por `trg_proteger_previsao_sinalizada`.
 9. O formulário enviava `status_pagamento = aberto` indiscriminadamente durante edição, o que poderia reabrir uma baixa já confirmada. Corrigido no contrato de edição: previsão sinalizada não confirmada continua aberta; lançamento com `confirmado_master` e `pago`/`pago_parcial` preserva os estados persistidos, sujeito à RLS e à role Master.
 
-## 9. Limites desta etapa
+## 9. Tratamento histórico e limites desta etapa
 
-Não foram criadas colunas, migrations, painéis Master, conciliação bancária completa, Cofre Local, transferências novas ou migração de dados históricos. A correção detalhada de R$ versus % de desconto/acréscimo/tarifa permanece fora do escopo.
+A análise read-only dos registros existentes identificou 5 títulos com `ja_recebido = true` e `status_pagamento = pago`, 72 títulos pagos sem conciliação, 1 quitação pendente consistente (`digital`), 72 lançamentos confirmados pelo Master distribuídos em 60 pagos, 10 abertos e 2 BPI, nenhum ajuste ambíguo nos limites de tipo, percentual, sinal ou precisão e 14 títulos pagos cujo `valor_recebido` diverge do valor final ajustado atual. Esses registros não foram alterados automaticamente: os casos inconsistentes permanecem preservados para revisão/regra explícita, enquanto os casos operacionais continuam disponíveis no fluxo vigente.
 
-A auditoria do schema remoto confirmou as funções de conciliação com a máquina de estados corrigida e o trigger de proteção da previsão sinalizada. Nenhum dado existente foi atualizado em massa; as funções mantêm `SECURITY DEFINER`, `search_path`, autenticação, roles, atomicidade, locks e validações existentes.
+Não foram criadas migrations, painéis Master, conciliação bancária completa, Cofre Local ou transferências novas. As colunas de auditoria adicionadas são nullable e não reescrevem logs anteriores; novos eventos registram origem, lançamento, transação bancária quando identificável, estados anterior/novo e justificativa quando disponível.
+
+A auditoria do schema remoto confirmou as funções de conciliação com a máquina de estados corrigida, as proteções de centavos/tipos/limites dos ajustes, a origem exclusiva de `quitação_pendente` pela conciliação e a confirmação definitiva restrita ao Master. Nenhum dado existente foi atualizado em massa; as funções mantêm `SECURITY DEFINER`, `search_path`, autenticação, roles, atomicidade, locks e validações existentes.

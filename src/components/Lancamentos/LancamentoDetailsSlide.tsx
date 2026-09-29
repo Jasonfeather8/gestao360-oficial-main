@@ -52,7 +52,7 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { PrintDocumentSelector } from '../printing/PrintDocumentSelector';
 import type { PrintableDocumentData } from '../printing/types';
-import { calculateAdjustmentAmount } from '../../utils/adjustments';
+import { calculateAdjustmentAmount, calculateFinalAmount } from '../../utils/adjustments';
 
 export default function LancamentoDetailsSlide() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -187,7 +187,13 @@ export default function LancamentoDetailsSlide() {
     const base = Number(parcela.valor_previsto) || 0;
     return total + calculateAdjustmentAmount(parcela.acrescimo_valor, parcela.acrescimo_tipo, base);
   }, 0);
-  const valorAjustado = Math.max(0, valorPrevistoConsolidado - descontoConsolidado + acrescimoConsolidado);
+  const valorAjustado = calculateFinalAmount({
+    original: valorPrevistoConsolidado,
+    discount: descontoConsolidado,
+    discountType: 'valor',
+    increase: acrescimoConsolidado,
+    increaseType: 'valor',
+  });
   const saldoPagar = Math.max(0, valorAjustado - valorRecebidoConsolidado);
   const printableData: PrintableDocumentData | null = lancamento ? {
     id: lancamento.id,
