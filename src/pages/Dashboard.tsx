@@ -103,26 +103,26 @@ export default function Dashboard() {
   };
 
   const totals = useMemo(() => {
-   const paidSum = filteredLancamentos.filter(l => l.status_pagamento === 'pago').length;
-   const unpaidSum = filteredLancamentos.filter(l => l.status_pagamento === 'aberto').length;
+   const paidSum = filteredLancamentos.filter(l => l.status_pagamento === 'pago' && l.status_aprovacao === 'confirmado_master').length;
+   const unpaidSum = filteredLancamentos.filter(l => l.status_pagamento === 'aberto' || l.status_pagamento === 'pago_parcial' || l.status_pagamento === 'quitação_pendente').length;
    const bpiSum = filteredLancamentos.filter(l => l.status_pagamento === 'bpi').length;
    const totalStatusCount = paidSum + unpaidSum + bpiSum || 1;
 
    // Real juros and discounts metrics
    const jurosPagos = filteredLancamentos
-     .filter(l => l.tipo === 'saida' && l.status_pagamento === 'pago')
+     .filter(l => l.tipo === 'saida' && l.status_pagamento === 'pago' && l.status_aprovacao === 'confirmado_master')
      .reduce((acc, l) => acc + calculateAdjustmentAmount(l.acrescimo_valor, l.acrescimo_tipo, l.valor_previsto), 0);
 
    const descontosObtidos = filteredLancamentos
-     .filter(l => l.tipo === 'saida' && l.status_pagamento === 'pago')
+     .filter(l => l.tipo === 'saida' && l.status_pagamento === 'pago' && l.status_aprovacao === 'confirmado_master')
      .reduce((acc, l) => acc + calculateAdjustmentAmount(l.desconto_valor, l.desconto_tipo, l.valor_previsto), 0);
 
    const jurosRecebidos = filteredLancamentos
-     .filter(l => l.tipo === 'entrada' && l.status_pagamento === 'pago')
+     .filter(l => l.tipo === 'entrada' && l.status_pagamento === 'pago' && l.status_aprovacao === 'confirmado_master')
      .reduce((acc, l) => acc + calculateAdjustmentAmount(l.acrescimo_valor, l.acrescimo_tipo, l.valor_previsto), 0);
 
    const descontosConcedidos = filteredLancamentos
-     .filter(l => l.tipo === 'entrada' && l.status_pagamento === 'pago')
+     .filter(l => l.tipo === 'entrada' && l.status_pagamento === 'pago' && l.status_aprovacao === 'confirmado_master')
      .reduce((acc, l) => acc + calculateAdjustmentAmount(l.desconto_valor, l.desconto_tipo, l.valor_previsto), 0);
 
    return {
@@ -521,7 +521,7 @@ export default function Dashboard() {
               <table className="w-full text-left border-collapse">
                 <thead><tr className="bg-neutral-50 text-neutral-400 border-b border-neutral-100 text-[9px] font-black uppercase tracking-widest"><th className="py-4 px-8">Data</th><th className="py-4 px-8">Descrição</th><th className="py-4 px-8">Entidade</th><th className="py-4 px-8 text-right">Valor</th></tr></thead>
                 <tbody className="text-[11px] font-bold">
-                  {lancamentos.filter(l => isFinancialReportItem(l) && l.status_pagamento === 'pago').slice(0, 50).map(l => (
+                  {lancamentos.filter(l => isFinancialReportItem(l) && l.status_pagamento === 'pago' && l.status_aprovacao === 'confirmado_master').slice(0, 50).map(l => (
                     <tr key={l.id} className="border-b border-neutral-50 hover:bg-neutral-50">
 
                       <td className="py-4 px-8 font-mono">{l.data_vencimento.split('-').reverse().join('/')}</td>

@@ -854,7 +854,10 @@ export const lancamentosService = {
 
    const updatePayload: any = {
      status_pagamento: isPartial && !isBPI ? (isMaster ? 'pago_parcial' : 'quitação_pendente') : finalPaymentStatus,
-     ...(isBaixaFinanceira ? { status_aprovacao: 'digital' } : {}),
+     ...(isBaixaFinanceira ? {
+       status_aprovacao: isMaster ? 'confirmado_master' : 'digital',
+       ...(isMaster ? { data_aprovacao: new Date().toISOString() } : {})
+     } : {}),
      data_pagamento: dataPagamentoVal,
      hora_pagamento: isBPI ? null : horaPagamentoVal,
      conta_bancaria_id: contaBancariaVal,
@@ -904,6 +907,22 @@ export const lancamentosService = {
       return;
     }
 
+    if (current.ja_recebido === true && (current.status_pagamento === 'pago' || current.status_pagamento === 'pago_parcial')) {
+      const { data: conciliacao, error: conciliacaoError } = await supabase
+        .from('conciliacoes')
+        .select('id')
+        .eq('lancamento_id', id)
+        .limit(1)
+        .maybeSingle();
+      if (conciliacaoError) throw conciliacaoError;
+      if (!conciliacao) throw new Error('O título sinalizado não possui uma conciliação para estornar.');
+      const { error: unlinkError } = await supabase.rpc('desvincular_conciliacao_atomica', {
+        p_conciliacao_id: conciliacao.id,
+      });
+      if (unlinkError) throw unlinkError;
+      return;
+    }
+
     if (current.vinculo_residuo_id) {
       const { data: original } = await supabase
         .from('lancamentos_financeiros')
@@ -932,11 +951,38 @@ export const lancamentosService = {
   },
 
   approveInBatch: async (ids: string[], targetStatus: 'digital' | 'confirmado_master' | 'reprovado'): Promise<void> => {
+    const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
+    if (uniqueIds.length === 0) throw new Error('Selecione ao menos um lançamento.');
+    if (uniqueIds.length !== ids.length) throw new Error('A lista de lançamentos contém duplicidades.');
+
     const { data: { user } } = await supabase.auth.getUser();
     const { data: profile } = await supabase.from('profiles').select('role').eq('id', user?.id).single();
 
     if (targetStatus === 'confirmado_master' && profile?.role !== 'master') {
       throw new Error('Apenas usuários Master podem confirmar saldos.');
+    }
+
+    if (targetStatus === 'confirmado_master') {
+      const { data: selectedRows, error: selectedRowsError } = await supabase
+        .from('lancamentos_financeiros')
+        .select('id, ja_recebido')
+        .in('id', uniqueIds);
+      if (selectedRowsError) throw selectedRowsError;
+      if ((selectedRows || []).length !== uniqueIds.length) throw new Error('Um ou mais lançamentos não foram encontrados.');
+
+      const sinalizados = (selectedRows || []).filter(row => row.ja_recebido === true).map(row => row.id);
+      if (sinalizados.length > 0) {
+        const { data: vinculos, error: vinculosError } = await supabase
+          .from('conciliacoes')
+          .select('lancamento_id')
+          .in('lancamento_id', sinalizados);
+        if (vinculosError) throw vinculosError;
+        const conciliados = new Set((vinculos || []).map(row => row.lancamento_id));
+        const semConciliacao = sinalizados.filter(id => !conciliados.has(id));
+        if (semConciliacao.length > 0) {
+          throw new Error('Títulos sinalizados só podem ser confirmados após uma conciliação bancária existente.');
+        }
+      }
     }
 
     const updatePayload: any = {

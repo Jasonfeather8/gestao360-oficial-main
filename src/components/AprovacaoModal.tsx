@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 
 import { useUIStore } from '../store/uiStore';
-import { useLancamentos } from '../hooks/useData';
+import { useLancamentos, useConciliacao } from '../hooks/useData';
 import { supabase } from '@/integrations/supabase/client';
 
 interface LocalFile {
@@ -30,10 +30,15 @@ export default function AprovacaoModal() {
   } = useUIStore();
 
   const { data: lancamentos = [], batchApprove } = useLancamentos();
+  const { conciliacoes = [] } = useConciliacao();
   const [loading, setLoading] = useState(false);
   const [attachments, setAttachments] = useState<LocalFile[]>([]);
 
   const selectedCount = selectedLancamentoIdsForBatch.length;
+  const sinalizadoSemConciliacao = selectedLancamentoIdsForBatch.some(id => {
+    const item = (lancamentos as any[]).find(lancamento => lancamento.id === id);
+    return item?.ja_recebido === true && !conciliacoes.some(conciliacao => conciliacao.lancamento_id === id);
+  });
   const showAttachment = selectedCount === 1;
 
   const lancamento = showAttachment
@@ -49,6 +54,11 @@ export default function AprovacaoModal() {
   };
 
   const handleConfirm = async () => {
+    if (sinalizadoSemConciliacao) {
+      alert('Títulos sinalizados só podem ser confirmados após uma conciliação bancária existente.');
+      return;
+    }
+
     setLoading(true);
     try {
       await batchApprove({ ids: selectedLancamentoIdsForBatch, targetStatus: 'confirmado_master' });
@@ -143,6 +153,7 @@ export default function AprovacaoModal() {
                   <>Você está prestes a aprovar o título de <span className="text-primary font-black">{entName}</span>.</>
                 )}
                 {selectedCount === 1 && <span className="block mt-1 text-bank-truth-green font-black">Isso irá alterar o status para Pago.</span>}
+                {sinalizadoSemConciliacao && <span className="block mt-1 text-amber-700 font-black">Título sinalizado deve ser confirmado pela conciliação bancária.</span>}
               </p>
 
             </div>
@@ -200,7 +211,7 @@ export default function AprovacaoModal() {
             <div className="grid grid-cols-1 gap-3 pt-4">
               <button
                 onClick={handleConfirm}
-                disabled={loading}
+                disabled={loading || sinalizadoSemConciliacao}
                 className="w-full py-4 bg-neutral-900 hover:bg-black text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-lg disabled:opacity-50"
               >
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}

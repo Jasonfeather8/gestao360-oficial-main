@@ -32,7 +32,7 @@ import {
   Paperclip
 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
-import { useLancamentos, useContas, useEntidades, useCategorias, useUsuarios, useCentrosCusto, useCategoriasAjuste, useContasSaldos } from '../hooks/useData';
+import { useLancamentos, useContas, useEntidades, useCategorias, useUsuarios, useCentrosCusto, useCategoriasAjuste, useContasSaldos, useConciliacao } from '../hooks/useData';
 import { useAuth } from '../hooks/useAuth';
 import { useUIStore } from '../store/uiStore';
 import { useDragScroll } from '../hooks/useDragScroll';
@@ -82,6 +82,7 @@ export default function Lancamentos({
 
   const isMaster = role === 'master';
   const isColaborador = role === 'colaborador';
+  const { conciliacoes = [] } = useConciliacao();
   const isFinanceiroView = !typeOverride && !titleOverride;
   const isOperationalView = !!typeOverride;
 
@@ -427,6 +428,7 @@ export default function Lancamentos({
     const eligibleIds = filteredLancamentos
       .filter(item => selectedLancamentoIdsForBatch.includes(item.id))
       .filter(item => (item.status_aprovacao !== 'confirmado_master' || item.status_pagamento === 'quitação_pendente') && item.status_pagamento !== 'bpi')
+      .filter(item => !item.ja_recebido || conciliacoes.some(conciliacao => conciliacao.lancamento_id === item.id))
       .map(item => item.id);
     if (eligibleIds.length === 0) return;
     setSelectedLancamentoIdsForBatch(eligibleIds);
@@ -532,11 +534,11 @@ export default function Lancamentos({
     : `repeat(${mirrorColumnCount}, minmax(0, 1fr))`;
 
   const formatPrintDate = (dateStr: string | null | undefined) => dateStr ? dateStr.slice(0, 10).split('-').reverse().join('/') : '-';
-  const isPartialPayment = (item: LancamentoFinanceiro) => item.status_pagamento === 'pago_parcial' || (item.status_pagamento === 'quitação_pendente' && Boolean((item as any).vinculo_residuo_id));
+  const isPartialPayment = (item: LancamentoFinanceiro) => item.status_pagamento === 'pago_parcial';
   const getPrintStatus = (item: LancamentoFinanceiro) => {
     if (item.status_pagamento === 'pago') return 'Liquidado, Pago';
     if (isPartialPayment(item)) return 'Pago Parcial';
-    if (item.status_pagamento === 'quitação_pendente') return 'Quitação pendente';
+    if (item.status_pagamento === 'quitação_pendente') return 'Pendente de confirmação do Master';
     if (item.status_pagamento === 'bpi') return 'BPI';
     return item.status_aprovacao === 'reprovado' ? 'Reprovado' : 'Em aberto';
   };
@@ -562,8 +564,12 @@ export default function Lancamentos({
   const renderStatusBadge = (item: LancamentoFinanceiro) => {
    if (isFinanceiroView && item.status_aprovacao !== 'confirmado_master') {
      return (
-       <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-orange-50 text-orange-600 font-black border border-orange-200 text-[9px] uppercase tracking-tighter animate-pulse">
-         Pend. Gestor
+       <span
+         title={item.status_pagamento === 'quitação_pendente' ? 'Pendente de confirmação do Master' : undefined}
+         aria-label={item.status_pagamento === 'quitação_pendente' ? 'Pendente de confirmação do Master' : undefined}
+         className="inline-flex items-center px-2.5 py-0.5 rounded bg-orange-50 text-orange-600 font-black border border-orange-200 text-[9px] uppercase tracking-tighter animate-pulse"
+       >
+         {item.status_pagamento === 'quitação_pendente' ? 'Pendente' : 'Pend. Gestor'}
        </span>
      );
    }
@@ -605,8 +611,12 @@ export default function Lancamentos({
    }
    if (item.status_pagamento === 'quitação_pendente') {
      return (
-       <span className="inline-flex items-center px-2.5 py-0.5 rounded bg-orange-50 text-orange-600 font-black border border-orange-200 text-[9px] uppercase tracking-tighter animate-pulse">
-         {isMaster ? 'Confirme Baixa' : 'Pendente Gestor'}
+       <span
+         title="Pendente de confirmação do Master"
+         aria-label="Pendente de confirmação do Master"
+         className="inline-flex items-center px-2.5 py-0.5 rounded bg-orange-50 text-orange-600 font-black border border-orange-200 text-[9px] uppercase tracking-tighter animate-pulse"
+       >
+         Pendente
        </span>
      );
    }
@@ -764,12 +774,14 @@ export default function Lancamentos({
                         { id: 'pago', label: 'Liquidados' },
                         { id: 'aberto', label: 'Contas em Aberto' },
                         { id: 'atrasadas', label: 'Atrasadas' },
-                        { id: 'quitação_pendente', label: 'Pend. Gestor' },
+                        { id: 'quitação_pendente', label: 'Pendente Master' },
                         { id: 'bpi', label: 'BPI (Inatividade)' },
                       ]).map(opt => (
                     <button
                       key={opt.id}
                       type="button"
+                      title={opt.id === 'quitação_pendente' ? 'Pendente de confirmação do Master' : undefined}
+                      aria-label={opt.id === 'quitação_pendente' ? 'Pendente de confirmação do Master' : undefined}
                       onClick={() => opt.id === 'all'
                         ? setStatusPagamento([])
                         : setStatusPagamento(current => current.includes(opt.id) ? current.filter(value => value !== opt.id) : [...current, opt.id])}
@@ -1150,7 +1162,7 @@ export default function Lancamentos({
                               </div>
                             ) : item.status_pagamento === 'quitação_pendente' ? (
                               <div className="flex flex-col">
-                                <span className="text-amber-600 font-black text-[9px] uppercase">{isMaster ? 'Confirme Baixa' : 'Pendente Gestor'}</span>
+                                <span className="text-amber-600 font-black text-[9px] uppercase" title="Pendente de confirmação do Master" aria-label="Pendente de confirmação do Master">Pendente</span>
                                 <span className="text-[9px] text-neutral-400 font-mono">{item.data_pagamento?.split('-').reverse().join('/')}</span>
                               </div>
                             ) : item.status_pagamento === 'bpi' ? (
@@ -1195,7 +1207,7 @@ export default function Lancamentos({
                       <td className="py-3 px-4 text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-2">
                           <div className="flex items-center gap-1.5 mr-2">
-                            {isFinanceiroView && isMaster && isAprovacaoPendente && (
+                            {isFinanceiroView && isMaster && isAprovacaoPendente && (!item.ja_recebido || conciliacoes.some(conciliacao => conciliacao.lancamento_id === item.id)) && (
                               <button
                                 type="button"
                                 onClick={() => {
@@ -1208,13 +1220,22 @@ export default function Lancamentos({
                               </button>
                             )}
                             {isOperationalView && (item.status_pagamento === 'aberto' || isPartialPayment(item)) && (
-                              <button
-                                type="button"
-                                onClick={() => handleOpenBaixa(item.id)}
-                                className="px-3 py-1.5 bg-bank-truth-green text-white text-[9px] font-black uppercase tracking-widest rounded-lg hover:brightness-110 transition-all flex items-center gap-1.5 shadow-sm"
-                              >
-                                <CheckCircle2 className="w-3 h-3" /> Dar baixa
-                              </button>
+                              item.ja_recebido === true ? (
+                                <span
+                                  className="px-3 py-1.5 bg-amber-50 text-amber-700 border border-amber-200 text-[9px] font-black uppercase tracking-widest rounded-lg inline-flex items-center gap-1.5"
+                                  title="Título sinalizado: a baixa ocorrerá pela conciliação bancária."
+                                >
+                                  <ShieldCheck className="w-3 h-3" /> Baixa pela conciliação
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenBaixa(item.id)}
+                                  className="px-3 py-1.5 bg-bank-truth-green text-white text-[9px] font-black uppercase tracking-widest rounded-lg hover:brightness-110 transition-all flex items-center gap-1.5 shadow-sm"
+                                >
+                                  <CheckCircle2 className="w-3 h-3" /> Dar baixa
+                                </button>
+                              )
                             )}
                           </div>
 

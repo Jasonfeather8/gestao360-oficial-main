@@ -383,7 +383,7 @@ export default function Conciliacao() {
   const availableLaunches = useMemo(() => {
     return lancamentos.filter(l => {
       const matchConta = l.conta_bancaria_id === selectedContaId;
-      const matchStatus = !conciliacoes.some(c => c.lancamento_id === l.id);
+      const matchStatus = l.status_pagamento === 'aberto' && !conciliacoes.some(c => c.lancamento_id === l.id);
       const isTransferMirror = Boolean(l.transferencia_id && (l.transferencia_lado === 'origem' || l.transferencia_lado === 'destino'));
       const matchMonth = l.data_vencimento.startsWith(selectedMonth);
       const matchDirection = directionFilter === 'todos' ? true : l.tipo === directionFilter;

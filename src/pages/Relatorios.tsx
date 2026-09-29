@@ -62,6 +62,7 @@ export default function Relatorios() {
     const periodItems = lancamentos.filter(l =>
       isFinancialReportItem(l) &&
       l.status_pagamento === 'pago' &&
+      l.status_aprovacao === 'confirmado_master' &&
       l.data_vencimento >= dateRange.start &&
       l.data_vencimento <= dateRange.end &&
       (selectedCostCenter === 'all' || l.centro_custo_id === selectedCostCenter)
@@ -120,8 +121,8 @@ export default function Relatorios() {
 
     const realizedIn = periodItems.filter(l => l.tipo === 'entrada' && l.status_pagamento === 'pago' && l.status_aprovacao === 'confirmado_master').reduce((acc, curr) => acc + (curr.valor_recebido ?? curr.valor_previsto), 0);
     const realizedOut = periodItems.filter(l => l.tipo === 'saida' && l.status_pagamento === 'pago' && l.status_aprovacao === 'confirmado_master').reduce((acc, curr) => acc + (curr.valor_recebido ?? curr.valor_previsto), 0);
-    const expectedIn = periodItems.filter(l => l.tipo === 'entrada' && l.status_pagamento === 'aberto').reduce((acc, curr) => acc + curr.valor_previsto, 0);
-    const expectedOut = periodItems.filter(l => l.tipo === 'saida' && l.status_pagamento === 'aberto').reduce((acc, curr) => acc + curr.valor_previsto, 0);
+    const expectedIn = periodItems.filter(l => l.tipo === 'entrada' && (l.status_pagamento === 'aberto' || l.status_pagamento === 'quitação_pendente')).reduce((acc, curr) => acc + curr.valor_previsto, 0);
+    const expectedOut = periodItems.filter(l => l.tipo === 'saida' && (l.status_pagamento === 'aberto' || l.status_pagamento === 'quitação_pendente')).reduce((acc, curr) => acc + curr.valor_previsto, 0);
 
     const totalRevenue = realizedIn + expectedIn;
     const netProfit = realizedIn - realizedOut;
@@ -166,7 +167,7 @@ export default function Relatorios() {
       const realized = dayItems.filter(l => l.status_pagamento === 'pago' && l.status_aprovacao === 'confirmado_master')
         .reduce((acc, curr) => acc + (curr.tipo === 'entrada' ? (curr.valor_recebido ?? curr.valor_previsto) : -(curr.valor_recebido ?? curr.valor_previsto)), 0);
       
-      const expected = dayItems.filter(l => l.status_pagamento === 'aberto')
+      const expected = dayItems.filter(l => l.status_pagamento === 'aberto' || l.status_pagamento === 'quitação_pendente')
         .reduce((acc, curr) => acc + (curr.tipo === 'entrada' ? curr.valor_previsto : -curr.valor_previsto), 0);
 
       return {

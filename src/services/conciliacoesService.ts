@@ -27,6 +27,40 @@ const PDF_MIME_TYPE = 'application/pdf';
 
 const friendlyError = (message: string) => new Error(message);
 
+const getExistingConciliacaoResult = async (
+  transacaoBancoId: string,
+  lancamentoIds: string[],
+): Promise<ConciliacaoAtomicaResult> => {
+  const { data, error } = await supabase
+    .from('conciliacoes')
+    .select('*')
+    .eq('transacao_banco_id', transacaoBancoId);
+  if (error) throw error;
+
+  const existing = (data || []) as Conciliacao[];
+  if (existing.length === 0) throw friendlyError('A conciliação repetida não foi localizada.');
+  const existingIds = new Set(existing.map(item => item.lancamento_id));
+  const requestedIds = new Set(lancamentoIds);
+  if (existing.length !== requestedIds.size || existingIds.size !== requestedIds.size || [...requestedIds].some(id => !existingIds.has(id))) {
+    throw friendlyError('A transação bancária já possui uma conciliação com outro conjunto de lançamentos.');
+  }
+
+  const conciliacaoIds = existing.map(item => item.id);
+  const { data: differences, error: differencesError } = await supabase
+    .from('diferencas_financeiras')
+    .select('valor_diferenca')
+    .in('conciliacao_id', conciliacaoIds);
+  if (differencesError) throw differencesError;
+
+  return {
+    grupo_conciliacao_id: existing[0]?.grupo_conciliacao_id || '',
+    conciliacoes: existing,
+    diferenca_centavos: Math.round((differences || []).reduce((total, item) => total + Number(item.valor_diferenca || 0), 0) * 100),
+    status_pagamento: 'quitação_pendente',
+    status_aprovacao: 'digital',
+  };
+};
+
 const functionErrorMessage = async (error: unknown, fallback: string): Promise<string> => {
   const context = (error as { context?: Response } | null)?.context;
   if (context) {
@@ -615,14 +649,29 @@ export const conciliacoesService = {
   },
 
   linkConciliacao: async (payload: ConciliacaoAtomicaPayload): Promise<ConciliacaoAtomicaResult> => {
+    if (!payload.transacaoBancoId) throw friendlyError('Transação bancária é obrigatória.');
+    if (payload.lancamentoIds.length === 0) throw friendlyError('Selecione ao menos um lançamento.');
+    if (new Set(payload.lancamentoIds).size !== payload.lancamentoIds.length) throw friendlyError('A lista de lançamentos contém duplicidades.');
+
     const { data, error } = await supabase.rpc('conciliar_transacao_atomica', {
       p_transacao_id: payload.transacaoBancoId,
       p_lancamento_ids: payload.lancamentoIds,
       p_tipo_diferenca: payload.tipoDiferenca || null,
       p_justificativa: payload.justificativa || null,
     });
-    if (error) throw error;
-    const result = data as ConciliacaoAtomicaResult;
+
+    let result: ConciliacaoAtomicaResult;
+    if (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (/já está conciliada|já possui vínculo|duplicate key/i.test(message)) {
+        result = await getExistingConciliacaoResult(payload.transacaoBancoId, payload.lancamentoIds);
+      } else {
+        throw error;
+      }
+    } else {
+      result = data as ConciliacaoAtomicaResult;
+    }
+
     if (
       (result.status_pagamento && result.status_pagamento !== 'quitação_pendente') ||
       (result.status_aprovacao && result.status_aprovacao !== 'digital')

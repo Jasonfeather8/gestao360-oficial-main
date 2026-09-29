@@ -586,9 +586,9 @@ export default function LancamentoDetailsSlide() {
                                   <MiniValue label="Colaborador" value={getUsuarioName(parcela.usuario_criador_id)} />
                                   <MiniValue label="Valor" value={formatCurrency(Number(parcela.valor_previsto) || 0)} />
                                   <MiniValue label="Comprovante" value={parcela.comprovante_url || getParcelaAnexos(parcela.id).length > 0 ? 'Disponível' : 'Não informado'} />
-                                  <MiniValue label="Status da conta" value={parcela.status_pagamento === 'pago' ? 'Liquidada' : parcela.status_pagamento === 'pago_parcial' ? 'Pago parcial' : 'Em aberto'} />
+                                  <MiniValue label="Status da conta" value={parcela.status_pagamento === 'pago' ? 'Liquidada' : parcela.status_pagamento === 'pago_parcial' ? 'Pago parcial' : parcela.status_pagamento === 'quitação_pendente' ? 'Pendente de confirmação do Master' : 'Em aberto'} />
                                   <MiniValue label="Banco / conta" value={getAccountName(parcela.conta_bancaria_id || lancamento.conta_bancaria_id)} />
-                                  <MiniValue label="Status Master" value={parcela.status_aprovacao === 'confirmado_master' ? 'Confirmado Master' : 'Pendente'} />
+                                  <MiniValue label="Status Master" value={parcela.status_pagamento === 'quitação_pendente' ? 'Pendente de confirmação do Master' : parcela.status_aprovacao === 'confirmado_master' ? 'Confirmado Master' : 'Pendente'} />
                                   <MiniValue label="Aprovado por" value={(parcela as any).usuario_aprovador_id ? getUsuarioName((parcela as any).usuario_aprovador_id) : 'Não informado'} />
                                   <MiniValue label="Aprovado em" value={formatDateTime((parcela as any).data_aprovacao)} />
                                   <MiniValue label="Baixa" value={formatPaymentDateTime(parcela.data_pagamento, parcela.hora_pagamento)} />
@@ -614,9 +614,9 @@ export default function LancamentoDetailsSlide() {
                                                 <span className="font-black">{log.profiles?.nome || getUsuarioName(log.usuario_id)}</span>
                                                 <span>{valorEvento !== undefined && valorEvento !== null ? formatCurrency(Number(valorEvento) || 0) : '-'}</span>
                                                 <span className={comprovanteEvento ? 'text-bank-truth-green' : 'text-secondary'}>{comprovanteEvento ? 'Disponível' : 'Não informado'}</span>
-                                                <span>{statusEvento === 'pago' ? 'Liquidada' : statusEvento === 'pago_parcial' ? 'Pago parcial' : statusEvento === 'quitação_pendente' ? 'Pendente' : 'Em aberto'}</span>
+                                                <span>{statusEvento === 'pago' ? 'Liquidada' : statusEvento === 'pago_parcial' ? 'Pago parcial' : statusEvento === 'quitação_pendente' ? 'Pendente de confirmação do Master' : 'Em aberto'}</span>
                                                 <span className="truncate">{getAccountName(dadosEvento.conta_bancaria_id || parcela.conta_bancaria_id || lancamento.conta_bancaria_id)}</span>
-                                                <span>{statusMasterEvento === 'confirmado_master' ? 'Confirmado' : statusMasterEvento === 'reprovado' ? 'Reprovado' : 'Pendente'}</span>
+                                                <span>{statusEvento === 'quitação_pendente' ? 'Pendente de confirmação do Master' : statusMasterEvento === 'confirmado_master' ? 'Confirmado' : statusMasterEvento === 'reprovado' ? 'Reprovado' : 'Pendente'}</span>
                                                 <span>{formatPaymentDateTime(dadosEvento.data_pagamento || parcela.data_pagamento, dadosEvento.hora_pagamento || parcela.hora_pagamento)}</span>
                                               </div>
                                             );
@@ -746,16 +746,16 @@ function PaymentStatusBadge({ status, isMaster, hasResidual = false, contextualP
   if (compact) {
     const label = status === 'pago' ? 'Paga' : status === 'pago_parcial' ? 'Pago parcial' : status === 'bpi' ? 'BPI' : status === 'quitação_pendente' ? 'Pendente' : 'Em aberto';
     const color = status === 'pago' ? 'bg-bank-truth-green/10 text-bank-truth-green' : status === 'pago_parcial' ? 'bg-orange-50 text-orange-600' : status === 'quitação_pendente' ? 'bg-amber-100 text-amber-700' : 'bg-neutral-100 text-secondary';
-    return <span className={`inline-flex items-center rounded font-black uppercase ${color} ${baseClass}`}>{label}</span>;
+    return <span title={status === 'quitação_pendente' ? 'Pendente de confirmação do Master' : undefined} aria-label={status === 'quitação_pendente' ? 'Pendente de confirmação do Master' : undefined} className={`inline-flex items-center rounded font-black uppercase ${color} ${baseClass}`}>{label}</span>;
   }
   if (status === 'bpi') {
     return <span className={`inline-flex items-center gap-1 rounded-full bg-neutral-100 font-black uppercase tracking-[0.08em] text-neutral-700 ${baseClass}`}><AlertTriangle className="h-3 w-3" /> BPI</span>;
   }
-  if (status === 'pago_parcial' || (status === 'quitação_pendente' && hasResidual)) {
+  if (status === 'pago_parcial') {
     return <span className={`inline-flex items-center gap-1 rounded-full bg-orange-50 font-black uppercase tracking-[0.08em] text-orange-600 ring-1 ring-inset ring-orange-200 ${baseClass}`}><Clock className="h-3 w-3" /> Pago Parcial</span>;
   }
   if (status === 'quitação_pendente') {
-    return <span className={`inline-flex items-center gap-1 rounded-full bg-amber-50 font-black uppercase tracking-[0.08em] text-amber-700 ring-1 ring-inset ring-amber-200 ${baseClass}`}><Clock className="h-3 w-3" /> {contextualPending ? (isMaster ? 'Confirme Baixa' : 'Pendente Gestor') : 'Pendente'}</span>;
+    return <span title="Pendente de confirmação do Master" aria-label="Pendente de confirmação do Master" className={`inline-flex items-center gap-1 rounded-full bg-amber-50 font-black uppercase tracking-[0.08em] text-amber-700 ring-1 ring-inset ring-amber-200 ${baseClass}`}><Clock className="h-3 w-3" /> Pendente de confirmação do Master</span>;
   }
   if (status === 'pago') {
     return <span className={`inline-flex items-center gap-1 rounded-full bg-bank-truth-green/10 font-black uppercase tracking-[0.08em] text-bank-truth-green ${baseClass}`}><CheckCircle2 className="h-3 w-3" /> Liquidado, Pago</span>;
