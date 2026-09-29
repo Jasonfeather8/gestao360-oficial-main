@@ -138,7 +138,28 @@ export interface TransacaoBanco {
   created_at?: string;
 }
 
-export type TransferenciaStatus = 'aberta' | 'aguardando_destino' | 'conciliada_pendente_master' | 'conciliada' | 'estornada';
+export const TRANSFERENCIA_BANCARIA_STATUS = {
+  ABERTA: 'aberta',
+  AGUARDANDO_DESTINO: 'aguardando_destino',
+  CONCILIADA_PENDENTE_MASTER: 'conciliada_pendente_master',
+  CONCILIADA: 'conciliada',
+  ESTORNADA: 'estornada',
+} as const;
+
+export type TransferenciaStatus = typeof TRANSFERENCIA_BANCARIA_STATUS[keyof typeof TRANSFERENCIA_BANCARIA_STATUS];
+export type TransferenciaBancariaLado = 'origem' | 'destino';
+export type TransferenciaBancariaTipo = 'interna';
+
+export const TRANSFERENCIA_BANCARIA_TRANSITIONS: Record<TransferenciaStatus, readonly TransferenciaStatus[]> = {
+  aberta: ['aguardando_destino', 'estornada'],
+  aguardando_destino: ['aberta', 'conciliada_pendente_master', 'estornada'],
+  conciliada_pendente_master: ['conciliada', 'aberta', 'estornada'],
+  conciliada: ['estornada'],
+  estornada: [],
+};
+
+export const isTransferenciaBancariaTransitionValid = (from: TransferenciaStatus, to: TransferenciaStatus): boolean =>
+  from === to || TRANSFERENCIA_BANCARIA_TRANSITIONS[from].includes(to);
 
 export interface TransferenciaBancaria {
   id: string;
@@ -311,6 +332,10 @@ export interface TransferenciaCofre {
   created_at: string;
   updated_at: string;
 }
+
+export type TransferenciaFinanceira =
+  | { tipo: 'bancaria_interna'; dados: TransferenciaBancaria }
+  | { tipo: 'banco_cofre'; dados: TransferenciaCofre };
 
 export interface CofreSaldo {
   cofre_id: string;

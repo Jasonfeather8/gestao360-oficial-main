@@ -90,6 +90,16 @@ export const transferenciasService = {
     return data as TransferenciaBancaria;
   },
 
+  identificarTransacao: async (transacaoId: string, contaRelacionadaId: string): Promise<TransferenciaBancaria> => {
+    if (!transacaoId || !contaRelacionadaId) throw new Error('Transação e conta relacionada são obrigatórias.');
+    const { data, error } = await supabase.rpc('identificar_transacao_transferencia_atomica', {
+      p_transacao_id: transacaoId,
+      p_conta_relacionada_id: contaRelacionadaId,
+    });
+    if (error) throw error;
+    return data as TransferenciaBancaria;
+  },
+
   estornar: async (transferenciaId: string, motivo?: string): Promise<TransferenciaBancaria> => {
     const { data, error } = await supabase.rpc('estornar_transferencia_atomica', {
       p_transferencia_id: transferenciaId,

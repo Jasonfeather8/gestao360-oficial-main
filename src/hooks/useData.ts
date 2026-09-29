@@ -469,8 +469,11 @@ export function useTransferencias(transacaoDestinoId: string | null = null) {
   const invalidateTransferenciaData = () => {
     queryClient.invalidateQueries({ queryKey: ['transferenciasAbertas'] });
     queryClient.invalidateQueries({ queryKey: ['transferenciasSugestoesDestino'] });
+    queryClient.invalidateQueries({ queryKey: ['transferenciasPendentesMaster'] });
     queryClient.invalidateQueries({ queryKey: ['lancamentos'] });
     queryClient.invalidateQueries({ queryKey: ['conciliacoes'] });
+    queryClient.invalidateQueries({ queryKey: ['diferencasConciliacao'] });
+    queryClient.invalidateQueries({ queryKey: ['fechamentos'] });
     queryClient.invalidateQueries({ queryKey: ['transacoes'] });
     queryClient.invalidateQueries({ queryKey: ['contasSaldos'] });
     queryClient.invalidateQueries({ queryKey: ['financialSummary'] });
@@ -486,6 +489,11 @@ export function useTransferencias(transacaoDestinoId: string | null = null) {
   const reconcileMutation = useMutation({
     mutationFn: ({ transferenciaId, transacaoId, lado }: { transferenciaId: string; transacaoId: string; lado: 'origem' | 'destino' }) =>
       transferenciasService.conciliar(transferenciaId, transacaoId, lado),
+    onSuccess: invalidateTransferenciaData,
+  });
+  const identifyMutation = useMutation({
+    mutationFn: ({ transacaoId, contaRelacionadaId }: { transacaoId: string; contaRelacionadaId: string }) =>
+      transferenciasService.identificarTransacao(transacaoId, contaRelacionadaId),
     onSuccess: invalidateTransferenciaData,
   });
   const reverseMutation = useMutation({
@@ -505,10 +513,12 @@ export function useTransferencias(transacaoDestinoId: string | null = null) {
     isLoadingSuggestions: suggestionsQuery.isPending,
     createTransferencia: createMutation.mutateAsync,
     reconcileTransferencia: reconcileMutation.mutateAsync,
+    identifyTransactionTransferencia: identifyMutation.mutateAsync,
     reverseTransferencia: reverseMutation.mutateAsync,
     decideTransferencia: decisionMutation.mutateAsync,
     isCreating: createMutation.isPending,
     isReconciling: reconcileMutation.isPending,
+    isIdentifyingTransactionTransferencia: identifyMutation.isPending,
     isReversing: reverseMutation.isPending,
     isDecidingTransferencia: decisionMutation.isPending,
   };

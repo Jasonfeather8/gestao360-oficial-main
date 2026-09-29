@@ -34,6 +34,7 @@ import { TransacaoBanco, LancamentoFinanceiro } from '../types';
 import { ImportConfirmationMetadata, ImportLotDraft, ImportMode, ImportPreview } from '../types/extratoImportacao';
 import { attachImportLotMetadata, buildCsvTransactions, parseCsv, validateImportConsistency } from '../services/conciliacoesService';
 import Button from '../components/Button';
+import MarcarTransferenciaModal from '../components/MarcarTransferenciaModal';
 import TransferenciaBancariaModal from '../components/TransferenciaBancariaModal';
 import { calculateFinalAmount } from '../utils/adjustments';
 
@@ -114,10 +115,13 @@ export default function Conciliacao() {
     isLoadingSuggestions: isLoadingTransferSuggestions,
     reconcileTransferencia,
     isReconciling: isReconcilingTransferencia,
+    identifyTransactionTransferencia,
+    isIdentifyingTransactionTransferencia,
     transferenciasPendentesMaster,
     decideTransferencia,
     isDecidingTransferencia,
   } = useTransferencias(selectedTransacaoForConciliationId);
+  const [isMarcarTransferenciaOpen, setIsMarcarTransferenciaOpen] = useState(false);
 
   // Import states
   const [csvContentText, setCsvContentText] = useState('');
@@ -385,6 +389,17 @@ export default function Conciliacao() {
     } catch (error) {
       alert(`Erro: ${error instanceof Error ? error.message : 'Não foi possível conciliar a transferência.'}`);
     }
+  };
+
+  const handleMarcarTransferencia = async (contaRelacionadaId: string) => {
+    if (!selectedTransacaoForConciliationId || isIdentifyingTransactionTransferencia) return;
+    await identifyTransactionTransferencia({
+      transacaoId: selectedTransacaoForConciliationId,
+      contaRelacionadaId,
+    });
+    setIsMarcarTransferenciaOpen(false);
+    setSelectedTransacaoForConciliationId(null);
+    setSelectedLancamentoIds([]);
   };
 
   const handleDecidirTransferencia = async (transferenciaId: string, aprovado: boolean) => {
@@ -926,6 +941,15 @@ export default function Conciliacao() {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
+                            setIsMarcarTransferenciaOpen(true);
+                          }}
+                          className="h-8 px-3 rounded-xl border border-primary/30 bg-primary/5 text-primary text-[9px] font-black uppercase tracking-widest shadow-sm hover:bg-primary/10 transition-all"
+                        >
+                          <ArrowRightLeft className="w-3.5 h-3.5 inline mr-1" /> Marcar como transferência
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
                             setTransacaoBancoParaLancamento(tx);
                             setModalOpen('isNovoLancamentoOpen', true);
                           }}
@@ -1402,6 +1426,14 @@ export default function Conciliacao() {
           </div>
         )}
       </AnimatePresence>
+      <MarcarTransferenciaModal
+        isOpen={isMarcarTransferenciaOpen}
+        transacao={selectedTxForWorkspace}
+        contas={contas}
+        isSubmitting={isIdentifyingTransactionTransferencia}
+        onClose={() => setIsMarcarTransferenciaOpen(false)}
+        onSubmit={handleMarcarTransferencia}
+      />
       <TransferenciaBancariaModal
         isOpen={isTransferenciaBancariaOpen}
         contas={contas}
