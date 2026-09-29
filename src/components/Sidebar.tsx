@@ -14,7 +14,8 @@ import {
   ChevronDown,
   ArrowUpRight,
   ArrowDownLeft,
-  Receipt
+  Receipt,
+  ClipboardCheck
 } from 'lucide-react';
 
 import { useUIStore, TabType } from '../store/uiStore';
@@ -47,6 +48,7 @@ export default function Sidebar({ isOpen, onClose, isCollapsed }: SidebarProps) 
     { id: 'crm' as TabType, label: 'CRM & Entidades', icon: UserSquare2, path: '/crm', roles: ['master', 'gerente', 'colaborador'] },
     { id: 'cadastros' as TabType, label: 'Estrutura & Cadastros', icon: ShieldCheck, path: '/cadastros', roles: ['master', 'gerente'] },
     { id: 'relatorios' as TabType, label: 'Relatórios Analíticos', icon: BarChart3, path: '/relatorios', roles: ['master', 'gerente'] },
+    { id: 'aprovacao-master' as TabType, label: 'Aprovação Master', icon: ClipboardCheck, path: '/aprovacao-master', roles: ['master'] },
     { id: 'configuracoes' as TabType, label: 'Configurações', icon: Settings, path: '/configuracoes', roles: ['master'] }
   ];
 

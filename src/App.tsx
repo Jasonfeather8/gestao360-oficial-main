@@ -38,6 +38,7 @@ import Notificacoes from './pages/Notificacoes';
 import Pagar from './pages/Pagar';
 import Receber from './pages/Receber';
 import CofreLocal from './pages/CofreLocal';
+import AprovacaoMaster from './pages/AprovacaoMaster';
 
 // Create a client for React Query caching
 const queryClient = new QueryClient({
@@ -111,6 +112,7 @@ function NotificationDropdown() {
                     <div className="flex flex-col gap-0.5">
                       <p className={`text-xs font-bold ${!n.read ? 'text-neutral-900' : 'text-neutral-500'}`}>{n.title}</p>
                       <p className="text-[11px] text-on-surface-variant line-clamp-2">{n.message}</p>
+                      {n.origem && <p className="text-[9px] font-black uppercase tracking-wide text-primary">Origem: {n.origem}</p>}
                       <div className="flex items-center gap-1 mt-1.5 text-[9px] font-bold text-secondary uppercase tracking-tight">
                         <Clock className="w-3 h-3" />
                         {new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -161,6 +163,16 @@ function ConciliacaoRoute() {
   }
 
   return <Conciliacao />;
+}
+
+function MasterApprovalRoute() {
+  const { hasRole } = useAuth();
+
+  if (!hasRole(['master'])) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return <AprovacaoMaster />;
 }
 
 function AppContent() {
@@ -243,6 +255,7 @@ function AppContent() {
                       <Route path="/implantacao" element={<Implantacao />} />
 
                       {/* Rotas exclusivas do Master */}
+                      <Route path="/aprovacao-master" element={<MasterApprovalRoute />} />
                       <Route path="/configuracoes" element={<Configuracoes />} />
                       <Route path="/notificacoes" element={<Notificacoes />} />
                     </Routes>

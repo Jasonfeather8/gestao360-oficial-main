@@ -16,6 +16,7 @@ import { transferenciasService, CriarTransferenciaPayload } from '../services/tr
 import { cofreService } from '../services/cofreService';
 import { diagnosticLogger } from '../services/diagnosticLogger';
 import { implantacaoService } from '../services/implantacaoService';
+import { masterApprovalService } from '../services/masterApprovalService';
 import { ImportConfirmationMetadata, ImportLotDraft, ImportTransaction } from '../types/extratoImportacao';
 
 export function useNotifications() {
@@ -26,7 +27,6 @@ export function useNotifications() {
     queryKey: ['notifications', user?.id],
     queryFn: notificationsService.getAll,
     enabled: !!user?.id,
-    refetchInterval: 60000,
   });
 
   useEffect(() => {
@@ -46,6 +46,7 @@ export function useNotifications() {
         },
         () => {
           queryClient.invalidateQueries({ queryKey: ['notifications', user.id] });
+          queryClient.invalidateQueries({ queryKey: ['masterApprovalQueue'] });
         }
       )
       .subscribe();
@@ -75,6 +76,51 @@ export function useNotifications() {
     unreadCount: (query.data || []).filter(n => !n.read).length,
     markAsRead: markReadMutation.mutateAsync,
     markAllAsRead: markAllReadMutation.mutateAsync
+  };
+}
+
+export function useMasterApprovalQueue() {
+  const queryClient = useQueryClient();
+  const { role } = useAuth();
+  const query = useQuery({
+    queryKey: ['masterApprovalQueue'],
+    queryFn: masterApprovalService.getQueue,
+    enabled: role === 'master',
+  });
+
+  const invalidateDecisionData = () => {
+    [
+      'masterApprovalQueue',
+      'notifications',
+      'lancamentos',
+      'lancamento',
+      'conciliacoes',
+      'diferencasConciliacao',
+      'fechamentos',
+      'transacoes',
+      'transferenciasAbertas',
+      'transferenciasPendentesMaster',
+      'transferenciasCofre',
+      'movimentacoesCofre',
+      'cofresSaldos',
+      'contasSaldos',
+      'financialSummary',
+      'dashboardStats',
+      'consolidatedFinancialSummary',
+      'auditoriaLogs',
+    ].forEach(queryKey => queryClient.invalidateQueries({ queryKey: [queryKey] }));
+  };
+
+  const decisionMutation = useMutation({
+    mutationFn: masterApprovalService.decide,
+    onSuccess: invalidateDecisionData,
+  });
+
+  return {
+    ...query,
+    items: query.data || [],
+    decide: decisionMutation.mutateAsync,
+    isDeciding: decisionMutation.isPending,
   };
 }
 

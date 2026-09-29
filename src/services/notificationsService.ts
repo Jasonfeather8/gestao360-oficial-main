@@ -6,6 +6,7 @@ export interface Notification {
   title: string;
   message: string;
   type: 'info' | 'success' | 'warning' | 'error';
+  origem?: string | null;
   read: boolean;
   link?: string;
   created_at: string;

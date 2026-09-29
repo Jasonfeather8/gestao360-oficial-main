@@ -31,7 +31,7 @@ import {
   Repeat,
   Paperclip
 } from 'lucide-react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useLancamentos, useContas, useEntidades, useCategorias, useUsuarios, useCentrosCusto, useCategoriasAjuste, useContasSaldos, useConciliacao } from '../hooks/useData';
 import { useAuth } from '../hooks/useAuth';
 import { useUIStore } from '../store/uiStore';
@@ -63,6 +63,7 @@ export default function Lancamentos({
   initialStatusPagamento
 }: LancamentosProps) {
   const { role } = useAuth();
+  const navigate = useNavigate();
   const {
     setModalOpen,
     setSelectedLancamentoIdForModal,
@@ -707,12 +708,9 @@ export default function Lancamentos({
           )}
 
           {isFinanceiroView && isMaster && (
-            <Button
-              onClick={() => handleBatchApprove()}
-              disabled={selectedLancamentoIdsForBatch.length === 0 || isBatchApproving}
-            >
+            <Button onClick={() => navigate('/aprovacao-master')}>
               <ShieldCheck className="w-4 h-4" />
-              Aprovar ({selectedLancamentoIdsForBatch.length})
+              Abrir fila de aprovação Master
             </Button>
           )}
 
@@ -1218,13 +1216,10 @@ export default function Lancamentos({
                             {isFinanceiroView && isMaster && isAprovacaoPendente && (!item.ja_recebido || conciliacoes.some(conciliacao => conciliacao.lancamento_id === item.id)) && (
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setSelectedLancamentoIdsForBatch([item.id]);
-                                  setModalOpen('isAprovacaoModalOpen', true);
-                                }}
+                                onClick={() => navigate('/aprovacao-master')}
                                 className="px-3 py-1.5 bg-primary text-white text-[9px] font-black uppercase tracking-widest rounded-lg hover:brightness-110 transition-all flex items-center gap-1.5 shadow-sm"
                               >
-                                <ShieldCheck className="w-3 h-3" /> Aprovar
+                                <ShieldCheck className="w-3 h-3" /> Fila Master
                               </button>
                             )}
                             {isOperationalView && (item.status_pagamento === 'aberto' || isPartialPayment(item)) && (

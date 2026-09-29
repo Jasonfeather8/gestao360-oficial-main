@@ -161,6 +161,56 @@ export const TRANSFERENCIA_BANCARIA_TRANSITIONS: Record<TransferenciaStatus, rea
 export const isTransferenciaBancariaTransitionValid = (from: TransferenciaStatus, to: TransferenciaStatus): boolean =>
   from === to || TRANSFERENCIA_BANCARIA_TRANSITIONS[from].includes(to);
 
+export type MasterApprovalItemType =
+  | 'lancamento'
+  | 'fechamento_conciliacao'
+  | 'transferencia_bancaria'
+  | 'movimentacao_cofre'
+  | 'transferencia_cofre';
+
+export interface MasterApprovalAttachment {
+  id?: string;
+  nome?: string;
+  url?: string;
+  tamanho?: number | null;
+  tipo_arquivo?: string | null;
+}
+
+export interface MasterApprovalQueueItem {
+  item_id: string;
+  tipo: MasterApprovalItemType;
+  origem: string;
+  titulo: string;
+  descricao?: string | null;
+  status: string;
+  valor?: number | null;
+  data?: string | null;
+  created_at: string;
+  prioridade: 'alta' | 'media' | 'baixa' | string;
+  operador_id?: string | null;
+  operador_nome?: string | null;
+  conta_id?: string | null;
+  conta_nome?: string | null;
+  cofre_id?: string | null;
+  cofre_nome?: string | null;
+  lancamento_id?: string | null;
+  transferencia_id?: string | null;
+  fechamento_id?: string | null;
+  transferencia_cofre_id?: string | null;
+  pre_requisitos_faltantes?: string[];
+  aprovacao_possivel: boolean;
+  detalhes?: Record<string, unknown> | null;
+  evidencias?: Record<string, unknown> | null;
+  anexos?: MasterApprovalAttachment[] | null;
+}
+
+export interface MasterApprovalDecision {
+  itemId: string;
+  tipo: MasterApprovalItemType;
+  aprovado: boolean;
+  justificativa?: string;
+}
+
 export interface TransferenciaBancaria {
   id: string;
   conta_origem_id: string;

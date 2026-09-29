@@ -14,7 +14,8 @@ export type TabType =
   | 'relatorios'
   | 'configuracoes'
   | 'notificacoes'
-  | 'cofre';
+  | 'cofre'
+  | 'aprovacao-master';
 
 export type ConciliacaoOperacaoSucesso = {
   id: number;

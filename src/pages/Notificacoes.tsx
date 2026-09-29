@@ -113,6 +113,7 @@ export default function Notificacoes() {
                       </span>
                     </div>
                     <p className="text-xs font-medium text-neutral-500 mt-1 leading-relaxed">{n.message}</p>
+                    {n.origem && <p className="mt-2 text-[9px] font-black uppercase tracking-widest text-primary">Origem: {n.origem}</p>}
                   </div>
                   
                   {!n.read && (

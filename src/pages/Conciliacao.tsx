@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   FileSpreadsheet,
@@ -53,7 +54,8 @@ const getLancamentoAdjustedCents = (lancamento: LancamentoFinanceiro): number =>
 };
 
 export default function Conciliacao() {
-  const { 
+  const navigate = useNavigate();
+  const {
     conciliacoes = [],
     transacoes = [],
     diferencas = [],
@@ -769,22 +771,13 @@ export default function Conciliacao() {
                 <div className="text-[9px] font-bold text-neutral-600 uppercase">
                   {contas.find(conta => conta.id === fechamento.conta_bancaria_id)?.nome || 'Conta'} • {fechamento.periodo_inicio.slice(0, 7)} • {valueFormatter(Number(fechamento.total_extrato))}
                 </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => handleDecidirFechamento(fechamento.id, false)}
-                    disabled={fechamentoBusy}
-                    className="px-3 py-1.5 border border-red-200 text-red-600 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Reprovar
-                  </button>
-                  <button
-                    onClick={() => handleDecidirFechamento(fechamento.id, true)}
-                    disabled={fechamentoBusy}
-                    className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {isDecidindoFechamento ? 'Processando...' : 'Aprovar'}
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => navigate('/aprovacao-master')}
+                  className="px-3 py-1.5 bg-primary text-white rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-primary/90"
+                >
+                  Abrir fila Master
+                </button>
               </div>
             ))}
           </div>
@@ -809,22 +802,13 @@ export default function Conciliacao() {
                 <div className="text-[9px] font-bold text-neutral-600 uppercase">
                   {contas.find(conta => conta.id === transferencia.conta_origem_id)?.nome || 'Origem'} → {contas.find(conta => conta.id === transferencia.conta_destino_id)?.nome || 'Destino'} • {valueFormatter(Number(transferencia.valor))} • {transferencia.data_transferencia.split('-').reverse().join('/')}
                 </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => handleDecidirTransferencia(transferencia.id, false)}
-                    disabled={isDecidingTransferencia}
-                    className="px-3 py-1.5 border border-red-200 text-red-600 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Reprovar
-                  </button>
-                  <button
-                    onClick={() => handleDecidirTransferencia(transferencia.id, true)}
-                    disabled={isDecidingTransferencia}
-                    className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Aprovar
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => navigate('/aprovacao-master')}
+                  className="px-3 py-1.5 bg-primary text-white rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-primary/90"
+                >
+                  Abrir fila Master
+                </button>
               </div>
             ))}
           </div>
