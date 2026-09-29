@@ -34,7 +34,10 @@ export const parseFinancialInput = (
   if (!allowNegative && parsed < 0) throw new Error('Valores negativos não são permitidos.');
   if (maxFractionDigits !== undefined) {
     const scale = 10 ** maxFractionDigits;
-    if (Math.round(parsed * scale) !== parsed * scale) {
+    const scaled = parsed * scale;
+    const rounded = Math.round(scaled);
+    const floatingPointTolerance = 1e-9;
+    if (Math.abs(rounded - scaled) > floatingPointTolerance) {
       throw new Error(`O valor deve ter no máximo ${maxFractionDigits} casas decimais.`);
     }
   }
