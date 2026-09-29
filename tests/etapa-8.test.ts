@@ -27,6 +27,12 @@ const etapa8Transaction = (overrides: Partial<ImportTransaction> = {}): ImportTr
   descricao_original: 'Transação de teste contratual',
   tipo_movimento: 'credito',
   hash_transacao: 'a'.repeat(64),
+  arquivo_nome: 'extrato-contrato.csv',
+  arquivo_hash: 'b'.repeat(64),
+  extrato_lote_id: '00000000-0000-0000-0000-000000000008',
+  formato_arquivo: 'csv',
+  origem_extracao: 'estruturado',
+  origem_arquivo: 'csv',
   ...overrides,
 });
 
@@ -38,7 +44,10 @@ const etapa8Lot: ImportLotDraft = {
   fileSize: 128,
   mimeType: 'text/csv',
   fileHash: 'b'.repeat(64),
-  storagePath: '00000000-0000-0000-0000-000000000002/lote/extrato-contrato.csv',
+  storagePath: '00000000-0000-0000-0000-000000000002/00000000-0000-0000-0000-000000000008/extrato-contrato.csv',
+  formatoArquivo: 'csv',
+  origemExtracao: 'estruturado',
+  status: 'em_validacao',
 };
 
 type RpcCall = { name: string; args: Record<string, unknown> | undefined };
@@ -155,6 +164,8 @@ test('Etapa 8 — confirmação de importação usa RPC server-side e preserva o
       arquivo_hash: etapa8Lot.fileHash,
       storage_path: etapa8Lot.storagePath,
       importado_por: etapa8Lot.userId,
+      formato_arquivo: 'csv',
+      origem_extracao: 'estruturado',
     });
     assert.deepEqual(args.p_transacoes, [transaction]);
     assert.equal(args.p_metadata.periodStart, '2026-09-21');

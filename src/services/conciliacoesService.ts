@@ -587,30 +587,37 @@ export const conciliacoesService = {
   },
 
   confirmImport: async (lot: ImportLotDraft, transactions: ImportTransaction[], metadata: ImportConfirmationMetadata = {}) => {
-    if (!lot.id || transactions.length === 0) throw friendlyError('O lote precisa conter ao menos uma transação.');
+    if (!lot.id || !lot.contaBancariaId || !lot.userId || !lot.fileName || !lot.mimeType || !lot.storagePath) throw friendlyError('O contrato do lote está incompleto.');
+    if (lot.status !== 'em_validacao') throw friendlyError('Somente lotes em validação podem ser confirmados.');
+    if (!lot.formatoArquivo || !lot.origemExtracao) throw friendlyError('O lote precisa informar formato e origem da extração.');
+    if (transactions.length === 0) throw friendlyError('O lote precisa conter ao menos uma transação.');
     if (transactions.some(transaction => transaction.estado_revisao === 'pendente_revisao')) throw friendlyError('Resolva explicitamente todas as transações pendentes antes de confirmar o lote.');
     if (metadata.reviewState === 'has_pending_reviews' || (metadata.pendingReviewCount || 0) > 0) throw friendlyError('O lote possui pendências de revisão que não podem ser importadas silenciosamente.');
-    const consistency = validateImportConsistency(transactions, metadata);
+    const effectiveMetadata: ImportConfirmationMetadata = {
+      ...metadata,
+      extractedCount: metadata.extractedCount ?? transactions.length,
+      sourceOrigin: metadata.sourceOrigin ?? lot.origemExtracao,
+    };
+    if (effectiveMetadata.sourceOrigin !== lot.origemExtracao) throw friendlyError('A origem da extração não corresponde ao lote.');
+    if (effectiveMetadata.extractedCount !== transactions.length) throw friendlyError('A quantidade de registros extraídos não confere com o lote.');
+    const consistency = validateImportConsistency(transactions, effectiveMetadata);
     if (consistency.criticalErrors.length > 0) throw friendlyError(`A confirmação foi bloqueada: ${consistency.criticalErrors.map(issue => issue.message).join(' ')}`);
     if (lot.fileSize <= 0 || lot.fileSize > MAX_IMPORT_SIZE || !/^[a-f0-9]{64}$/.test(lot.fileHash)) throw friendlyError('Os metadados do arquivo são inválidos.');
-    if (lot.storagePath.split('/')[0] !== lot.userId || lot.storagePath.split('/').length < 3) throw friendlyError('O caminho do arquivo não pertence ao lote.');
+    const storageSegments = lot.storagePath.split('/');
+    if (storageSegments[0] !== lot.userId || storageSegments[1] !== lot.id || storageSegments.length !== 3) throw friendlyError('O caminho do arquivo não pertence ao lote.');
     const supportedFormat = getImportFileType(lot.fileName, lot.mimeType);
-    if (lot.formatoArquivo && lot.formatoArquivo !== supportedFormat) throw friendlyError('O formato do lote não corresponde ao arquivo.');
-    if (lot.status && !lot.formatoArquivo) throw friendlyError('O lote não possui formato de arquivo verificável.');
-    if (lot.formatoArquivo || lot.status) {
-      const incompleteIndex = transactions.findIndex(transaction =>
-        transaction.arquivo_nome !== lot.fileName
-        || transaction.arquivo_hash !== lot.fileHash
-        || transaction.extrato_lote_id !== lot.id
-        || transaction.formato_arquivo !== lot.formatoArquivo
-        || transaction.origem_extracao !== lot.origemExtracao
-        || !transaction.origem_arquivo
-        || (lot.formatoArquivo === 'csv' && transaction.origem_arquivo !== 'csv')
-        || (lot.formatoArquivo === 'xlsx' && transaction.origem_arquivo !== 'xlsx')
-        || (lot.formatoArquivo === 'pdf' && transaction.origem_arquivo !== (lot.origemExtracao === 'ocr' ? 'pdf_ocr' : 'pdf_texto'))
-      );
-      if (incompleteIndex >= 0) throw friendlyError(`A transação ${incompleteIndex + 1} não possui proveniência completa do lote.`);
-    }
+    if (lot.formatoArquivo !== supportedFormat) throw friendlyError('O formato do lote não corresponde ao arquivo.');
+    if ((lot.formatoArquivo === 'pdf' && !['texto', 'ocr'].includes(lot.origemExtracao)) || (lot.formatoArquivo !== 'pdf' && lot.origemExtracao !== 'estruturado')) throw friendlyError('A origem da extração não é compatível com o formato do lote.');
+    const expectedFileOrigin = lot.formatoArquivo === 'csv' ? 'csv' : lot.formatoArquivo === 'xlsx' ? 'xlsx' : lot.origemExtracao === 'ocr' ? 'pdf_ocr' : 'pdf_texto';
+    const incompleteIndex = transactions.findIndex(transaction =>
+      transaction.arquivo_nome !== lot.fileName
+      || transaction.arquivo_hash !== lot.fileHash
+      || transaction.extrato_lote_id !== lot.id
+      || transaction.formato_arquivo !== lot.formatoArquivo
+      || transaction.origem_extracao !== lot.origemExtracao
+      || transaction.origem_arquivo !== expectedFileOrigin
+    );
+    if (incompleteIndex >= 0) throw friendlyError(`A transação ${incompleteIndex + 1} não possui proveniência completa do lote.`);
     const hashes = new Set<string>();
     transactions.forEach((transaction, index) => {
       if (!validateDate(transaction.data_transacao) || !/^\d{4}-\d{2}-\d{2}$/.test(transaction.data_transacao)) throw friendlyError(`Data inválida na transação ${index + 1}.`);
@@ -635,12 +642,12 @@ export const conciliacoesService = {
         arquivo_hash: lot.fileHash,
         storage_path: lot.storagePath,
         importado_por: lot.userId,
-        ...(lot.formatoArquivo ? { formato_arquivo: lot.formatoArquivo } : {}),
-        ...(lot.origemExtracao ? { origem_extracao: lot.origemExtracao } : {}),
+        formato_arquivo: lot.formatoArquivo,
+        origem_extracao: lot.origemExtracao,
       },
       p_transacoes: transactions,
       p_metadata: {
-        ...metadata,
+        ...effectiveMetadata,
         consistency,
         rawTransactions: transactions.map(({ data_original, descricao_original, valor_original, data_transacao, descricao_banco, valor, tipo_movimento, pagina_origem, linha_origem, formato_arquivo, origem_extracao, origem_arquivo }) => ({ data_original, descricao_original, valor_original, data_transacao, descricao_banco, valor, tipo_movimento, pagina_origem, linha_origem, formato_arquivo, origem_extracao, origem_arquivo })),
       },

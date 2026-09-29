@@ -153,6 +153,16 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function ConciliacaoRoute() {
+  const { hasRole } = useAuth();
+
+  if (!hasRole(['master', 'gerente'])) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return <Conciliacao />;
+}
+
 function AppContent() {
   const { setModalOpen, isSidebarCollapsed, setSidebarCollapsed } = useUIStore();
   const { signOut } = useAuth();
@@ -226,7 +236,7 @@ function AppContent() {
                       <Route path="/cofre" element={<CofreLocal />} />
 
                       {/* Rotas restritas a Master e Gerente */}
-                      <Route path="/conciliacao" element={<Conciliacao />} />
+                      <Route path="/conciliacao" element={<ConciliacaoRoute />} />
                       <Route path="/recorrencias" element={<Recorrencias />} />
                       <Route path="/cadastros" element={<Cadastros />} />
                       <Route path="/relatorios" element={<Relatorios />} />

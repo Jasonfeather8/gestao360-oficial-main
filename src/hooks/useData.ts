@@ -339,10 +339,26 @@ export function useConciliacao() {
       conciliacoesService.prepareImportFile(file, contaBancariaId, userId),
   });
 
+  const invalidateConfirmedImportData = () => {
+    [
+      'transacoes',
+      'conciliacoes',
+      'transferenciasAbertas',
+      'transferenciasSugestoesDestino',
+      'transferenciasPendentesMaster',
+      'fechamentos',
+      'contasSaldos',
+      'financialSummary',
+      'consolidatedFinancialSummary',
+      'dashboardStats',
+      'auditoriaLogs',
+    ].forEach(queryKey => queryClient.invalidateQueries({ queryKey: [queryKey] }));
+  };
+
   const confirmImportMutation = useMutation({
     mutationFn: ({ lot, transactions, metadata }: { lot: ImportLotDraft; transactions: ImportTransaction[]; metadata?: ImportConfirmationMetadata }) =>
       conciliacoesService.confirmImport(lot, transactions, metadata),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['transacoes'] }),
+    onSuccess: invalidateConfirmedImportData,
   });
 
   const linkMutation = useMutation({
