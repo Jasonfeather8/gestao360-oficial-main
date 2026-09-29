@@ -207,13 +207,24 @@ export function useLancamentos(filters?: any) {
   const { role } = useAuth();
   const isMaster = role === 'master';
 
-  const query = useQuery({ queryKey: ['lancamentos', filters], queryFn: ({ signal }) => lancamentosService.getAll(filters, signal) });
+  const query = useQuery({
+    queryKey: ['lancamentos', filters],
+    queryFn: ({ signal }) => lancamentosService.getAll(filters, signal),
+    enabled: !filters?.conciliationWorkspace || Boolean(filters.conciliationWorkspace.accountId),
+  });
   const invalidateLancamentoData = () => {
     queryClient.invalidateQueries({ queryKey: ['lancamentos'] });
     queryClient.invalidateQueries({ queryKey: ['lancamento'] });
     queryClient.invalidateQueries({ queryKey: ['conciliacoes'] });
+    queryClient.invalidateQueries({ queryKey: ['diferencasConciliacao'] });
     queryClient.invalidateQueries({ queryKey: ['transacoes'] });
+    queryClient.invalidateQueries({ queryKey: ['fechamentos'] });
+    queryClient.invalidateQueries({ queryKey: ['transferenciasAbertas'] });
+    queryClient.invalidateQueries({ queryKey: ['transferenciasSugestoesDestino'] });
+    queryClient.invalidateQueries({ queryKey: ['transferenciasPendentesMaster'] });
     queryClient.invalidateQueries({ queryKey: ['contasSaldos'] });
+    queryClient.invalidateQueries({ queryKey: ['financialSummary'] });
+    queryClient.invalidateQueries({ queryKey: ['dashboardStats'] });
     queryClient.invalidateQueries({ queryKey: ['consolidatedFinancialSummary'] });
     queryClient.invalidateQueries({ queryKey: ['auditoriaLogs'] });
   };
@@ -310,6 +321,7 @@ export function useConciliacao() {
 
   const conciliacoesQuery = useQuery({ queryKey: ['conciliacoes'], queryFn: conciliacoesService.getConciliacoes });
   const transacoesQuery = useQuery({ queryKey: ['transacoes'], queryFn: conciliacoesService.getAllTransacoes });
+  const diferencasQuery = useQuery({ queryKey: ['diferencasConciliacao'], queryFn: conciliacoesService.getDiferencas });
   const fechamentosQuery = useQuery({ queryKey: ['fechamentos'], queryFn: conciliacoesService.getFechamentos });
 
   const invalidateFechamentoData = () => {
@@ -317,6 +329,7 @@ export function useConciliacao() {
     queryClient.invalidateQueries({ queryKey: ['lancamentos'] });
     queryClient.invalidateQueries({ queryKey: ['transacoes'] });
     queryClient.invalidateQueries({ queryKey: ['conciliacoes'] });
+    queryClient.invalidateQueries({ queryKey: ['diferencasConciliacao'] });
     queryClient.invalidateQueries({ queryKey: ['contasSaldos'] });
     queryClient.invalidateQueries({ queryKey: ['consolidatedFinancialSummary'] });
     queryClient.invalidateQueries({ queryKey: ['auditoriaLogs'] });
@@ -367,6 +380,11 @@ export function useConciliacao() {
       queryClient.invalidateQueries({ queryKey: ['conciliacoes'] });
       queryClient.invalidateQueries({ queryKey: ['transacoes'] });
       queryClient.invalidateQueries({ queryKey: ['lancamentos'] });
+      queryClient.invalidateQueries({ queryKey: ['diferencasConciliacao'] });
+      queryClient.invalidateQueries({ queryKey: ['fechamentos'] });
+      queryClient.invalidateQueries({ queryKey: ['transferenciasAbertas'] });
+      queryClient.invalidateQueries({ queryKey: ['transferenciasSugestoesDestino'] });
+      queryClient.invalidateQueries({ queryKey: ['transferenciasPendentesMaster'] });
       queryClient.invalidateQueries({ queryKey: ['contasSaldos'] });
       queryClient.invalidateQueries({ queryKey: ['financialSummary'] });
       queryClient.invalidateQueries({ queryKey: ['dashboardStats'] });
@@ -382,6 +400,11 @@ export function useConciliacao() {
       queryClient.invalidateQueries({ queryKey: ['conciliacoes'] });
       queryClient.invalidateQueries({ queryKey: ['transacoes'] });
       queryClient.invalidateQueries({ queryKey: ['lancamentos'] });
+      queryClient.invalidateQueries({ queryKey: ['diferencasConciliacao'] });
+      queryClient.invalidateQueries({ queryKey: ['fechamentos'] });
+      queryClient.invalidateQueries({ queryKey: ['transferenciasAbertas'] });
+      queryClient.invalidateQueries({ queryKey: ['transferenciasSugestoesDestino'] });
+      queryClient.invalidateQueries({ queryKey: ['transferenciasPendentesMaster'] });
       queryClient.invalidateQueries({ queryKey: ['contasSaldos'] });
       queryClient.invalidateQueries({ queryKey: ['financialSummary'] });
       queryClient.invalidateQueries({ queryKey: ['dashboardStats'] });
@@ -398,6 +421,7 @@ export function useConciliacao() {
   return {
     conciliacoes: conciliacoesQuery.data || [],
     transacoes: transacoesQuery.data || [],
+    diferencas: diferencasQuery.data || [],
     fechamentos: fechamentosQuery.data || [],
     isFetchingTransacoes: transacoesQuery.isPending,
     isFetchingFechamentos: fechamentosQuery.isPending,

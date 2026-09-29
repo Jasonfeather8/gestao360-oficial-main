@@ -156,7 +156,7 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
 function ConciliacaoRoute() {
   const { hasRole } = useAuth();
 
-  if (!hasRole(['master', 'gerente'])) {
+  if (!hasRole(['master', 'gerente', 'colaborador'])) {
     return <Navigate to="/dashboard" replace />;
   }
 

@@ -31,6 +31,11 @@ export interface LancamentoFilters {
   operationalView?: boolean;
   page?: number;
   pageSize?: number;
+  conciliationWorkspace?: {
+    accountId: string;
+    periodStart: string;
+    periodEnd: string;
+  };
 }
 
 const normalizeFilterValues = (value?: string | string[]): string[] => {
@@ -89,6 +94,8 @@ const formatBRL = (value: number): string => value.toLocaleString('pt-BR', {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2
 });
+
+const WORKSPACE_PAGE_SIZE = 500;
 
 const getOperationalBalance = async (contaId: string): Promise<number> => {
   const { data, error } = await supabase.rpc('get_contas_saldos_reais');
@@ -189,10 +196,18 @@ export const lancamentosService = {
       return { data: [], count: 0 };
     }
 
+    const isConciliationWorkspace = Boolean(filters?.conciliationWorkspace);
     let query = supabase
       .from('lancamentos_financeiros')
-      .select('*, entidades_negocio!inner(nome_razao_social)', { count: 'exact' })
+      .select(isConciliationWorkspace ? '*' : '*, entidades_negocio!inner(nome_razao_social)', { count: 'exact' })
       .is('transferencia_cofre_lado', null);
+
+    if (isConciliationWorkspace && filters?.conciliationWorkspace) {
+      query = query
+        .eq('conta_bancaria_id', filters.conciliationWorkspace.accountId)
+        .eq('status_pagamento', 'aberto')
+        .or(`and(data_competencia.gte.${filters.conciliationWorkspace.periodStart},data_competencia.lte.${filters.conciliationWorkspace.periodEnd}),and(data_competencia.is.null,data_vencimento.gte.${filters.conciliationWorkspace.periodStart},data_vencimento.lte.${filters.conciliationWorkspace.periodEnd})`);
+    }
 
     if (filters?.docCode !== undefined) {
       query = query
@@ -356,20 +371,36 @@ export const lancamentosService = {
         query = query.in('id', searchLancamentoIds);
       }
 
-      // Pagination
-      if (filters.page && filters.pageSize) {
+      // The reconciliation workspace must load the complete eligible period.
+      if (!filters.conciliationWorkspace && filters.page && filters.pageSize) {
         const from = (filters.page - 1) * filters.pageSize;
         const to = from + filters.pageSize - 1;
         query = query.range(from, to);
       }
-    } else {
+    } else if (!isConciliationWorkspace) {
       query = query.range(0, 49); // Default limit
     }
 
     if (signal) query = query.abortSignal(signal);
+
+    if (isConciliationWorkspace) {
+      const workspaceRows: LancamentoFinanceiro[] = [];
+      let workspaceCount = 0;
+      for (let from = 0; ; from += WORKSPACE_PAGE_SIZE) {
+        const { data, error, count } = await query.range(from, from + WORKSPACE_PAGE_SIZE - 1);
+        if (error) throw error;
+        const page = (data || []) as unknown as LancamentoFinanceiro[];
+        workspaceRows.push(...page);
+        workspaceCount = count || workspaceRows.length;
+        if (page.length < WORKSPACE_PAGE_SIZE) {
+          return { data: workspaceRows, count: workspaceCount };
+        }
+      }
+    }
+
     const { data, error, count } = await query;
     if (error) throw error;
-    return { data: data as LancamentoFinanceiro[], count: count || 0 };
+    return { data: data as unknown as LancamentoFinanceiro[], count: count || 0 };
   },
 
   getById: async (id: string): Promise<LancamentoFinanceiro> => {

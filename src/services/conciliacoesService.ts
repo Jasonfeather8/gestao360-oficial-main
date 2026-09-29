@@ -27,6 +27,20 @@ const CSV_MIME_TYPES = new Set(['text/csv', 'application/csv']);
 const PDF_MIME_TYPE = 'application/pdf';
 
 const friendlyError = (message: string) => new Error(message);
+const WORKSPACE_PAGE_SIZE = 500;
+
+const fetchAllRows = async <T>(
+  fetchPage: (from: number, to: number) => Promise<{ data: T[] | null; error: unknown | null }>,
+): Promise<T[]> => {
+  const rows: T[] = [];
+  for (let from = 0; ; from += WORKSPACE_PAGE_SIZE) {
+    const { data, error } = await fetchPage(from, from + WORKSPACE_PAGE_SIZE - 1);
+    if (error) throw error;
+    const page = data || [];
+    rows.push(...page);
+    if (page.length < WORKSPACE_PAGE_SIZE) return rows;
+  }
+};
 
 const getExistingConciliacaoResult = async (
   transacaoBancoId: string,
@@ -394,23 +408,36 @@ export const attachImportLotMetadata = (transactions: ImportTransaction[], lot: 
   });
 
 export const conciliacoesService = {
-  getConciliacoes: async (): Promise<Conciliacao[]> => {
-    const { data, error } = await supabase.from('conciliacoes').select('*');
-    if (error) throw error;
-    return data as Conciliacao[];
-  },
+  getConciliacoes: async (): Promise<Conciliacao[]> => fetchAllRows<Conciliacao>(async (from, to) => {
+    const { data, error } = await supabase.from('conciliacoes').select('*').range(from, to);
+    return { data: data as Conciliacao[] | null, error };
+  }),
 
-  getAllTransacoes: async (): Promise<TransacaoBanco[]> => {
-    const { data, error } = await supabase.from('transacoes_banco').select('*').order('data_transacao', { ascending: false });
-    if (error) throw error;
-    return data as TransacaoBanco[];
-  },
+  getAllTransacoes: async (): Promise<TransacaoBanco[]> => fetchAllRows<TransacaoBanco>(async (from, to) => {
+    const { data, error } = await supabase
+      .from('transacoes_banco')
+      .select('*')
+      .order('data_transacao', { ascending: false })
+      .range(from, to);
+    return { data: data as TransacaoBanco[] | null, error };
+  }),
 
-  getFechamentos: async (): Promise<FechamentoConciliacao[]> => {
-    const { data, error } = await supabase.from('fechamentos_conciliacao').select('*').order('periodo_inicio', { ascending: false });
-    if (error) throw error;
-    return data as FechamentoConciliacao[];
-  },
+  getDiferencas: async (): Promise<Array<Pick<import('../types').DiferencaFinanceira, 'conciliacao_id' | 'valor_diferenca'>>> => fetchAllRows(async (from, to) => {
+    const { data, error } = await supabase
+      .from('diferencas_financeiras')
+      .select('conciliacao_id, valor_diferenca')
+      .range(from, to);
+    return { data: data as Array<Pick<import('../types').DiferencaFinanceira, 'conciliacao_id' | 'valor_diferenca'>> | null, error };
+  }),
+
+  getFechamentos: async (): Promise<FechamentoConciliacao[]> => fetchAllRows<FechamentoConciliacao>(async (from, to) => {
+    const { data, error } = await supabase
+      .from('fechamentos_conciliacao')
+      .select('*')
+      .order('periodo_inicio', { ascending: false })
+      .range(from, to);
+    return { data: data as FechamentoConciliacao[] | null, error };
+  }),
 
   fecharPeriodo: async (contaId: string, periodoInicio: string, periodoFim: string): Promise<FechamentoConciliacao> => {
     const { data, error } = await supabase.rpc('fechar_periodo_conciliacao', {

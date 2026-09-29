@@ -740,7 +740,7 @@ export default function NovoLancamentoDrawer() {
       return;
     }
 
-    if (!lancamentoFormDraft.entidade_id) {
+    if (!isFromExtrato && !lancamentoFormDraft.entidade_id) {
       showToast('Por favor, preencha o destinatário.', 'warning');
       setIsSubmitting(false);
       return;
@@ -1077,7 +1077,7 @@ export default function NovoLancamentoDrawer() {
                         label: e.nome_razao_social,
                         sublabel: e.tipo.toUpperCase()
                       }))}
-                      required
+                      required={!isFromExtrato}
                       disabled={shouldLockEntity}
                       onAddClick={shouldLockEntity ? undefined : () => {
                         setEntidadeFormDraft({ tipo: lancamentoFormDraft.tipo === 'saida' ? 'fornecedor' : 'cliente' });
@@ -1152,9 +1152,10 @@ export default function NovoLancamentoDrawer() {
                 {!isAVREdit && (
                   <div className="p-4 bg-neutral-50 rounded-2xl border-2 border-neutral-100 space-y-4">
                   <label className="flex items-center gap-3 cursor-pointer select-none">
-                    <input 
+                    <input
                       type="checkbox"
-                      checked={lancamentoFormDraft.ja_recebido} 
+                      disabled={isFromExtrato || shouldLockFields}
+                      checked={lancamentoFormDraft.ja_recebido}
                       onChange={(e) => setLancamentoFormDraft({ ja_recebido: e.target.checked })}
                       className="rounded-md border-neutral-300 text-primary focus:ring-primary w-5 h-5 transition-all"
                     />
@@ -1170,9 +1171,10 @@ export default function NovoLancamentoDrawer() {
                           <label className="text-[10px] font-black text-secondary uppercase tracking-widest">Data do Recebimento</label>
                           <input
                             type="date"
+                            disabled={isFromExtrato || shouldLockFields}
                             value={lancamentoFormDraft.data_pagamento}
                             onChange={(e) => setLancamentoFormDraft({ data_pagamento: e.target.value })}
-                            className="w-full h-10 bg-white border-2 border-neutral-200 text-xs font-bold rounded-lg px-3 focus:outline-none focus:border-primary shadow-xs"
+                            className="w-full h-10 bg-white border-2 border-neutral-200 text-xs font-bold rounded-lg px-3 focus:outline-none focus:border-primary shadow-xs disabled:opacity-50"
                           />
                         </div>
                         <div className="flex flex-col gap-2">
@@ -1182,7 +1184,8 @@ export default function NovoLancamentoDrawer() {
                             <MoneyInput
                               value={lancamentoFormDraft.valor_recebido}
                               onChange={(val) => setLancamentoFormDraft({ valor_recebido: val })}
-                              className="w-full h-10 pl-8 pr-3 bg-white border-2 border-neutral-200 rounded-lg font-mono text-xs font-black text-on-surface focus:outline-none focus:border-primary shadow-xs"
+                              disabled={isFromExtrato || shouldLockFields}
+                              className="w-full h-10 pl-8 pr-3 bg-white border-2 border-neutral-200 rounded-lg font-mono text-xs font-black text-on-surface focus:outline-none focus:border-primary shadow-xs disabled:opacity-50"
                             />
                           </div>
                         </div>
@@ -1338,7 +1341,7 @@ export default function NovoLancamentoDrawer() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className={shouldLockFields ? 'opacity-50 pointer-events-none' : ''}>
                     <SearchableSelect
-                      label="Categoria Contábil"
+                      label="Conta Contábil"
                       placeholder="Selecione..."
                       value={lancamentoFormDraft.categoria_id}
                       onChange={(val) => setLancamentoFormDraft({ categoria_id: val })}

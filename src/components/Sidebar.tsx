@@ -42,7 +42,7 @@ export default function Sidebar({ isOpen, onClose, isCollapsed }: SidebarProps) 
     { id: 'receber' as TabType, label: 'Contas a Receber', icon: ArrowUpRight, path: '/receber', roles: ['master', 'gerente', 'colaborador'] },
     { id: 'lancamentos' as TabType, label: 'Financeiro / Extrato', icon: Coins, path: '/lancamentos', roles: ['master', 'gerente', 'colaborador'] },
     { id: 'cofre' as TabType, label: 'Cofre Local', icon: ShieldCheck, path: '/cofre', roles: ['master', 'gerente', 'colaborador'] },
-    { id: 'conciliacao' as TabType, label: 'Conciliação Bancária', icon: FileSpreadsheet, path: '/conciliacao', roles: ['master', 'gerente'] },
+    { id: 'conciliacao' as TabType, label: 'Conciliação Bancária', icon: FileSpreadsheet, path: '/conciliacao', roles: ['master', 'gerente', 'colaborador'] },
     { id: 'recorrencias' as TabType, label: 'Gestão de Recorrências', icon: Repeat, path: '/recorrencias', roles: ['master', 'gerente'] },
     { id: 'crm' as TabType, label: 'CRM & Entidades', icon: UserSquare2, path: '/crm', roles: ['master', 'gerente', 'colaborador'] },
     { id: 'cadastros' as TabType, label: 'Estrutura & Cadastros', icon: ShieldCheck, path: '/cadastros', roles: ['master', 'gerente'] },

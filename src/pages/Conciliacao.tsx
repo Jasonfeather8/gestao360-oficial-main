@@ -37,6 +37,9 @@ import Button from '../components/Button';
 import TransferenciaBancariaModal from '../components/TransferenciaBancariaModal';
 import { calculateFinalAmount } from '../utils/adjustments';
 
+const getTransactionCents = (transaction: TransacaoBanco): number =>
+  Number.isInteger(transaction.valor_centavos) ? transaction.valor_centavos as number : Math.round(transaction.valor * 100);
+
 const getLancamentoAdjustedCents = (lancamento: LancamentoFinanceiro): number => {
   const adjustedCents = Math.round(calculateFinalAmount({
     original: lancamento.valor_previsto,
@@ -52,6 +55,7 @@ export default function Conciliacao() {
   const { 
     conciliacoes = [],
     transacoes = [],
+    diferencas = [],
     fechamentos = [],
     prepareImport,
     confirmImport,
@@ -70,8 +74,19 @@ export default function Conciliacao() {
   } = useConciliacao();
 
   const { role, user } = useAuth();
+  const [selectedContaId, setSelectedContaId] = useState<string>('');
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
   const { data: contas = [] } = useContas();
-  const { data: lancamentos = [] } = useLancamentos({ pageSize: 1000 }); // Buscar volume maior para conciliar
+  const { data: lancamentos = [] } = useLancamentos({
+    conciliationWorkspace: {
+      accountId: selectedContaId,
+      periodStart: `${selectedMonth}-01`,
+      periodEnd: `${selectedMonth}-${String(new Date(Number(selectedMonth.slice(0, 4)), Number(selectedMonth.slice(5, 7)), 0).getDate()).padStart(2, '0')}`,
+    },
+  });
   const { data: entidades = [] } = useEntidades();
 
   const {
@@ -83,14 +98,9 @@ export default function Conciliacao() {
     currentConciliationDifferenceValue
   } = useUIStore();
 
-  const [selectedContaId, setSelectedContaId] = useState<string>('');
   const [selectedLancamentoIds, setSelectedLancamentoIds] = useState<string[]>([]);
   const [directionFilter, setDirectionFilter] = useState<'todos' | 'entrada' | 'saida'>('todos');
   const [reviewFilter, setReviewFilter] = useState<'todos' | 'pendencias'>('todos');
-  const [selectedMonth, setSelectedMonth] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  });
   const {
     transferencias,
     suggestions: transferSuggestions,
@@ -127,18 +137,10 @@ export default function Conciliacao() {
   }, [contas, selectedContaId]);
 
   const valueFormatter = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
-  const normalizedTransacoes = useMemo(() => transacoes.filter(transaction => {
-    const valueCents = Math.round(Number(transaction.valor) * 100);
-    return /^\d{4}-\d{2}-\d{2}$/.test(transaction.data_transacao)
+  const normalizedTransacoes = useMemo(() => transacoes.filter(transaction =>
+    /^\d{4}-\d{2}-\d{2}$/.test(transaction.data_transacao)
       && Number.isFinite(transaction.valor)
-      && Number.isInteger(transaction.valor_centavos)
-      && transaction.valor_centavos === valueCents
-      && Boolean(transaction.data_original?.trim())
-      && Boolean(transaction.descricao_banco?.trim())
-      && Boolean(transaction.descricao_original?.trim())
-      && /^[a-f0-9]{64}$/.test(transaction.hash_transacao)
-      && ((transaction.valor > 0 && transaction.tipo_movimento === 'credito') || (transaction.valor < 0 && transaction.tipo_movimento === 'debito'));
-  }), [transacoes]);
+  ), [transacoes]);
   const hasReviewAlert = (transaction: TransacaoBanco) => Boolean(transaction.motivo_alerta?.trim()) || (transaction.confianca_extracao !== null && transaction.confianca_extracao !== undefined && transaction.confianca_extracao < 0.9);
   const fileOriginLabel = (origin: TransacaoBanco['origem_arquivo']) => ({
     pdf_texto: 'PDF textual',
@@ -312,7 +314,7 @@ export default function Conciliacao() {
       const tx = normalizedTransacoes.find(t => t.id === selectedTransacaoForConciliationId);
       const selected = lancamentos.filter(l => selectedLancamentoIds.includes(l.id));
       if (!tx || selected.length !== selectedLancamentoIds.length) return;
-      const txCents = Math.round(Number(tx.valor.toFixed(2)) * 100);
+      const txCents = getTransactionCents(tx);
       const erpCents = selected.reduce((sum, lanc) => sum + getLancamentoAdjustedCents(lanc), 0);
       const differenceCents = txCents - erpCents;
       const difference = differenceCents / 100;
@@ -376,53 +378,79 @@ export default function Conciliacao() {
     }
   };
 
-  // 1. Processar Transações do Banco
-  const bankStatements = useMemo(() => {
-    return normalizedTransacoes
-      .filter(tx => {
-        const matchConta = tx.conta_bancaria_id === selectedContaId;
-        const matchMonth = tx.data_transacao.startsWith(selectedMonth);
-        const matchDirection = directionFilter === 'todos' ? true :
-                              directionFilter === 'entrada' ? tx.valor > 0 : tx.valor < 0;
-        const matchReview = reviewFilter === 'todos' || hasReviewAlert(tx);
-        return matchConta && matchMonth && matchDirection && matchReview;
-      })
-      .map(tx => ({
-        ...tx,
-        conciliation: conciliacoes.find(c => c.transacao_banco_id === tx.id) || null
-      }));
-  }, [normalizedTransacoes, selectedContaId, selectedMonth, directionFilter, reviewFilter, conciliacoes]);
+  // O período operacional é sempre calculado sem os filtros de apresentação.
+  const periodTransactions = useMemo(() => normalizedTransacoes
+    .filter(tx => tx.conta_bancaria_id === selectedContaId && tx.data_transacao.startsWith(selectedMonth))
+    .map(tx => ({ ...tx, conciliation: conciliacoes.find(c => c.transacao_banco_id === tx.id) || null })),
+  [normalizedTransacoes, selectedContaId, selectedMonth, conciliacoes]);
 
-  // 2. Processar Lançamentos do ERP
-  const availableLaunches = useMemo(() => {
-    return lancamentos.filter(l => {
-      const matchConta = l.conta_bancaria_id === selectedContaId;
-      const matchStatus = l.status_pagamento === 'aberto' && !conciliacoes.some(c => c.lancamento_id === l.id);
-      const isTransferMirror = Boolean(l.transferencia_id && (l.transferencia_lado === 'origem' || l.transferencia_lado === 'destino'));
-      const matchMonth = l.data_vencimento.startsWith(selectedMonth);
-      const matchDirection = directionFilter === 'todos' ? true : l.tipo === directionFilter;
-      return matchConta && matchStatus && !isTransferMirror && matchMonth && matchDirection;
-    });
-  }, [lancamentos, conciliacoes, selectedContaId, selectedMonth, directionFilter]);
+  const isTransactionIdentified = (transaction: (typeof periodTransactions)[number]) => {
+    if (!transaction.status_conciliacao) return false;
+    const hasConciliationLink = Boolean(transaction.conciliation);
+    const hasTransferLink = transferencias.some(transferencia =>
+      transferencia.status !== 'estornada' &&
+      (
+        (transferencia.transacao_origem_id === transaction.id && transferencia.conta_origem_id === transaction.conta_bancaria_id) ||
+        (transferencia.transacao_destino_id === transaction.id && transferencia.conta_destino_id === transaction.conta_bancaria_id)
+      )
+    );
+    return hasConciliationLink || hasTransferLink;
+  };
 
-  // 3. Lógica de Smart Match (Sugestão Visual)
-  const smartMatches = useMemo(() => {
-    if (!selectedTransacaoForConciliationId) return [];
+  // 1. Processar Transações do Banco (somente a apresentação respeita os filtros).
+  const bankStatements = useMemo(() => periodTransactions.filter(tx => {
+    const matchDirection = directionFilter === 'todos' ? true : directionFilter === 'entrada' ? tx.valor > 0 : tx.valor < 0;
+    const matchReview = reviewFilter === 'todos' || hasReviewAlert(tx);
+    return matchDirection && matchReview;
+  }), [periodTransactions, directionFilter, reviewFilter]);
+
+  const periodProgress = useMemo(() => {
+    const identified = periodTransactions.filter(isTransactionIdentified);
+    const identifiedConciliacaoIds = new Set(identified.flatMap(tx => conciliacoes.filter(c => c.transacao_banco_id === tx.id).map(c => c.id)));
+    const residualCents = diferencas
+      .filter(diferenca => identifiedConciliacaoIds.has(diferenca.conciliacao_id))
+      .reduce((total, diferenca) => total + Math.round(Number(diferenca.valor_diferenca) * 100), 0);
+    return {
+      total: periodTransactions.length,
+      identified: identified.length,
+      pending: periodTransactions.length - identified.length,
+      residualCents,
+      complete: periodTransactions.length > 0 && identified.length === periodTransactions.length,
+    };
+  }, [periodTransactions, conciliacoes, diferencas, transferencias]);
+
+  // 2. Processar Lançamentos do ERP, com competência e vencimento legado.
+  const eligibleLaunches = useMemo(() => lancamentos.filter(l => {
+    const matchStatus = l.status_pagamento === 'aberto' && !conciliacoes.some(c => c.lancamento_id === l.id);
+    const isTransferMirror = Boolean(l.transferencia_id && (l.transferencia_lado === 'origem' || l.transferencia_lado === 'destino'));
+    const referenceDate = l.data_competencia || l.data_vencimento;
+    return matchStatus && !isTransferMirror && referenceDate.startsWith(selectedMonth);
+  }), [lancamentos, conciliacoes, selectedMonth]);
+  const availableLaunches = useMemo(() => eligibleLaunches.filter(l =>
+    directionFilter === 'todos' || l.tipo === directionFilter
+  ), [eligibleLaunches, directionFilter]);
+
+  // 3. Smart Match: valor exato e valor + data são critérios distintos.
+  const smartMatchTypes = useMemo(() => {
+    const matches = new Map<string, 'valor' | 'valor_data'>();
+    if (!selectedTransacaoForConciliationId) return matches;
     const tx = normalizedTransacoes.find(t => t.id === selectedTransacaoForConciliationId);
-    if (!tx) return [];
-
-    return availableLaunches.filter(l => {
-      const erpVal = getLancamentoAdjustedCents(l) / 100;
-      const sameVal = Math.abs(erpVal - tx.valor) < 0.01;
-      const sameDate = l.data_vencimento === tx.data_transacao;
-      return sameVal || (sameVal && sameDate);
-    }).map(l => l.id);
-  }, [selectedTransacaoForConciliationId, normalizedTransacoes, availableLaunches]);
+    if (!tx) return matches;
+    const txCents = getTransactionCents(tx);
+    eligibleLaunches.forEach(l => {
+      const sameValue = getLancamentoAdjustedCents(l) === txCents;
+      if (!sameValue) return;
+      const referenceDate = l.data_competencia || l.data_vencimento;
+      matches.set(l.id, referenceDate === tx.data_transacao ? 'valor_data' : 'valor');
+    });
+    return matches;
+  }, [selectedTransacaoForConciliationId, normalizedTransacoes, eligibleLaunches]);
+  const smartMatches = useMemo(() => Array.from(smartMatchTypes.keys()), [smartMatchTypes]);
 
   const selectedTxForWorkspace = useMemo(() => normalizedTransacoes.find(t => t.id === selectedTransacaoForConciliationId) || null, [selectedTransacaoForConciliationId, normalizedTransacoes]);
   const originTransferSuggestions = useMemo(() => {
     if (!selectedTxForWorkspace || selectedTxForWorkspace.valor >= 0) return [];
-    const txCents = Math.round(Math.abs(selectedTxForWorkspace.valor) * 100);
+    const txCents = Math.abs(getTransactionCents(selectedTxForWorkspace));
     const txDate = new Date(`${selectedTxForWorkspace.data_transacao}T00:00:00Z`).getTime();
     return transferencias.filter(transferencia => {
       const transferDate = new Date(`${transferencia.data_transferencia}T00:00:00Z`).getTime();
@@ -437,7 +465,7 @@ export default function Conciliacao() {
 
   const draftDifferenceAmount = useMemo(() => {
     if (!selectedTxForWorkspace || selectedLancsForWorkspace.length === 0) return 0;
-    const txCents = Math.round(Number(selectedTxForWorkspace.valor.toFixed(2)) * 100);
+    const txCents = getTransactionCents(selectedTxForWorkspace);
     const erpCents = selectedLancsForWorkspace.reduce((sum, lanc) => sum + getLancamentoAdjustedCents(lanc), 0);
     return (txCents - erpCents) / 100;
   }, [selectedTxForWorkspace, selectedLancsForWorkspace]);
@@ -511,6 +539,25 @@ export default function Conciliacao() {
           </p>
         </div>
       )}
+
+      <div className="bg-white border-2 border-neutral-100 p-4 rounded-3xl shadow-sm space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-black text-neutral-900 uppercase tracking-widest">Progresso da competência</p>
+            <p className="text-[9px] font-bold text-neutral-400 uppercase mt-0.5">Conta e mês inteiros; filtros não alteram estes números.</p>
+          </div>
+          <span className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest ${periodProgress.complete ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+            {periodProgress.identified}/{periodProgress.total} identificadas
+          </span>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-[10px] font-black uppercase tracking-widest">
+          <span className="rounded-xl bg-neutral-50 px-3 py-2 text-neutral-600">Total: {periodProgress.total}</span>
+          <span className="rounded-xl bg-amber-50 px-3 py-2 text-amber-700">Pendentes: {periodProgress.pending}</span>
+          <span className="rounded-xl bg-neutral-50 px-3 py-2 text-neutral-600">Residual: {valueFormatter(periodProgress.residualCents / 100)} ({periodProgress.residualCents}¢)</span>
+          <span className="rounded-xl bg-emerald-50 px-3 py-2 text-emerald-700">{periodProgress.complete ? '100% identificado' : `${periodProgress.total ? Math.round((periodProgress.identified / periodProgress.total) * 100) : 0}% identificado`}</span>
+        </div>
+        {periodProgress.complete && <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">Competência 100% identificada. Você pode solicitar o fechamento.</p>}
+      </div>
 
       {/* Fechamento formal da competência */}
       <div className="bg-white border-2 border-neutral-100 p-4 rounded-3xl shadow-sm space-y-3">
@@ -620,12 +667,12 @@ export default function Conciliacao() {
       )}
 
       {/* Toolbox de Lote */}
-      {bankStatements.some(tx => !tx.status_conciliacao) && (
+      {periodProgress.pending > 0 && (
         <div className="bg-primary/5 border-2 border-primary/10 p-4 rounded-3xl flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Info className="w-5 h-5 text-primary" />
             <p className="text-[10px] font-black text-primary uppercase tracking-widest">
-              Existem {bankStatements.filter(tx => !tx.status_conciliacao).length} transações aguardando conciliação neste período.
+              Existem {periodProgress.pending} transações aguardando conciliação neste período.
             </p>
           </div>
           <button 
@@ -661,6 +708,7 @@ export default function Conciliacao() {
                 <p className="text-xs font-black uppercase tracking-widest max-w-[200px]">Importe um extrato para começar a conciliação</p>
               </div>
             ) : bankStatements.map(tx => {
+              const transactionIdentified = isTransactionIdentified(tx);
               const suggestionsForTx = tx.valor > 0 ? transferSuggestions : originTransferSuggestions;
               const suggestionSide = tx.valor > 0 ? 'destino' as const : 'origem' as const;
               return (
@@ -668,13 +716,13 @@ export default function Conciliacao() {
                 layout
                 key={tx.id} 
                 onClick={() => {
-                  if (!tx.status_conciliacao) {
+                  if (!transactionIdentified) {
                     setSelectedTransacaoForConciliationId(tx.id);
                     setSelectedLancamentoIds([]);
                   }
                 }}
                 className={`p-5 rounded-2xl border-2 transition-all flex items-center justify-between group ${
-                  tx.status_conciliacao 
+                  transactionIdentified
                     ? 'opacity-40 grayscale bg-neutral-100 cursor-default' 
                     : selectedTransacaoForConciliationId === tx.id 
                       ? 'border-primary bg-white shadow-xl scale-[1.02] ring-4 ring-primary/5' 
@@ -716,14 +764,20 @@ export default function Conciliacao() {
                   <div className={`text-sm font-black font-mono ${tx.valor < 0 ? 'text-alert-red' : 'text-bank-truth-green'}`}>
                     {valueFormatter(tx.valor)}
                   </div>
-                  {tx.status_conciliacao ? (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleUnlink(tx.conciliation!.id); }}
-                      className="p-2 hover:bg-red-50 text-neutral-300 hover:text-alert-red rounded-xl transition-all"
-                      title="Desvincular"
-                    >
-                      <Unlink className="w-4 h-4" />
-                    </button>
+                  {transactionIdentified ? (
+                    tx.conciliation ? (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleUnlink(tx.conciliation!.id); }}
+                        className="p-2 hover:bg-red-50 text-neutral-300 hover:text-alert-red rounded-xl transition-all"
+                        title="Desvincular"
+                      >
+                        <Unlink className="w-4 h-4" />
+                      </button>
+                    ) : (
+                      <span className="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-[8px] font-black uppercase tracking-widest" title="Vínculo de transferência íntegro">
+                        Transferência identificada
+                      </span>
+                    )
                   ) : selectedTransacaoForConciliationId === tx.id ? (
                     <div className="flex flex-col items-end gap-2">
                       {suggestionsForTx.length > 0 && (
@@ -796,14 +850,16 @@ export default function Conciliacao() {
             {availableLaunches.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-center opacity-30 gap-4">
                 <CheckCircle2 className="w-16 h-16 text-emerald-500" />
-                <p className="text-xs font-black uppercase tracking-widest max-w-[200px]">Período totalmente conciliado no ERP</p>
+                <p className="text-xs font-black uppercase tracking-widest max-w-[200px]">
+                  {periodProgress.pending > 0 ? 'Nenhuma provisão elegível encontrada para os itens pendentes' : 'Período totalmente conciliado no ERP'}
+                </p>
               </div>
             ) : availableLaunches.map(l => {
               const isSmartMatch = smartMatches.includes(l.id);
               return (
-                <motion.div 
+                <motion.div
                   layout
-                  key={l.id} 
+                  key={l.id}
                   className={`p-5 rounded-2xl border-2 transition-all flex items-center justify-between group ${
                     isSmartMatch 
                       ? 'border-emerald-200 bg-emerald-50/30 ring-2 ring-emerald-500/10' 
@@ -823,13 +879,13 @@ export default function Conciliacao() {
                         </p>
                         {isSmartMatch && (
                           <span className="bg-emerald-500 text-white text-[7px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-widest flex items-center gap-1">
-                            <Zap className="w-2.5 h-2.5 fill-current" /> Smart Match
+                            <Zap className="w-2.5 h-2.5 fill-current" /> {smartMatchTypes.get(l.id) === 'valor_data' ? 'Match exato: valor + data' : 'Match exato: valor'}
                           </span>
                         )}
                       </div>
                       <div className="flex items-center gap-3 mt-1">
                         <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest flex items-center gap-1">
-                          <Calendar className="w-3 h-3" /> {l.data_vencimento.split('-').reverse().join('/')}
+                          <Calendar className="w-3 h-3" /> {(l.data_competencia || l.data_vencimento).split('-').reverse().join('/')}
                         </span>
                         <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest truncate max-w-[150px]">
                           {l.observacoes || 'Sem descrição'}
@@ -1122,7 +1178,7 @@ export default function Conciliacao() {
 
               <footer className="p-10 border-t bg-neutral-50 shrink-0">
                 <div className="flex justify-between items-center mb-6">
-                  <span className="text-[10px] font-black uppercase text-neutral-400 tracking-widest">Diferença Residual</span>
+                  <span className="text-[10px] font-black uppercase text-neutral-400 tracking-widest">Diferença Residual ({Math.round(draftDifferenceAmount * 100)}¢)</span>
                   <div className={`px-5 py-2 rounded-2xl text-xs font-black font-mono shadow-sm ${Math.abs(draftDifferenceAmount) < 0.01 ? 'bg-emerald-500 text-white' : 'bg-neutral-900 text-white'}`}>
                     {valueFormatter(draftDifferenceAmount)}
                   </div>
@@ -1163,7 +1219,7 @@ export default function Conciliacao() {
 
               <div className="p-10 space-y-8">
                 <div className="p-6 bg-red-50 border-2 border-red-100 rounded-3xl text-center space-y-1">
-                  <label className="text-[10px] font-black uppercase text-red-400 tracking-widest block">Valor Residual a Justificar</label>
+                  <label className="text-[10px] font-black uppercase text-red-400 tracking-widest block">Valor Residual a Justificar ({Math.round(currentConciliationDifferenceValue * 100)}¢)</label>
                   <div className="font-black text-3xl text-alert-red font-mono">{valueFormatter(currentConciliationDifferenceValue)}</div>
                 </div>
 
