@@ -1,9 +1,44 @@
 export type ImportFileFormat = 'csv' | 'xlsx' | 'pdf' | 'ofx';
+// OFX permanece somente como contrato de extensão futura; o upload aceita apenas ImportFileType.
 export type ImportFileType = Exclude<ImportFileFormat, 'ofx'>;
 export type ImportMode = 'entrada' | 'saida' | 'ambos';
 export type ImportSourceOrigin = 'texto' | 'ocr' | 'estruturado';
 export type ImportFileOrigin = 'pdf_texto' | 'pdf_ocr' | 'csv' | 'xlsx' | 'ofx_estruturado';
 export type ImportReviewStatus = 'valida' | 'pendente_revisao';
+export type ImportBatchReviewState = 'validated' | 'has_pending_reviews';
+export type ImportAlertSeverity = 'critical' | 'warning' | 'info';
+export type ImportConfidence = number;
+
+export interface ImportParserTotals {
+  entries?: number;
+  exits?: number;
+}
+
+export interface ImportParserBalances {
+  opening?: number;
+  closing?: number;
+}
+
+export interface ImportParserAlert {
+  code: string;
+  message: string;
+  severity: ImportAlertSeverity;
+}
+
+export interface ImportParserMetadata {
+  pages?: number;
+  periodStart?: string;
+  periodEnd?: string;
+  balances?: ImportParserBalances;
+  totals?: ImportParserTotals;
+  reportedTransactionCount?: number;
+  bankIdentified?: string;
+  sourceOrigin: ImportSourceOrigin;
+  sourceFileOrigin?: ImportFileOrigin;
+  confidence?: ImportConfidence;
+  alerts?: ImportParserAlert[];
+  pendingReviews?: ImportReviewItem[];
+}
 
 export interface ImportTransaction {
   data_transacao: string;
@@ -20,13 +55,14 @@ export interface ImportTransaction {
   linha_origem?: number;
   arquivo_nome?: string;
   arquivo_hash?: string;
-  confianca_extracao?: number;
+  confianca_extracao?: ImportConfidence;
   motivo_alerta?: string | null;
   extrato_lote_id?: string;
   formato_arquivo?: ImportFileFormat;
   origem_extracao?: ImportSourceOrigin;
   origem_arquivo?: ImportFileOrigin;
   estado_revisao?: ImportReviewStatus;
+  alertas_extracao?: ImportParserAlert[];
 }
 
 export interface ImportReviewItem {
@@ -38,7 +74,7 @@ export interface ImportReviewItem {
   pagina_origem?: number;
   linha_origem?: number;
   origem_extracao: ImportSourceOrigin;
-  confianca_extracao: number;
+  confianca_extracao: ImportConfidence;
   motivos: string[];
   trecho: string;
 }
@@ -84,7 +120,8 @@ export interface ImportPreview {
   sourceRows?: Array<Record<string, string>>;
   sourceHeaders?: string[];
   bankIdentified?: string;
-  parserTotals?: { entries?: number; exits?: number };
+  parserTotals?: ImportParserTotals;
+  parserMetadata?: ImportParserMetadata;
   reportedTransactionCount?: number;
   consistency: ImportConsistencyState;
 }
@@ -114,15 +151,17 @@ export interface ImportConfirmationMetadata {
   bankIdentified?: string;
   totalEntries?: number;
   totalExits?: number;
-  parserTotals?: { entries?: number; exits?: number };
+  parserTotals?: ImportParserTotals;
+  parserMetadata?: ImportParserMetadata;
   reportedTransactionCount?: number;
   extractedCount?: number;
   ocrCount?: number;
   consistency?: ImportConsistencyState;
   rawTransactions?: Array<Pick<ImportTransaction, 'data_original' | 'descricao_original' | 'valor_original' | 'data_transacao' | 'descricao_banco' | 'valor' | 'tipo_movimento' | 'pagina_origem' | 'linha_origem' | 'formato_arquivo' | 'origem_extracao' | 'origem_arquivo'>>;
   sourceOrigin?: ImportSourceOrigin;
+  alerts?: ImportParserAlert[];
   pendingReviewCount?: number;
-  reviewState?: 'validated' | 'has_pending_reviews';
+  reviewState?: ImportBatchReviewState;
 }
 
 export interface CsvParseResult {
@@ -153,6 +192,7 @@ export interface PdfParseResult {
     alert?: string | null;
     origem: ImportSourceOrigin;
     origem_arquivo?: ImportFileOrigin;
-  }>;
-  pendingReviews: ImportReviewItem[];
-}
+    }>;
+    parserMetadata?: ImportParserMetadata;
+    pendingReviews: ImportReviewItem[];
+  }

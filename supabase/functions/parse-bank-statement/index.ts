@@ -200,9 +200,12 @@ const directionFromLayout = (amountX: number, headers: Array<{ label: string; x:
 const directionFromText = (text: string, rawAmount: string): 'credito' | 'debito' | undefined => {
   const sign = rawAmount.trim().startsWith('-') || rawAmount.includes('(') ? 'debito' : rawAmount.trim().startsWith('+') ? 'credito' : undefined
   if (sign) return sign
-  const match = text.match(directionPattern)
-  if (!match) return undefined
-  return /DB|^D$|debito|débito|sa[ií]da|pagamento|debit|withdrawal/i.test(match[1]) ? 'debito' : 'credito'
+  const indicators = Array.from(text.matchAll(new RegExp(directionPattern.source, 'gi'))).map(match => match[1])
+  if (!indicators.length) return undefined
+  const hasDebit = indicators.some(indicator => /DB|^D$|debito|débito|sa[ií]da|pagamento|debit|withdrawal/i.test(indicator))
+  const hasCredit = indicators.some(indicator => /CR|^C$|credito|crédito|entrada|recebimento|credit|deposit|receipt/i.test(indicator))
+  if (hasDebit === hasCredit) return undefined
+  return hasDebit ? 'debito' : 'credito'
 }
 
 const descriptionFromLine = (line: string, dateRaw: string, amountRaw: string): string => {
@@ -222,7 +225,7 @@ const extractText = (text: string, sourceOrigin: SourceOrigin, pages: number, la
   const preferredDayFirst = /extrato|periodo|saldo|descricao|credito|debito/.test(normalizedDocumentText) && !/statement|period|balance|description|credit|debit/.test(normalizedDocumentText)
   const lines = layoutPages.length
     ? layoutPages.flatMap(page => page.lines.map((line, index) => ({ text: line.text, tokens: line.tokens, page: page.page, line: index + 1 })))
-    : text.split(/\f|\r?\n/).flatMap((pageText, pageIndex) => pageText.split(/\r?\n/).map((value, lineIndex) => ({ text: clean(value), tokens: [], page: pageIndex + 1, line: lineIndex + 1 })))
+    : text.split(/\f/).flatMap((pageText, pageIndex) => pageText.split(/\r?\n/).map((value, lineIndex) => ({ text: clean(value), tokens: [], page: pageIndex + 1, line: lineIndex + 1 })))
   let current: { dateRaw?: string; date?: string; ambiguousDate?: boolean; description: string; page: number; line: number; raw: string; amount?: number; amountRaw?: string; direction?: 'credito' | 'debito'; directionEvidence?: 'layout' | 'sign' | 'indicator'; x?: number } | null = null
 
   const emit = (row: typeof current) => {
@@ -448,12 +451,28 @@ serve(async (req) => {
     const dates = result.transactions.map(transaction => transaction.date).sort()
     const period = normalizedPeriod(pdfData.text)
     log('Extração concluída', { user_id: authData.user.id, pages: pdfData.pages, transactions: result.transactions.length, pending_reviews: result.pendingReviews.length, origin: sourceOrigin })
+    const periodStart = period?.[0] || dates[0]
+    const periodEnd = period?.[1] || dates[dates.length - 1]
+    const bankIdentified = classifyBankName(pdfData.text)
     return new Response(JSON.stringify({
       ...result,
       pages: pdfData.pages,
-      periodStart: period?.[0] || dates[0],
-      periodEnd: period?.[1] || dates[dates.length - 1],
-      bankIdentified: classifyBankName(pdfData.text),
+      periodStart,
+      periodEnd,
+      bankIdentified,
+      parserMetadata: {
+        pages: pdfData.pages,
+        periodStart,
+        periodEnd,
+        balances: { opening: result.openingBalance, closing: result.closingBalance },
+        totals: { entries: result.totalEntries, exits: result.totalExits },
+        reportedTransactionCount: result.reportedTransactionCount,
+        bankIdentified,
+        sourceOrigin,
+        sourceFileOrigin: sourceOrigin === 'ocr' ? 'pdf_ocr' : 'pdf_texto',
+        alerts: sourceOrigin === 'ocr' ? [{ code: 'ocr_origin', message: 'Origem OCR: valide os dados normalizados antes da confirmação.', severity: 'warning' }] : [],
+        pendingReviews: result.pendingReviews,
+      },
     }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Falha ao processar o extrato'

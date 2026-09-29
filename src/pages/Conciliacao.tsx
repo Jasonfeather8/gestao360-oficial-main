@@ -32,7 +32,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useUIStore } from '../store/uiStore';
 import { TransacaoBanco, LancamentoFinanceiro } from '../types';
 import { ImportConfirmationMetadata, ImportLotDraft, ImportMode, ImportPreview } from '../types/extratoImportacao';
-import { buildCsvTransactions, parseCsv, validateImportConsistency } from '../services/conciliacoesService';
+import { attachImportLotMetadata, buildCsvTransactions, parseCsv, validateImportConsistency } from '../services/conciliacoesService';
 import Button from '../components/Button';
 import TransferenciaBancariaModal from '../components/TransferenciaBancariaModal';
 import { calculateFinalAmount } from '../utils/adjustments';
@@ -261,7 +261,10 @@ export default function Conciliacao() {
         const rows = importPreview.fileType === 'csv'
           ? parseCsv(csvContentText).rows
           : importPreview.sourceRows || [];
-        transactions = await buildCsvTransactions(importLot.contaBancariaId, rows, columnMapping, importMode, importPreview.fileType);
+        transactions = attachImportLotMetadata(
+          await buildCsvTransactions(importLot.contaBancariaId, rows, columnMapping, importMode, importPreview.fileType),
+          importLot,
+        );
       }
       if (!transactions.length) throw new Error('O arquivo precisa conter ao menos uma transação válida.');
       const confirmationMetadata: ImportConfirmationMetadata = {
@@ -278,7 +281,9 @@ export default function Conciliacao() {
         extractedCount: transactions.length,
         ocrCount: transactions.filter(transaction => transaction.origem_extracao === 'ocr').length,
         consistency: importPreview.consistency,
+        parserMetadata: importPreview.parserMetadata,
         sourceOrigin: importPreview.sourceOrigin,
+        alerts: importPreview.parserMetadata?.alerts,
         pendingReviewCount: importPreview.pendingReviews?.length || 0,
         reviewState: importPreview.pendingReviews?.length ? 'has_pending_reviews' : 'validated',
       };
@@ -889,7 +894,8 @@ export default function Conciliacao() {
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[10px] font-black text-secondary uppercase tracking-widest">Direcionador (somente CSV/XLSX)</label>
+                    <label className="text-[10px] font-black text-secondary uppercase tracking-widest">Direcionador do lote (CSV/XLSX)</label>
+                    <p className="text-[9px] font-bold text-neutral-400 uppercase">Formato tabular; a direção será aplicada ao lote inteiro, sem edição por transação.</p>
                     {importPreview?.fileType === 'pdf' ? (
                       <div className="h-14 rounded-2xl bg-emerald-50 border-2 border-emerald-100 px-4 flex items-center text-[9px] font-black uppercase tracking-widest text-emerald-700">
                         Classificação automática por evidência
@@ -934,6 +940,7 @@ export default function Conciliacao() {
                         {importPreview.consistency.ocrCount > 0 && <span className="text-violet-700">Registros via OCR: {importPreview.consistency.ocrCount}</span>}
                       </div>
                       {importPreview.fileType === 'pdf' && <p className="text-[10px] font-black uppercase text-neutral-500">Origem: {importPreview.sourceOrigin === 'ocr' ? 'OCR backend-only • confiança reduzida' : 'texto e layout do PDF'} • o nome do arquivo não classifica o movimento.</p>}
+                      <p className="text-[10px] font-black uppercase text-neutral-500">Dados bancários extraídos somente para leitura; data, valor, descrição, direção e proveniência não são editáveis individualmente.</p>
                       {importPreview.consistency.criticalErrors.length > 0 && (
                         <div className="border-2 border-red-200 bg-red-50 rounded-2xl p-4 space-y-2">
                           <p className="text-[10px] font-black uppercase tracking-widest text-red-800">Confirmação bloqueada: {importPreview.consistency.criticalErrors.length} erro(s) crítico(s)</p>

@@ -10,6 +10,7 @@ import {
   ImportFileType,
   ImportLotDraft,
   ImportMode,
+  ImportParserMetadata,
   ImportPreview,
   ImportTransaction,
   PdfParseResult,
@@ -373,15 +374,24 @@ export const validateImportConsistency = (
   };
 };
 
-const attachLotMetadata = (transactions: ImportTransaction[], lot: ImportLotDraft): ImportTransaction[] =>
-  transactions.map(transaction => ({
-    ...transaction,
-    arquivo_nome: lot.fileName,
-    arquivo_hash: lot.fileHash,
-    extrato_lote_id: lot.id,
-    formato_arquivo: transaction.formato_arquivo || lot.formatoArquivo,
-    origem_extracao: transaction.origem_extracao || lot.origemExtracao,
-  }));
+export const attachImportLotMetadata = (transactions: ImportTransaction[], lot: ImportLotDraft): ImportTransaction[] =>
+  transactions.map(transaction => {
+    const formatoArquivo = transaction.formato_arquivo || lot.formatoArquivo;
+    const origemExtracao = transaction.origem_extracao || lot.origemExtracao;
+    const origemArquivo = transaction.origem_arquivo || (
+      formatoArquivo === 'csv' ? 'csv' : formatoArquivo === 'xlsx' ? 'xlsx' :
+        formatoArquivo === 'pdf' ? (origemExtracao === 'ocr' ? 'pdf_ocr' : 'pdf_texto') : undefined
+    );
+    return {
+      ...transaction,
+      arquivo_nome: lot.fileName,
+      arquivo_hash: lot.fileHash,
+      extrato_lote_id: lot.id,
+      formato_arquivo: formatoArquivo,
+      origem_extracao: origemExtracao,
+      origem_arquivo: origemArquivo,
+    };
+  });
 
 export const conciliacoesService = {
   getConciliacoes: async (): Promise<Conciliacao[]> => {
@@ -481,17 +491,26 @@ export const conciliacoesService = {
             })();
         const mapping = { data: parsed.headers.find(header => /dat/i.test(header)) || '', valor: parsed.headers.find(header => /val/i.test(header)) || '', descricao: parsed.headers.find(header => /desc/i.test(header)) || '', documento: parsed.headers.find(header => /doc/i.test(header)) || '' };
         const transactions = mapping.data && mapping.valor && mapping.descricao
-          ? attachLotMetadata(await buildCsvTransactions(contaBancariaId, parsed.rows, mapping, 'ambos', fileType), lot)
+          ? attachImportLotMetadata(await buildCsvTransactions(contaBancariaId, parsed.rows, mapping, 'ambos', fileType), lot)
           : [];
         const summary = transactions.length ? summarize(transactions) : { periodStart: undefined, periodEnd: undefined, totalEntries: 0, totalExits: 0 };
+        const parserMetadata: ImportParserMetadata = {
+          periodStart: summary.periodStart,
+          periodEnd: summary.periodEnd,
+          totals: { entries: summary.totalEntries, exits: summary.totalExits },
+          sourceOrigin: 'estruturado',
+          sourceFileOrigin: fileType,
+        };
         const consistencyMetadata: ImportConfirmationMetadata = {
           periodStart: summary.periodStart,
           periodEnd: summary.periodEnd,
+          parserTotals: parserMetadata.totals,
+          parserMetadata,
           extractedCount: transactions.length,
           sourceOrigin: 'estruturado',
           reviewState: 'validated',
         };
-        return { lot, preview: { fileName: file.name, fileType, mimeType: lot.mimeType, ...summary, size: file.size, transactions, sourceOrigin: 'estruturado', firstRows: parsed.rows.slice(0, 5), sourceRows: parsed.rows, sourceHeaders: parsed.headers, consistency: validateImportConsistency(transactions, consistencyMetadata) } };
+        return { lot, preview: { fileName: file.name, fileType, mimeType: lot.mimeType, ...summary, size: file.size, transactions, sourceOrigin: 'estruturado', firstRows: parsed.rows.slice(0, 5), sourceRows: parsed.rows, sourceHeaders: parsed.headers, parserTotals: parserMetadata.totals, parserMetadata, consistency: validateImportConsistency(transactions, consistencyMetadata) } };
       }
 
       const { data, error: functionError } = await supabase.functions.invoke('parse-bank-statement', { body: { lot_id: lot.id, storage_path: storagePath, file_type: 'pdf', file_hash: lot.fileHash, mime_type: lot.mimeType } });
@@ -531,11 +550,21 @@ export const conciliacoesService = {
         if (!base.descricao_banco || !Number.isFinite(base.valor) || base.valor === 0) throw friendlyError('O parser retornou uma transação PDF sem data, valor ou descrição válida.');
         return { ...base, hash_transacao: await buildHash(contaBancariaId, base) };
       }));
-      const transactions = attachLotMetadata(parsedTransactions, lot);
+      const transactions = attachImportLotMetadata(parsedTransactions, lot);
       const hashes = new Set<string>();
       transactions.forEach(transaction => { if (hashes.has(transaction.hash_transacao)) throw friendlyError('O PDF contém transações duplicadas.'); hashes.add(transaction.hash_transacao); });
       const summary = transactions.length ? summarize(transactions) : { periodStart: undefined, periodEnd: undefined, totalEntries: 0, totalExits: 0 };
       const pendingReviews = result.pendingReviews || [];
+      if (pendingReviews.some(review =>
+        typeof review.trecho !== 'string'
+        || !review.trecho.trim()
+        || !Array.isArray(review.motivos)
+        || review.motivos.length === 0
+        || !['texto', 'ocr'].includes(review.origem_extracao)
+        || !Number.isFinite(review.confianca_extracao)
+        || review.confianca_extracao < 0
+        || review.confianca_extracao > 1
+      )) throw friendlyError('O parser PDF retornou uma pendência sem trecho, motivo ou origem verificável.');
       lot.origemExtracao = result.sourceOrigin;
       const previewMetadata: ImportConfirmationMetadata = {
         pages: result.pages,
@@ -544,12 +573,13 @@ export const conciliacoesService = {
         openingBalance: result.openingBalance,
         closingBalance: result.closingBalance,
         parserTotals: { entries: result.totalEntries, exits: result.totalExits },
+        parserMetadata: result.parserMetadata,
         reportedTransactionCount: result.reportedTransactionCount,
         sourceOrigin: result.sourceOrigin,
         pendingReviewCount: pendingReviews.length,
         reviewState: pendingReviews.length ? 'has_pending_reviews' : 'validated',
       };
-      return { lot, preview: { fileName: file.name, fileType, mimeType: lot.mimeType, size: file.size, pages: result.pages, periodStart: result.periodStart || summary.periodStart, periodEnd: result.periodEnd || summary.periodEnd, openingBalance: result.openingBalance, closingBalance: result.closingBalance, totalEntries: result.totalEntries ?? summary.totalEntries, totalExits: result.totalExits ?? summary.totalExits, transactions, pendingReviews, sourceOrigin: result.sourceOrigin, firstRows: transactions.slice(0, 5).map(transaction => ({ data: transaction.data_transacao, descrição: transaction.descricao_banco, valor: transaction.valor.toFixed(2), origem: transaction.origem_extracao || 'texto' })), bankIdentified: result.bankIdentified, parserTotals: { entries: result.totalEntries, exits: result.totalExits }, reportedTransactionCount: result.reportedTransactionCount, consistency: validateImportConsistency(transactions, previewMetadata) } };
+      return { lot, preview: { fileName: file.name, fileType, mimeType: lot.mimeType, size: file.size, pages: result.pages, periodStart: result.periodStart || summary.periodStart, periodEnd: result.periodEnd || summary.periodEnd, openingBalance: result.openingBalance, closingBalance: result.closingBalance, totalEntries: result.totalEntries ?? summary.totalEntries, totalExits: result.totalExits ?? summary.totalExits, transactions, pendingReviews, sourceOrigin: result.sourceOrigin, firstRows: transactions.slice(0, 5).map(transaction => ({ data: transaction.data_transacao, descrição: transaction.descricao_banco, valor: transaction.valor.toFixed(2), origem: transaction.origem_extracao || 'texto' })), bankIdentified: result.bankIdentified, parserTotals: { entries: result.totalEntries, exits: result.totalExits }, parserMetadata: result.parserMetadata, reportedTransactionCount: result.reportedTransactionCount, consistency: validateImportConsistency(transactions, previewMetadata) } };
     } catch (error) {
       await conciliacoesService.cleanupImport(lot);
       throw error;
@@ -564,7 +594,23 @@ export const conciliacoesService = {
     if (consistency.criticalErrors.length > 0) throw friendlyError(`A confirmação foi bloqueada: ${consistency.criticalErrors.map(issue => issue.message).join(' ')}`);
     if (lot.fileSize <= 0 || lot.fileSize > MAX_IMPORT_SIZE || !/^[a-f0-9]{64}$/.test(lot.fileHash)) throw friendlyError('Os metadados do arquivo são inválidos.');
     if (lot.storagePath.split('/')[0] !== lot.userId || lot.storagePath.split('/').length < 3) throw friendlyError('O caminho do arquivo não pertence ao lote.');
-    getImportFileType(lot.fileName, lot.mimeType);
+    const supportedFormat = getImportFileType(lot.fileName, lot.mimeType);
+    if (lot.formatoArquivo && lot.formatoArquivo !== supportedFormat) throw friendlyError('O formato do lote não corresponde ao arquivo.');
+    if (lot.status && !lot.formatoArquivo) throw friendlyError('O lote não possui formato de arquivo verificável.');
+    if (lot.formatoArquivo || lot.status) {
+      const incompleteIndex = transactions.findIndex(transaction =>
+        transaction.arquivo_nome !== lot.fileName
+        || transaction.arquivo_hash !== lot.fileHash
+        || transaction.extrato_lote_id !== lot.id
+        || transaction.formato_arquivo !== lot.formatoArquivo
+        || transaction.origem_extracao !== lot.origemExtracao
+        || !transaction.origem_arquivo
+        || (lot.formatoArquivo === 'csv' && transaction.origem_arquivo !== 'csv')
+        || (lot.formatoArquivo === 'xlsx' && transaction.origem_arquivo !== 'xlsx')
+        || (lot.formatoArquivo === 'pdf' && transaction.origem_arquivo !== (lot.origemExtracao === 'ocr' ? 'pdf_ocr' : 'pdf_texto'))
+      );
+      if (incompleteIndex >= 0) throw friendlyError(`A transação ${incompleteIndex + 1} não possui proveniência completa do lote.`);
+    }
     const hashes = new Set<string>();
     transactions.forEach((transaction, index) => {
       if (!validateDate(transaction.data_transacao) || !/^\d{4}-\d{2}-\d{2}$/.test(transaction.data_transacao)) throw friendlyError(`Data inválida na transação ${index + 1}.`);
