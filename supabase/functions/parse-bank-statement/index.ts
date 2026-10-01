@@ -65,6 +65,24 @@ const corsHeaders = {
 const log = (...args: unknown[]) => console.log('[parse-bank-statement]', ...args)
 const fail = (message: string): never => { throw new Error(message) }
 const clean = (value: string) => value.replace(/\s+/g, ' ').trim()
+const safeDiagnosticText = (value: string) => value
+  .replace(/Bearer\s+[^\s,;]+/gi, 'Bearer [redigido]')
+  .replace(/sk-[A-Za-z0-9_-]+/g, '[redigido]')
+  .replace(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/g, '[email redigido]')
+  .replace(/(?:[A-Za-z0-9._-]+\/)+[^\s"'`]+/g, '[caminho redigido]')
+  .replace(/\b[\w.-]+\.(?:pdf|xlsx|csv)\b/gi, '[arquivo redigido]')
+  .replace(/["'`][^"'`]{1,120}["'`]/g, '[valor redigido]')
+  .replace(/\d{4,}/g, '[número redigido]')
+  .replace(/\s+/g, ' ')
+  .trim()
+  .slice(0, 300)
+const safeDiagnostic = (error: unknown) => {
+  if (!isRecord(error)) return { message: safeDiagnosticText(String(error)) }
+  const message = typeof error.message === 'string' ? safeDiagnosticText(error.message) : 'Erro sem mensagem técnica'
+  const code = typeof error.code === 'string' ? safeDiagnosticText(error.code) : undefined
+  const status = typeof error.status === 'number' || typeof error.status === 'string' ? safeDiagnosticText(String(error.status)) : undefined
+  return { message, ...(code ? { code } : {}), ...(status ? { status } : {}) }
+}
 
 const sha256 = async (bytes: ArrayBuffer): Promise<string> => {
   const digest = await crypto.subtle.digest('SHA-256', bytes)
@@ -408,13 +426,13 @@ const OPENAI_RESPONSE_SCHEMA = {
         required: ['date', 'description', 'credit', 'debit', 'document', 'pagina', 'linha', 'confidence', 'alert', 'origem'],
         properties: {
           date: { type: 'string' },
-          description: { type: 'string', 'minLength': 1 },
+          description: { type: 'string' },
           credit: { type: ['number', 'null'] },
           debit: { type: ['number', 'null'] },
           document: { type: ['string', 'null'] },
-          pagina: { type: 'integer', minimum: 1 },
-          linha: { type: 'integer', minimum: 1 },
-          confidence: { type: 'number', minimum: 0, maximum: 1 },
+          pagina: { type: 'integer' },
+          linha: { type: 'integer' },
+          confidence: { type: 'number' },
           alert: { type: ['string', 'null'] },
           origem: { type: 'string', enum: ['texto', 'ocr'] },
         },
@@ -432,12 +450,12 @@ const OPENAI_RESPONSE_SCHEMA = {
           valor: { type: ['number', 'null'] },
           tipo_movimento: { type: ['string', 'null'], enum: ['credito', 'debito', null] },
           descricao: { type: ['string', 'null'] },
-          pagina_origem: { type: ['integer', 'null'], minimum: 1 },
-          linha_origem: { type: ['integer', 'null'], minimum: 1 },
+          pagina_origem: { type: ['integer', 'null'] },
+          linha_origem: { type: ['integer', 'null'] },
           origem_extracao: { type: 'string', enum: ['texto', 'ocr'] },
-          confianca_extracao: { type: 'number', minimum: 0, maximum: 1 },
-          motivos: { type: 'array', items: { type: 'string', minLength: 1 }, minItems: 1 },
-          trecho: { type: 'string', minLength: 1, maxLength: 500 },
+          confianca_extracao: { type: 'number' },
+          motivos: { type: 'array', items: { type: 'string' } },
+          trecho: { type: 'string' },
         },
       },
     },
@@ -509,7 +527,8 @@ const openAiRequest = async (
       })
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') fail(`Tempo limite de ${Math.round(timeoutMs / 1000)} segundos excedido`)
-      throw new Error('Falha de comunicação com o provedor de extração')
+      const diagnostic = safeDiagnostic(error)
+      throw new Error(`Falha de comunicação com o provedor de extração: ${diagnostic.message}`)
     } finally {
       clearTimeout(timer)
     }
@@ -522,10 +541,31 @@ const openAiRequest = async (
 }
 
 const readOpenAiJson = async (response: Response, phase: string): Promise<unknown> => {
-  if (!response.ok) fail(`Falha do provedor de extração na fase ${phase} (${response.status})`)
+  if (!response.ok) {
+    let providerError: unknown
+    try {
+      providerError = await response.json()
+    } catch {
+      providerError = undefined
+    }
+    const errorRecord = isRecord(providerError) && isRecord(providerError.error) ? providerError.error : undefined
+    const providerCode = typeof errorRecord?.code === 'string' ? safeDiagnosticText(errorRecord.code) : undefined
+    const providerType = typeof errorRecord?.type === 'string' ? safeDiagnosticText(errorRecord.type) : undefined
+    const providerMessage = typeof errorRecord?.message === 'string' ? safeDiagnosticText(errorRecord.message) : undefined
+    log('Erro HTTP do provedor', {
+      fase: phase,
+      status: response.status,
+      ...(providerCode ? { provider_code: providerCode } : {}),
+      ...(providerType ? { provider_type: providerType } : {}),
+      ...(providerMessage ? { provider_message: providerMessage } : {}),
+    })
+    fail(`Falha do provedor de extração na fase ${phase} (${response.status})`)
+  }
   try {
     return await response.json()
-  } catch {
+  } catch (error) {
+    const diagnostic = safeDiagnostic(error)
+    log('Resposta JSON inválida do provedor', { fase: phase, erro: diagnostic.message })
     fail(`Resposta inválida do provedor de extração na fase ${phase}`)
   }
 }
@@ -634,10 +674,13 @@ serve(async (req) => {
     if (!tokenMatch) fail('Token de autenticação ausente ou inválido')
     supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '', { auth: { autoRefreshToken: false, persistSession: false } })
     const { data: authData, error: authError } = await supabaseAdmin.auth.getUser(tokenMatch[1])
+    if (authError) log('Falha técnica na autenticação', { fase: failurePhase, erro: safeDiagnostic(authError) })
     if (authError || !authData.user) fail('Token de autenticação inválido')
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY')
     if (anonKey) authenticatedClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', anonKey, { global: { headers: { Authorization: authorization } }, auth: { autoRefreshToken: false, persistSession: false } })
+    failurePhase = 'autorizacao'
     const { data: profile, error: profileError } = await supabaseAdmin.from('profiles').select('role').eq('id', authData.user.id).maybeSingle()
+    if (profileError) log('Falha técnica na autorização', { fase: failurePhase, erro: safeDiagnostic(profileError) })
     if (profileError || !profile || !['master', 'gerente'].includes(profile.role)) fail('Usuário não autorizado a processar extratos')
 
     failurePhase = 'validacao_do_lote'
@@ -652,18 +695,23 @@ serve(async (req) => {
     const expectedMime = fileType === 'pdf' ? PDF_MIME_TYPE : fileType === 'xlsx' ? XLSX_MIME_TYPE : CSV_MIME_TYPE
     if (body.mime_type !== expectedMime) fail('MIME informado incompatível com a extensão do arquivo')
     const { data: lot, error: lotError } = await supabaseAdmin.from('extratos_bancarios').select('id, conta_bancaria_id, arquivo_nome, arquivo_tamanho, arquivo_mime_type, arquivo_hash, storage_path, importado_por, status').eq('id', body.lot_id).maybeSingle()
+    if (lotError) log('Falha técnica na consulta do lote', { fase: failurePhase, erro: safeDiagnostic(lotError) })
     if (lotError || !lot) fail('Lote de importação não encontrado')
     if (lot.status !== 'em_validacao' || (lot.importado_por !== authData.user.id && !['master', 'gerente'].includes(profile.role))) fail('Lote de importação não está disponível para processamento')
     if (lot.storage_path !== body.storage_path || lot.arquivo_hash !== body.file_hash || lot.arquivo_mime_type !== expectedMime) fail('Os metadados do lote não correspondem ao arquivo')
     if (lot.arquivo_tamanho <= 0 || lot.arquivo_tamanho > MAX_FILE_SIZE) fail('O tamanho do arquivo é inválido')
 
-    failurePhase = 'validacao_do_arquivo'
+    failurePhase = 'consulta_storage'
     const { data: storageObject, error: objectError } = await supabaseAdmin.schema('storage').from('objects').select('name, bucket_id, owner_id, metadata').eq('bucket_id', 'bank-statements').eq('name', body.storage_path).maybeSingle()
+    if (objectError) log('Falha técnica na consulta do Storage', { fase: failurePhase, erro: safeDiagnostic(objectError) })
     if (objectError || !storageObject || storageObject.owner_id !== lot.importado_por) fail('Arquivo privado não encontrado')
     const objectMime = typeof storageObject.metadata?.mimetype === 'string' ? storageObject.metadata.mimetype.toLowerCase() : ''
     if (objectMime !== expectedMime) fail('MIME armazenado incompatível com a extensão do arquivo')
+    failurePhase = 'download_storage'
     const { data: file, error: fileError } = await supabaseAdmin.storage.from('bank-statements').download(body.storage_path)
+    if (fileError) log('Falha técnica no download do Storage', { fase: failurePhase, erro: safeDiagnostic(fileError) })
     if (fileError || !file) fail('Arquivo privado não encontrado')
+    failurePhase = 'integridade_do_arquivo'
     const fileBytes = await file.arrayBuffer()
     if (fileBytes.byteLength <= 0 || fileBytes.byteLength > MAX_FILE_SIZE) fail('O arquivo excede o limite de 20 MB')
     if (fileBytes.byteLength !== Number(lot.arquivo_tamanho)) fail('O tamanho do arquivo não confere com o lote')
@@ -675,11 +723,13 @@ serve(async (req) => {
       return new Response(JSON.stringify({ verified: true }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
     if (fileType === 'xlsx') {
+      failurePhase = 'validacao_xlsx'
       const result = parseXlsx(fileBytes)
       log('Extração concluída', { user_id: authData.user.id, file_type: fileType, rows: result.rows.length })
       return new Response(JSON.stringify(result), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
+    failurePhase = 'validacao_pdf'
     const pages = await validatePdfBytes(fileBytes)
     const openAiKey = Deno.env.get('OPENAI_API_KEY')
     if (!openAiKey) fail('Provedor de extração não configurado')
@@ -707,6 +757,7 @@ serve(async (req) => {
       }),
     }))
     const responsePayload = await readOpenAiJson(responseResponse, 'responses')
+    failurePhase = 'contrato_responses'
     const responseText = extractResponseText(responsePayload)
     let parsedPayload: unknown
     try {
@@ -742,37 +793,48 @@ serve(async (req) => {
       },
     }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
   } catch (error) {
+    const diagnostic = safeDiagnostic(error)
     if (authenticatedClient && lotId && /^[0-9a-f-]{36}$/i.test(lotId)) {
       try {
-        await authenticatedClient.rpc('marcar_importacao_erro', {
+        const { error: rpcError } = await authenticatedClient.rpc('marcar_importacao_erro', {
           p_lote_id: lotId,
           p_metadata_erro: { codigo_erro: 'processing_error', mensagem: 'Falha ao processar o extrato.', fase: failurePhase, tentativa: 1 },
         })
-      } catch {
-        log('Falha ao registrar erro do lote', { fase: failurePhase })
+        if (rpcError) log('Falha ao registrar erro do lote', { fase: failurePhase, erro: safeDiagnostic(rpcError) })
+      } catch (rpcError) {
+        log('Falha ao registrar erro do lote', { fase: failurePhase, erro: safeDiagnostic(rpcError) })
       }
     }
-    log('Falha no processamento', { fase: failurePhase })
+    log('Falha no processamento', { fase: failurePhase, erro: diagnostic })
     return new Response(JSON.stringify({ error: 'Falha ao processar o extrato.' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
   } finally {
     if (openAiFileId) {
       let cleanupSucceeded = false
+      let cleanupDiagnostic: Record<string, unknown> = {}
       try {
         const cleanupKey = Deno.env.get('OPENAI_API_KEY')
         if (!cleanupKey) fail('Provedor de extração não configurado')
         const cleanupResponse = await openAiRequest(cleanupKey, `https://api.openai.com/v1/files/${encodeURIComponent(openAiFileId)}`, () => ({ method: 'DELETE' }), 5_000)
         cleanupSucceeded = cleanupResponse.ok || cleanupResponse.status === 404
-        if (!cleanupSucceeded) await cleanupResponse.body?.cancel()
-      } catch {
+        if (!cleanupSucceeded) {
+          cleanupDiagnostic = { status: cleanupResponse.status }
+          await cleanupResponse.body?.cancel()
+        }
+      } catch (error) {
         cleanupSucceeded = false
+        cleanupDiagnostic = { erro: safeDiagnostic(error) }
       }
       if (cleanupSucceeded) {
         log('Arquivo temporário do provedor removido', { status: 'concluido' })
       } else {
+        log('Falha ao remover arquivo temporário do provedor', { fase: 'cleanup_openai', ...cleanupDiagnostic })
         try {
-          if (supabaseAdmin) await supabaseAdmin.from('openai_cleanup_queue').insert({ openai_file_id: openAiFileId })
-        } catch {
-          log('Falha ao registrar limpeza pendente', { status: 'falhou' })
+          if (supabaseAdmin) {
+            const { error: queueError } = await supabaseAdmin.from('openai_cleanup_queue').insert({ openai_file_id: openAiFileId })
+            if (queueError) log('Falha ao registrar limpeza pendente', { fase: 'cleanup_queue', erro: safeDiagnostic(queueError) })
+          }
+        } catch (error) {
+          log('Falha ao registrar limpeza pendente', { fase: 'cleanup_queue', erro: safeDiagnostic(error) })
         }
       }
     }
