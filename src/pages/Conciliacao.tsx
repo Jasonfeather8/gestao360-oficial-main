@@ -6,7 +6,6 @@ import {
   Link2,
   Unlink,
   Search,
-  Upload,
   HelpCircle,
   AlertTriangle,
   ChevronRight,
@@ -25,10 +24,13 @@ import {
   Info,
   Clock,
   Filter,
-  ShieldCheck,
-  Shield
+  ShieldCheck
 } from 'lucide-react';
 import { useConciliacao, useContas, useLancamentos, useEntidades, useTransferencias } from '../hooks/useData';
+import ConciliacaoHeader from '../components/conciliacao/ConciliacaoHeader';
+import ConciliacaoCompetenceSummary from '../components/conciliacao/ConciliacaoCompetenceSummary';
+import ConciliacaoClosingPanel from '../components/conciliacao/ConciliacaoClosingPanel';
+import ConciliacaoPendingTransfers from '../components/conciliacao/ConciliacaoPendingTransfers';
 import { useAuth } from '../hooks/useAuth';
 import { useUIStore } from '../store/uiStore';
 import { LancamentoFinanceiro, TransacaoBanco, TransferenciaBancaria, TransferenciaDestinoSugestao } from '../types';
@@ -632,64 +634,19 @@ export default function Conciliacao() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-        <div>
-          <h1 className="text-3xl font-black text-on-surface tracking-tighter uppercase flex items-center gap-3">
-            <Zap className="w-8 h-8 text-primary fill-primary/20" />
-            Estação de Conciliação
-          </h1>
-          <p className="text-secondary font-bold text-xs uppercase tracking-widest mt-1">Sincronização de Verdade Bancária e Integridade de Caixa</p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex bg-white border-2 border-neutral-100 rounded-2xl p-1.5 shadow-sm">
-            <button 
-              onClick={() => setDirectionFilter('todos')}
-              className={`px-4 h-9 rounded-xl text-[10px] font-black uppercase transition-all ${directionFilter === 'todos' ? 'bg-neutral-900 text-white shadow-lg' : 'text-neutral-400 hover:text-neutral-900'}`}
-            >
-              Todos
-            </button>
-            <button 
-              onClick={() => setDirectionFilter('entrada')}
-              className={`px-4 h-9 rounded-xl text-[10px] font-black uppercase transition-all ${directionFilter === 'entrada' ? 'bg-emerald-500 text-white shadow-lg' : 'text-neutral-400 hover:text-emerald-500'}`}
-            >
-              Entradas
-            </button>
-            <button
-              onClick={() => setDirectionFilter('saida')}
-              className={`px-4 h-9 rounded-xl text-[10px] font-black uppercase transition-all ${directionFilter === 'saida' ? 'bg-red-500 text-white shadow-lg' : 'text-neutral-400 hover:text-red-500'}`}
-            >
-              Saídas
-            </button>
-            <button
-              onClick={() => setReviewFilter(current => current === 'pendencias' ? 'todos' : 'pendencias')}
-              className={`px-4 h-9 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-1 ${reviewFilter === 'pendencias' ? 'bg-amber-500 text-white shadow-lg' : 'text-neutral-400 hover:text-amber-600'}`}
-              title="Mostrar somente transações com alerta de revisão"
-            >
-              <AlertTriangle className="w-3 h-3" /> Pendências
-            </button>
-          </div>
-
-          <div className="flex items-center gap-3 h-12 px-4 bg-white border-2 border-neutral-100 rounded-2xl shadow-sm">
-            <Building className="w-4 h-4 text-neutral-400" />
-            <select value={selectedContaId} onChange={(e) => setSelectedContaId(e.target.value)} className="bg-transparent border-none text-[10px] font-black uppercase outline-none cursor-pointer">
-              {contas.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
-            </select>
-          </div>
-
-          <div className="flex items-center gap-3 h-12 px-4 bg-white border-2 border-neutral-100 rounded-2xl shadow-sm">
-            <Calendar className="w-4 h-4 text-neutral-400" />
-            <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="bg-transparent border-none text-[10px] font-black uppercase outline-none" />
-          </div>
-
-          <button onClick={() => setModalOpen('isTransferenciaBancariaOpen', true)} className="px-6 h-12 bg-primary text-white font-black text-[10px] uppercase tracking-[0.2em] rounded-2xl hover:bg-primary/90 transition-all flex items-center gap-3 shadow-xl active:scale-95">
-            <ArrowRightLeft className="w-4 h-4" /> Nova Transferência
-          </button>
-          <button onClick={() => setModalOpen('isImportarCSVOpen', true)} className="px-6 h-12 bg-neutral-900 text-white font-black text-[10px] uppercase tracking-[0.2em] rounded-2xl hover:bg-black transition-all flex items-center gap-3 shadow-xl active:scale-95">
-            <Upload className="w-4 h-4" /> Importar Extrato
-          </button>
-        </div>
-      </header>
+      <ConciliacaoHeader
+        directionFilter={directionFilter}
+        setDirectionFilter={setDirectionFilter}
+        reviewFilter={reviewFilter}
+        setReviewFilter={setReviewFilter}
+        contas={contas}
+        selectedContaId={selectedContaId}
+        setSelectedContaId={setSelectedContaId}
+        selectedMonth={selectedMonth}
+        setSelectedMonth={setSelectedMonth}
+        onOpenTransferencia={() => setModalOpen('isTransferenciaBancariaOpen', true)}
+        onOpenImportar={() => setModalOpen('isImportarCSVOpen', true)}
+      />
 
       {(!role || role !== 'master') && (
         <div className="bg-neutral-100 border-2 border-neutral-200 p-4 rounded-3xl flex items-center gap-3">
@@ -700,121 +657,34 @@ export default function Conciliacao() {
         </div>
       )}
 
-      <div className="bg-white border-2 border-neutral-100 p-4 rounded-3xl shadow-sm space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-[10px] font-black text-neutral-900 uppercase tracking-widest">Estado da competência</p>
-            <p className="text-[9px] font-bold text-neutral-400 uppercase mt-0.5">Conta e mês inteiros; filtros não alteram estes números.</p>
-          </div>
-          <span className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest ${
-            periodProgress.readyForClosing ? 'bg-emerald-50 text-emerald-700' :
-              periodProgress.state.startsWith('Bloqueado') ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'
-          }`}>
-            {periodProgress.state}
-          </span>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-[10px] font-black uppercase tracking-widest">
-          <span className="rounded-xl bg-neutral-50 px-3 py-2 text-neutral-600">Extrato: {periodProgress.total}</span>
-          <span className="rounded-xl bg-emerald-50 px-3 py-2 text-emerald-700">Identificadas: {periodProgress.identified}</span>
-          <span className="rounded-xl bg-amber-50 px-3 py-2 text-amber-700">Pendentes: {periodProgress.pending}</span>
-          <span className="rounded-xl bg-neutral-50 px-3 py-2 text-neutral-600">Conciliado: {periodProgress.percentage}%</span>
-          <span className="rounded-xl bg-neutral-50 px-3 py-2 text-neutral-600">Diferenças: {periodProgress.differenceCount} • {valueFormatter(periodProgress.differenceCents / 100)}</span>
-          <span className={`rounded-xl px-3 py-2 ${periodProgress.residualCents === 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>Residual global: {periodProgress.residualCents}¢ ({valueFormatter(periodProgress.residualCents / 100)})</span>
-          <span className={`rounded-xl px-3 py-2 ${periodProgress.unclassifiedDifferenceCount === 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>Não classificadas: {periodProgress.unclassifiedDifferenceCount}</span>
-          <span className="rounded-xl bg-neutral-100 px-3 py-2 text-neutral-600">Fechamento: {periodProgress.fechamentoStatus === 'aguardando_master' ? 'Aguardando Master' : periodProgress.fechamentoStatus === 'aprovado' ? 'Aprovado' : periodProgress.fechamentoStatus === 'reprovado' ? 'Reprovado' : 'Aberto'}</span>
-        </div>
-        {operationNotice && <p className="rounded-xl bg-blue-50 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-blue-700">{operationNotice}</p>}
-        {completionNotice && <p className="rounded-xl bg-emerald-100 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-emerald-800">{completionNotice}</p>}
-      </div>
+      <ConciliacaoCompetenceSummary
+        periodProgress={periodProgress}
+        valueFormatter={valueFormatter}
+        operationNotice={operationNotice}
+        completionNotice={completionNotice}
+      />
 
-      {/* Fechamento formal da competência */}
-      <div className="bg-white border-2 border-neutral-100 p-4 rounded-3xl shadow-sm space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <Shield className="w-5 h-5 text-primary" />
-            <div>
-              <p className="text-[10px] font-black text-neutral-900 uppercase tracking-widest">Fechamento da competência</p>
-              <p className="text-[9px] font-bold text-neutral-400 uppercase mt-0.5">
-                {selectedMonth} • {contas.find(conta => conta.id === selectedContaId)?.nome || 'Selecione uma conta'}
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className={`px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest ${
-              fechamentoAtual?.status === 'aguardando_master' ? 'bg-amber-50 text-amber-700' :
-              fechamentoAtual?.status === 'aprovado' ? 'bg-emerald-50 text-emerald-700' :
-              fechamentoAtual?.status === 'reprovado' ? 'bg-red-50 text-red-700' :
-              'bg-neutral-100 text-neutral-500'
-            }`}>
-              {fechamentoAtual?.status === 'aguardando_master' ? 'Aguardando Master' :
-                fechamentoAtual?.status === 'aprovado' ? 'Aprovado' :
-                fechamentoAtual?.status === 'reprovado' ? 'Reprovado' : 'Aberto'}
-            </span>
-            {(!fechamentoAtual || fechamentoAtual.status === 'aberto' || fechamentoAtual.status === 'reprovado') && (
-              <button
-                onClick={handleFecharPeriodo}
-                disabled={!selectedContaId || !selectedMonth || fechamentoBusy}
-                className="px-4 py-2 bg-neutral-900 text-white rounded-xl text-[9px] font-black uppercase tracking-widest shadow-sm hover:bg-black transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isFechandoPeriodo ? 'Validando...' : 'Solicitar fechamento'}
-              </button>
-            )}
-          </div>
-        </div>
-        {fechamentoAtual?.status === 'reprovado' && fechamentoAtual.motivo_reprovacao && (
-          <p className="text-[9px] font-bold text-red-600 uppercase tracking-widest">Motivo: {fechamentoAtual.motivo_reprovacao}</p>
-        )}
-        {role === 'master' && fechamentosAguardandoMaster.length > 0 && (
-          <div className="border-t border-neutral-100 pt-3 space-y-2">
-            <p className="text-[9px] font-black text-primary uppercase tracking-widest">Fechamentos aguardando decisão</p>
-            {fechamentosAguardandoMaster.map(fechamento => (
-              <div key={fechamento.id} className="flex flex-wrap items-center justify-between gap-2 bg-neutral-50 px-3 py-2 rounded-xl">
-                <div className="text-[9px] font-bold text-neutral-600 uppercase">
-                  {contas.find(conta => conta.id === fechamento.conta_bancaria_id)?.nome || 'Conta'} • {fechamento.periodo_inicio.slice(0, 7)} • {valueFormatter(Number(fechamento.total_extrato))}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => navigate('/aprovacao-master')}
-                  className="px-3 py-1.5 bg-primary text-white rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-primary/90"
-                >
-                  Abrir fila Master
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      <ConciliacaoClosingPanel
+        selectedMonth={selectedMonth}
+        contas={contas}
+        selectedContaId={selectedContaId}
+        fechamentoAtual={fechamentoAtual}
+        fechamentosAguardandoMaster={fechamentosAguardandoMaster}
+        role={role}
+        fechamentoBusy={fechamentoBusy}
+        isFechandoPeriodo={isFechandoPeriodo}
+        handleFecharPeriodo={handleFecharPeriodo}
+        onOpenMasterQueue={() => navigate('/aprovacao-master')}
+        valueFormatter={valueFormatter}
+      />
 
-      {role === 'master' && transferenciasPendentesMaster.length > 0 && (
-        <div className="bg-white border-2 border-amber-100 p-4 rounded-3xl shadow-sm space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <Shield className="w-5 h-5 text-amber-600" />
-              <div>
-                <p className="text-[10px] font-black text-amber-700 uppercase tracking-widest">Transferências aguardando Master</p>
-                <p className="text-[9px] font-bold text-neutral-400 uppercase">Origem e destino já estão vinculados; falta a decisão final.</p>
-              </div>
-            </div>
-            <span className="px-3 py-2 rounded-xl bg-amber-50 text-amber-700 text-[9px] font-black uppercase tracking-widest">{transferenciasPendentesMaster.length} pendente(s)</span>
-          </div>
-          <div className="space-y-2">
-            {transferenciasPendentesMaster.map(transferencia => (
-              <div key={transferencia.id} className="flex flex-wrap items-center justify-between gap-2 bg-neutral-50 px-3 py-2 rounded-xl">
-                <div className="text-[9px] font-bold text-neutral-600 uppercase">
-                  {contas.find(conta => conta.id === transferencia.conta_origem_id)?.nome || 'Origem'} → {contas.find(conta => conta.id === transferencia.conta_destino_id)?.nome || 'Destino'} • {valueFormatter(Number(transferencia.valor))} • {transferencia.data_transferencia.split('-').reverse().join('/')}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => navigate('/aprovacao-master')}
-                  className="px-3 py-1.5 bg-primary text-white rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-primary/90"
-                >
-                  Abrir fila Master
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      <ConciliacaoPendingTransfers
+        role={role}
+        transferenciasPendentesMaster={transferenciasPendentesMaster}
+        contas={contas}
+        valueFormatter={valueFormatter}
+        onOpenMasterQueue={() => navigate('/aprovacao-master')}
+      />
 
       {/* Toolbox de Lote */}
       {periodProgress.pending > 0 && (
