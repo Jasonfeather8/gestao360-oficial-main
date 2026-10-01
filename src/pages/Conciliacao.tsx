@@ -41,6 +41,9 @@ import ImportarExtratoModal from '../components/conciliacao/ImportarExtratoModal
 import MarcarTransferenciaModal from '../components/MarcarTransferenciaModal';
 import TransferenciaBancariaModal from '../components/TransferenciaBancariaModal';
 import { calculateFinalAmount } from '../utils/adjustments';
+import { diagnosticLogger } from '../services/diagnosticLogger';
+
+const IMPORT_LOG_SCOPE = 'Conciliacao][Importacao';
 
 const getTransactionCents = (transaction: TransacaoBanco): number =>
   Number.isInteger(transaction.valor_centavos) ? transaction.valor_centavos as number : Math.round(transaction.valor * 100);
@@ -140,6 +143,7 @@ export default function Conciliacao() {
   const [csvPreviewRows, setCsvPreviewRows] = useState<Array<Record<string, string>>>([]);
   const [importPreviewTab, setImportPreviewTab] = useState<'entradas' | 'saidas' | 'pendencias'>('entradas');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const importTraceIdRef = useRef<string | null>(null);
 
   // Difference states
   const [diffType, setDiffType] = useState<'juros' | 'multa' | 'desconto' | 'tarifa' | 'pagamento_parcial' | 'ajuste_manual'>('tarifa');
@@ -224,17 +228,68 @@ export default function Conciliacao() {
   };
 
   const processFile = async (file: File) => {
+    const traceId = crypto.randomUUID();
+    importTraceIdRef.current = traceId;
+    const startedAt = Date.now();
+    let currentStage = 'início da seleção';
+    diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: início da seleção e processamento do arquivo`, {
+      nomeArquivo: file.name,
+      tipoArquivo: file.type,
+      tamanhoBytes: file.size,
+      contaId: selectedImportContaId,
+      modo: importMode,
+    });
     setImportError('');
-    if (importLot && !(await handleImportCancel())) return;
+    if (importLot) {
+      currentStage = 'limpeza do lote anterior';
+      diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: iniciando cancelamento do lote anterior`, { contaId: importLot.contaBancariaId });
+      if (!(await handleImportCancel())) {
+        diagnosticLogger.warn(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: processamento bloqueado ao cancelar o lote anterior`, { etapa: currentStage, duracaoMs: Date.now() - startedAt });
+        return;
+      }
+      importTraceIdRef.current = traceId;
+      diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: lote anterior cancelado e estado limpo`, { etapa: currentStage, resultado: 'sucesso', duracaoMs: Date.now() - startedAt });
+    }
     try {
+      currentStage = 'validação da sessão';
+      diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: validação da sessão iniciada`);
       if (!user?.id) throw new Error('Sessão expirada. Entre novamente para importar o extrato.');
+      diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: validação da sessão concluída`, { resultado: 'válida' });
+
+      currentStage = 'preparação do arquivo';
+      diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: prepareImport iniciado`, { tipoArquivo: file.type, tamanhoBytes: file.size, contaId: selectedImportContaId });
       const result = await prepareImport({ file, contaBancariaId: selectedImportContaId, userId: user.id });
+      diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: prepareImport concluído`, {
+        resultado: 'sucesso',
+        tipoPreview: result.preview.fileType,
+        paginas: result.preview.pages,
+        periodoInicio: result.preview.periodStart,
+        periodoFim: result.preview.periodEnd,
+        transacoes: result.preview.transactions.length,
+        entradas: result.preview.totalEntries,
+        saidas: result.preview.totalExits,
+        headers: result.preview.sourceHeaders?.length || 0,
+        linhasPreview: result.preview.firstRows.length,
+        pendencias: result.preview.pendingReviews?.length || 0,
+        alertas: result.preview.parserMetadata?.alerts?.length || 0,
+      });
       setImportLot(result.lot);
       setImportPreview(result.preview);
-      setCsvContentText(result.preview.fileType === 'csv' ? await file.text() : '');
+      if (result.preview.fileType === 'csv') {
+        currentStage = 'leitura do texto CSV';
+        diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: leitura do texto CSV iniciada`);
+        const csvText = await file.text();
+        setCsvContentText(csvText);
+        diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: leitura do texto CSV concluída`, { resultado: 'sucesso', linhas: csvText.split(/\r?\n/).length });
+      } else {
+        setCsvContentText('');
+      }
+
+      currentStage = 'resolução de headers e montagem do preview';
       const headers = result.preview.sourceHeaders || Object.keys(result.preview.firstRows[0] || {});
       setCsvHeaders(headers);
       setCsvPreviewRows(result.preview.firstRows);
+      diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: headers resolvidos e preview montado`, { headers: headers.length, linhasPreview: result.preview.firstRows.length, tipoPreview: result.preview.fileType });
       if (result.preview.fileType === 'csv' || result.preview.fileType === 'xlsx') {
         setColumnMapping({
           data: headers.find(header => /dat/i.test(header)) || '',
@@ -244,21 +299,41 @@ export default function Conciliacao() {
         });
       }
     } catch (error) {
+      diagnosticLogger.error(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: falha na etapa ${currentStage}`, { etapa: currentStage, duracaoMs: Date.now() - startedAt, erro: error });
       setImportError(error instanceof Error ? error.message : 'Não foi possível preparar o arquivo.');
     }
   };
 
   const handleImportCancel = async (): Promise<boolean> => {
-    if (isPreparingImport || isConfirmingImport) return false;
+    const traceId = importTraceIdRef.current || crypto.randomUUID();
+    importTraceIdRef.current = traceId;
+    const startedAt = Date.now();
+    let currentStage = 'cancelamento do lote';
+    if (isPreparingImport || isConfirmingImport) {
+      diagnosticLogger.warn(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: cancelamento bloqueado por operação em andamento`, { etapa: currentStage, preparando: isPreparingImport, confirmando: isConfirmingImport });
+      return false;
+    }
     if (importLot) {
-      try { await cancelImport(importLot); } catch (error) { setImportError('Não foi possível remover o arquivo temporário. Tente cancelar novamente.'); return false; }
+      try {
+        diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: cancelamento do lote iniciado`, { contaId: importLot.contaBancariaId });
+        await cancelImport(importLot);
+        diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: cancelamento do lote concluído`, { resultado: 'sucesso', duracaoMs: Date.now() - startedAt });
+      } catch (error) {
+        diagnosticLogger.error(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: falha na etapa ${currentStage}`, { etapa: currentStage, duracaoMs: Date.now() - startedAt, erro: error });
+        setImportError('Não foi possível remover o arquivo temporário. Tente cancelar novamente.');
+        return false;
+      }
+    } else {
+      diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: nenhum lote anterior para cancelar`);
     }
     resetImportState();
     setModalOpen('isImportarCSVOpen', false);
+    diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: cancelamento e fechamento concluídos`, { resultado: 'sucesso', duracaoMs: Date.now() - startedAt });
     return true;
   };
 
   const resetImportState = () => {
+    const traceId = importTraceIdRef.current || crypto.randomUUID();
     setCsvContentText('');
     setImportLot(null);
     setImportPreview(null);
@@ -268,23 +343,44 @@ export default function Conciliacao() {
     setImportPreviewTab('entradas');
     setColumnMapping({ data: '', valor: '', descricao: '', documento: '' });
     if (fileInputRef.current) fileInputRef.current.value = '';
+    diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: estado de importação limpo`, { resultado: 'sucesso' });
   };
   const handleImportCSVSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!importLot || !importPreview) return;
+    const traceId = importTraceIdRef.current || crypto.randomUUID();
+    importTraceIdRef.current = traceId;
+    const startedAt = Date.now();
+    let currentStage = 'validação de pendências';
     try {
       let transactions = importPreview.transactions;
-      if (importPreview.pendingReviews?.length) throw new Error('Existem itens pendentes de revisão. Nenhum item ambíguo pode ser confirmado silenciosamente.');
-      if (importPreview.fileType === 'csv' || importPreview.fileType === 'xlsx') {
-        const rows = importPreview.fileType === 'csv'
-          ? parseCsv(csvContentText).rows
-          : importPreview.sourceRows || [];
-        transactions = attachImportLotMetadata(
-          await buildCsvTransactions(importLot.contaBancariaId, rows, columnMapping, importMode, importPreview.fileType),
-          importLot,
-        );
+      if (importPreview.pendingReviews?.length) {
+        diagnosticLogger.warn(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: confirmação bloqueada por pendências de revisão`, { pendencias: importPreview.pendingReviews.length });
+        throw new Error('Existem itens pendentes de revisão. Nenhum item ambíguo pode ser confirmado silenciosamente.');
       }
-      if (!transactions.length) throw new Error('O arquivo precisa conter ao menos uma transação válida.');
+      if (importPreview.fileType === 'csv' || importPreview.fileType === 'xlsx') {
+        let rows: Array<Record<string, string>>;
+        currentStage = `parsing ${importPreview.fileType.toUpperCase()}`;
+        diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: parsing ${importPreview.fileType.toUpperCase()} iniciado`, { headers: csvHeaders.length, modo: importMode });
+        if (importPreview.fileType === 'csv') {
+          rows = parseCsv(csvContentText).rows;
+        } else {
+          rows = importPreview.sourceRows || [];
+        }
+        diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: parsing ${importPreview.fileType.toUpperCase()} concluído`, { resultado: 'sucesso', headers: csvHeaders.length, linhas: rows.length });
+        currentStage = 'construção de transações';
+        diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: construção de transações iniciada`, { linhas: rows.length, modo: importMode, tipoPreview: importPreview.fileType });
+        const builtTransactions = await buildCsvTransactions(importLot.contaBancariaId, rows, columnMapping, importMode, importPreview.fileType);
+        diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: construção de transações concluída`, { resultado: 'sucesso', transacoes: builtTransactions.length });
+        currentStage = 'anexação de metadata do lote';
+        transactions = attachImportLotMetadata(builtTransactions, importLot);
+        diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: metadata do lote anexada`, { resultado: 'sucesso', transacoes: transactions.length });
+      }
+      if (!transactions.length) {
+        diagnosticLogger.warn(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: confirmação bloqueada porque o arquivo não contém transações`, { transacoes: 0 });
+        throw new Error('O arquivo precisa conter ao menos uma transação válida.');
+      }
+      currentStage = 'montagem da metadata de confirmação';
       const confirmationMetadata: ImportConfirmationMetadata = {
         pages: importPreview.pages,
         periodStart: importPreview.periodStart,
@@ -305,12 +401,29 @@ export default function Conciliacao() {
         pendingReviewCount: importPreview.pendingReviews?.length || 0,
         reviewState: importPreview.pendingReviews?.length ? 'has_pending_reviews' : 'validated',
       };
+      diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: metadata de confirmação montada`, {
+        paginas: confirmationMetadata.pages,
+        periodoInicio: confirmationMetadata.periodStart,
+        periodoFim: confirmationMetadata.periodEnd,
+        transacoes: confirmationMetadata.extractedCount,
+        ocr: confirmationMetadata.ocrCount,
+        alertas: confirmationMetadata.alerts?.length || 0,
+        pendencias: confirmationMetadata.pendingReviewCount,
+      });
+      currentStage = 'validação de consistência';
+      diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: validateImportConsistency iniciado`, { transacoes: transactions.length });
       const currentConsistency = validateImportConsistency(transactions, confirmationMetadata);
+      diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: validateImportConsistency concluído`, { resultado: currentConsistency.criticalErrors.length ? 'bloqueado' : 'válido', errosCriticos: currentConsistency.criticalErrors.length });
       if (currentConsistency.criticalErrors.length > 0) throw new Error(`A confirmação foi bloqueada: ${currentConsistency.criticalErrors.map(issue => issue.message).join(' ')}`);
+      currentStage = 'confirmação da importação';
+      diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: confirmImport iniciado`, { transacoes: transactions.length, contaId: importLot.contaBancariaId });
       await confirmImport({ lot: importLot, transactions, metadata: confirmationMetadata });
+      diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: confirmImport concluído`, { resultado: 'sucesso', transacoes: transactions.length, duracaoMs: Date.now() - startedAt });
       resetImportState();
       setModalOpen('isImportarCSVOpen', false);
+      diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: importação finalizada e modal fechado`, { resultado: 'sucesso' });
     } catch (error) {
+      diagnosticLogger.error(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: falha na etapa ${currentStage}`, { etapa: currentStage, duracaoMs: Date.now() - startedAt, erro: error });
       setImportError(error instanceof Error ? error.message : 'Não foi possível confirmar a importação.');
     }
   };
