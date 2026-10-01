@@ -702,15 +702,14 @@ serve(async (req) => {
     if (lot.arquivo_tamanho <= 0 || lot.arquivo_tamanho > MAX_FILE_SIZE) fail('O tamanho do arquivo é inválido')
 
     failurePhase = 'consulta_storage'
-    const { data: storageObject, error: objectError } = await supabaseAdmin.schema('storage').from('objects').select('name, bucket_id, owner_id, metadata').eq('bucket_id', 'bank-statements').eq('name', body.storage_path).maybeSingle()
-    if (objectError) log('Falha técnica na consulta do Storage', { fase: failurePhase, erro: safeDiagnostic(objectError) })
-    if (objectError || !storageObject || storageObject.owner_id !== lot.importado_por) fail('Arquivo privado não encontrado')
-    const objectMime = typeof storageObject.metadata?.mimetype === 'string' ? storageObject.metadata.mimetype.toLowerCase() : ''
-    if (objectMime !== expectedMime) fail('MIME armazenado incompatível com a extensão do arquivo')
+    const storagePathParts = body.storage_path.split('/')
+    if (storagePathParts[0] !== lot.importado_por || storagePathParts[1] !== lot.id) fail('Arquivo privado não encontrado')
     failurePhase = 'download_storage'
     const { data: file, error: fileError } = await supabaseAdmin.storage.from('bank-statements').download(body.storage_path)
     if (fileError) log('Falha técnica no download do Storage', { fase: failurePhase, erro: safeDiagnostic(fileError) })
     if (fileError || !file) fail('Arquivo privado não encontrado')
+    const storedMime = typeof file.type === 'string' ? file.type.toLowerCase() : ''
+    if (storedMime !== expectedMime) fail('MIME armazenado incompatível com a extensão do arquivo')
     failurePhase = 'integridade_do_arquivo'
     const fileBytes = await file.arrayBuffer()
     if (fileBytes.byteLength <= 0 || fileBytes.byteLength > MAX_FILE_SIZE) fail('O arquivo excede o limite de 20 MB')
