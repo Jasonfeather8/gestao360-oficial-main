@@ -4,12 +4,8 @@ import {
   TrendingDown,
   CheckCircle2,
   Calendar,
-  Filter,
-  Download,
   Plus,
-  Search,
   MoreVertical,
-  X,
   Clock,
   ArrowUpRight,
   ArrowDownLeft,
@@ -21,13 +17,9 @@ import {
   Trash2,
   Edit,
   Receipt,
-  FileText,
-  User,
-  Tag,
   Coins,
   XCircle,
   CreditCard,
-  Layers,
   Repeat,
   Paperclip
 } from 'lucide-react';
@@ -38,12 +30,13 @@ import { useUIStore } from '../store/uiStore';
 import { useDragScroll } from '../hooks/useDragScroll';
 import { LancamentoFinanceiro } from '../types';
 import { calculateAdjustmentAmount, calculateFinalAmount } from '../utils/adjustments';
-import { motion, AnimatePresence } from 'motion/react';
-import Button from '../components/Button';
-import MultiSelectDropdown from '../components/MultiSelectDropdown';
 import AccountFilterCards from '../components/Lancamentos/AccountFilterCards';
+import LancamentosHeader from '../components/Lancamentos/LancamentosHeader';
+import LancamentosFilters from '../components/Lancamentos/LancamentosFilters';
 import LancamentoActionMenu from '../components/Lancamentos/LancamentoActionMenu';
-import FinanceiroStatusFilter from '../components/Lancamentos/FinanceiroStatusFilter';
+import LancamentosPrintReport from '../components/Lancamentos/LancamentosPrintReport';
+import LogsCompletoModal from '../components/Lancamentos/LogsCompletoModal';
+import LancamentosPagination from '../components/Lancamentos/LancamentosPagination';
 
 interface LancamentosProps {
   typeOverride?: 'entrada' | 'saida';
@@ -681,300 +674,61 @@ export default function Lancamentos({
         valueFormatter={valueFormatter}
       />
 
-      {/* Header section */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-black uppercase tracking-tighter text-neutral-900 flex items-center gap-3">
-            <Receipt className="w-8 h-8 text-primary" />
-            {titleOverride || 'Extrato'}
-          </h1>
-          <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400 mt-1">Gestão centralizada de movimentações e conciliação</p>
-        </div>
+      <LancamentosHeader
+        titleOverride={titleOverride}
+        isFinanceiroView={isFinanceiroView}
+        isMaster={isMaster}
+        selectedCount={selectedLancamentoIdsForBatch.length}
+        selectedPrintCount={selectedPrintLancamentos.length}
+        handlePrintSelected={handlePrintSelected}
+        onNavigateToMaster={() => navigate('/aprovacao-master')}
+      />
 
-        <div className="flex flex-wrap items-center gap-3">
-          <Button
-            type="button"
-            onClick={handlePrintSelected}
-            disabled={selectedLancamentoIdsForBatch.length === 0 || selectedPrintLancamentos.length === 0}
-            title="Imprimir relatório somente dos lançamentos selecionados"
-          >
-            <Download className="w-4 h-4" />
-            Gerar PDF do Filtro
-          </Button>
-          {selectedPrintLancamentos.length > 0 && (
-            <span className="text-[9px] font-black uppercase tracking-widest text-neutral-400">
-              {selectedPrintLancamentos.length} selecionado{selectedPrintLancamentos.length === 1 ? '' : 's'}
-            </span>
-          )}
-
-          {isFinanceiroView && isMaster && (
-            <Button onClick={() => navigate('/aprovacao-master')}>
-              <ShieldCheck className="w-4 h-4" />
-              Abrir fila de aprovação Master
-            </Button>
-          )}
-
-        </div>
-      </div>
-
-      {isFilterPanelOpen && (
-        <div className="bg-white border-2 border-neutral-100 p-5 rounded-3xl shadow-sm space-y-5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <h2 className="text-[11px] font-black uppercase tracking-[0.2em] text-neutral-900">Filtros adicionais</h2>
-              <p className="text-[9px] font-bold uppercase tracking-widest text-neutral-400 mt-1">Refine sua busca no histórico</p>
-            </div>
-            <div className="flex items-center gap-3">
-              {hasActiveFilters && <span className="text-[9px] font-black uppercase tracking-widest text-primary">Filtros ativos</span>}
-              <button
-                type="button"
-                onClick={clearFiltersShortcut}
-                className="text-[9px] font-black uppercase tracking-widest text-neutral-400 hover:text-neutral-900 transition-colors"
-              >
-                Limpar filtros
-              </button>
-              <button
-                type="button"
-                onClick={() => { setIsFilterPanelOpen(false); setCurrentPage(1); }}
-                className="h-9 px-3 rounded-lg border border-neutral-200 text-[9px] font-black uppercase tracking-widest text-secondary hover:border-primary hover:text-primary transition-all"
-              >
-                Ocultar filtros
-              </button>
-            </div>
-          </div>
-
-          <div className={isFinanceiroView ? 'grid grid-cols-1 md:grid-cols-2 gap-4' : 'grid grid-cols-1 gap-4'}>
-            {typeOverride !== 'entrada' && typeOverride !== 'saida' && (
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary flex items-center gap-2">
-                  <Receipt className="w-4 h-4" /> Natureza do Fluxo
-                </label>
-                <div className="flex bg-neutral-100 p-1 rounded-xl h-11">
-                  <button type="button" onClick={() => setTypeFilter([])} className={`flex-1 rounded-lg text-[10px] font-black uppercase transition-all ${typeFilter.length === 0 ? 'bg-white text-primary shadow-sm' : 'text-neutral-400'}`}>Todos</button>
-                  <button type="button" onClick={() => setTypeFilter(current => current.includes('entrada') ? current.filter(value => value !== 'entrada') : [...current, 'entrada'])} className={`flex-1 rounded-lg text-[10px] font-black uppercase transition-all ${typeFilter.includes('entrada') ? 'bg-white text-bank-truth-green shadow-sm' : 'text-neutral-400'}`}>Entradas</button>
-                  <button type="button" onClick={() => setTypeFilter(current => current.includes('saida') ? current.filter(value => value !== 'saida') : [...current, 'saida'])} className={`flex-1 rounded-lg text-[10px] font-black uppercase transition-all ${typeFilter.includes('saida') ? 'bg-white text-alert-red shadow-sm' : 'text-neutral-400'}`}>Saídas</button>
-                </div>
-              </div>
-            )}
-
-            {isFinanceiroView ? (
-              <FinanceiroStatusFilter
-                value={statusPagamento}
-                onChange={setStatusPagamento}
-                filters={financeiroStatusFilters}
-              />
-            ) : (
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary flex items-center gap-2">
-                  <CreditCard className="w-4 h-4" /> Status de Pagamento
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {(typeOverride === 'entrada' || typeOverride === 'saida'
-                    ? [
-                        { id: 'all', label: 'Todos' },
-                        { id: 'atrasadas', label: 'Atrasadas' },
-                        { id: 'aberto', label: 'À Vencer' },
-                      ]
-                    : [
-                        { id: 'all', label: 'Todos' },
-                        { id: 'pago', label: 'Liquidados' },
-                        { id: 'aberto', label: 'Contas em Aberto' },
-                        { id: 'atrasadas', label: 'Atrasadas' },
-                        { id: 'quitação_pendente', label: 'Pendente Master' },
-                        { id: 'bpi', label: 'BPI (Inatividade)' },
-                      ]).map(opt => (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      title={opt.id === 'quitação_pendente' ? 'Pendente de confirmação do Master' : undefined}
-                      aria-label={opt.id === 'quitação_pendente' ? 'Pendente de confirmação do Master' : undefined}
-                      onClick={() => opt.id === 'all'
-                        ? setStatusPagamento([])
-                        : setStatusPagamento(current => current.includes(opt.id) ? current.filter(value => value !== opt.id) : [...current, opt.id])}
-                      className={`px-3 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest border-2 transition-all text-left flex items-center justify-between ${
-                        (opt.id === 'all' ? statusPagamento.length === 0 : statusPagamento.includes(opt.id)) ? 'border-primary bg-primary/5 text-primary' : 'border-neutral-100 bg-neutral-50 text-secondary hover:border-neutral-200'
-                      }`}
-                    >
-                      {opt.label}
-                      {((opt.id === 'all' && statusPagamento.length === 0) || (opt.id !== 'all' && statusPagamento.includes(opt.id))) && <div className="w-2 h-2 bg-primary rounded-full shrink-0" />}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className={isFinanceiroView ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4' : 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4'}>
-            {role !== 'colaborador' && (
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary flex items-center gap-2">
-                  <User className="w-4 h-4" /> Responsável
-                </label>
-                <MultiSelectDropdown
-                  value={authorIdFilter}
-                  onChange={setAuthorIdIdFilter}
-                  allLabel="Todos os Usuários"
-                  options={usuarios.map(u => ({ id: u.id, label: u.nome || u.email }))}
-                />
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary flex items-center gap-2">
-                <Tag className="w-4 h-4" /> Categoria
-              </label>
-              <MultiSelectDropdown
-                value={categoryIdFilter}
-                onChange={setCategoryIdFilter}
-                allLabel="Todas as Categorias"
-                options={categorias.map(c => ({ id: c.id, label: c.nome }))}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary flex items-center gap-2">
-                <CreditCard className="w-4 h-4" /> Conta Bancária
-              </label>
-              <MultiSelectDropdown
-                value={contaIdFilter}
-                onChange={setContaIdFilter}
-                allLabel="Todas as Contas"
-                options={activeContas.map(c => ({ id: c.id, label: c.nome_banco || c.nome }))}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary flex items-center gap-2">
-                <Layers className="w-4 h-4" /> Centro de Custo
-              </label>
-              <MultiSelectDropdown
-                value={centroCustoIdFilter}
-                onChange={setCentroCustoIdFilter}
-                allLabel="Todos os Centros"
-                options={centrosCusto.filter((cc: any) => cc.status !== 'excluido').map(cc => ({ id: cc.id, label: cc.nome }))}
-              />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Main filter bar */}
-      <div className="bg-white border-2 border-neutral-100 p-4 rounded-3xl flex flex-col lg:flex-row gap-4 shadow-sm items-center">
-        <button
-          type="button"
-          onClick={() => setIsFilterPanelOpen(prev => !prev)}
-          title={isFilterPanelOpen ? 'Ocultar filtros' : 'Mostrar filtros'}
-          className={`h-12 w-12 flex items-center justify-center rounded-xl border-2 transition-all relative shrink-0 ${
-            hasActiveFilters ? 'border-primary bg-primary/5 text-primary shadow-sm' : 'border-neutral-100 text-neutral-400 hover:border-neutral-200'
-          }`}
-        >
-          <Filter className="w-5 h-5" />
-          {hasActiveFilters && <div className="absolute top-2 right-2 w-2 h-2 bg-primary rounded-full ring-2 ring-white" />}
-        </button>
-
-        <div className="flex gap-3 w-full lg:w-auto">
-          <div className="relative w-32 shrink-0">
-            <FileText className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-neutral-300" />
-            <input
-              type="text"
-              placeholder="Cód. Doc"
-              value={docSearchTerm}
-              onChange={(e) => setDocSearchTerm(e.target.value)}
-              className="w-full h-12 pl-10 pr-4 bg-neutral-50 border-2 border-neutral-100 rounded-2xl text-xs font-bold focus:border-primary outline-none transition-all"
-            />
-          </div>
-          
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-neutral-300" />
-            <input
-              type="text"
-              placeholder="Pesquisar por entidade ou observação..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full h-12 pl-12 pr-4 bg-neutral-50 border-2 border-neutral-100 rounded-2xl text-xs font-bold focus:border-primary outline-none transition-all"
-            />
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3 w-full lg:w-auto">
-          <div className="flex flex-col bg-neutral-100 p-1 rounded-xl h-16 w-16 shrink-0" aria-label="Tempo" title="Tempo">
-            <button
-              type="button"
-              disabled={datePreset === 'custom'}
-              onClick={() => handleDateDirectionChange('past')}
-              className={`flex-1 px-1 rounded-lg text-[8px] font-black uppercase leading-none tracking-tighter transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
-                dateDirection === 'past' ? 'bg-white text-primary shadow-sm' : 'text-neutral-400 hover:text-neutral-600'
-              }`}
-            >
-              Passado
-            </button>
-            <button
-              type="button"
-              disabled={datePreset === 'custom'}
-              onClick={() => handleDateDirectionChange('future')}
-              className={`flex-1 px-1 rounded-lg text-[8px] font-black uppercase leading-none tracking-tighter transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
-                dateDirection === 'future' ? 'bg-white text-primary shadow-sm' : 'text-neutral-400 hover:text-neutral-600'
-              }`}
-            >
-              Futuro
-            </button>
-            <button
-              type="button"
-              disabled={datePreset === 'custom'}
-              onClick={() => handleDateDirectionChange('both')}
-              className={`flex-1 px-1 rounded-lg text-[8px] font-black uppercase leading-none tracking-tighter transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
-                dateDirection === 'both' ? 'bg-white text-primary shadow-sm' : 'text-neutral-400 hover:text-neutral-600'
-              }`}
-            >
-              Ambos
-            </button>
-          </div>
-
-          <select
-            value={datePreset}
-            onChange={(e) => handlePresetChange(e.target.value as '15' | '30' | '90' | 'custom')}
-            className="h-12 bg-neutral-100 border-none rounded-xl px-3 text-[9px] font-black uppercase tracking-tighter text-neutral-600 outline-none shrink-0"
-          >
-            <option value="15">15 dias</option>
-            <option value="30">30 dias</option>
-            <option value="90">90 dias</option>
-            <option value="custom">Personalizado</option>
-          </select>
-
-          <div className={`flex bg-neutral-100 p-1 rounded-xl h-12 transition-all ${datePreset === 'custom' ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => { setStartDate(e.target.value); setDatePreset('custom'); setDateFilterActive(true); }}
-              className="bg-transparent border-none text-[10px] font-black uppercase px-2 outline-none"
-            />
-            <div className="w-px h-4 bg-neutral-200 self-center" />
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => { setEndDate(e.target.value); setDatePreset('custom'); setDateFilterActive(true); }}
-              className="bg-transparent border-none text-[10px] font-black uppercase px-2 outline-none"
-            />
-          </div>
-
-          <select
-            value={pageSize}
-            onChange={(event) => {
-              const value = event.target.value;
-              const nextPageSize: 50 | 100 | 'all' = value === 'all' ? 'all' : value === '100' ? 100 : 50;
-              setPageSize(nextPageSize);
-              setCurrentPage(1);
-              setSelectedLancamentoIdsForBatch([]);
-            }}
-            className="h-10 rounded-xl border-2 border-neutral-100 bg-white px-3 text-[10px] font-bold uppercase tracking-widest text-neutral-500 outline-none transition-all hover:bg-neutral-50"
-          >
-            <option value="50">50 títulos</option>
-            <option value="100">100 títulos</option>
-            <option value="all">Todos</option>
-          </select>
-
-        </div>
-      </div>
+      <LancamentosFilters
+        isFilterPanelOpen={isFilterPanelOpen}
+        setIsFilterPanelOpen={setIsFilterPanelOpen}
+        hasActiveFilters={hasActiveFilters}
+        clearFiltersShortcut={clearFiltersShortcut}
+        typeOverride={typeOverride}
+        isFinanceiroView={isFinanceiroView}
+        isOperationalView={isOperationalView}
+        role={role}
+        typeFilter={typeFilter}
+        setTypeFilter={setTypeFilter}
+        statusPagamento={statusPagamento}
+        setStatusPagamento={setStatusPagamento}
+        financeiroStatusFilters={financeiroStatusFilters}
+        authorIdFilter={authorIdFilter}
+        setAuthorIdIdFilter={setAuthorIdIdFilter}
+        categoryIdFilter={categoryIdFilter}
+        setCategoryIdFilter={setCategoryIdFilter}
+        contaIdFilter={contaIdFilter}
+        setContaIdFilter={setContaIdFilter}
+        centroCustoIdFilter={centroCustoIdFilter}
+        setCentroCustoIdFilter={setCentroCustoIdFilter}
+        usuarios={usuarios}
+        categorias={categorias}
+        activeContas={activeContas}
+        centrosCusto={centrosCusto}
+        setCurrentPage={setCurrentPage}
+        searchTerm={searchTerm}
+        setSearchTerm={setSearchTerm}
+        docSearchTerm={docSearchTerm}
+        setDocSearchTerm={setDocSearchTerm}
+        datePreset={datePreset}
+        handleDateDirectionChange={handleDateDirectionChange}
+        dateDirection={dateDirection}
+        handlePresetChange={handlePresetChange}
+        startDate={startDate}
+        setStartDate={setStartDate}
+        endDate={endDate}
+        setEndDate={setEndDate}
+        setDatePreset={setDatePreset}
+        setDateFilterActive={setDateFilterActive}
+        pageSize={pageSize}
+        setPageSize={setPageSize}
+        setSelectedLancamentoIdsForBatch={setSelectedLancamentoIdsForBatch}
+      />
 
       <div className="bg-white border-2 border-neutral-100 rounded-[32px] shadow-sm relative">
         <div
@@ -1335,250 +1089,32 @@ export default function Lancamentos({
           )}
         </div>
 
-        {/* Pagination Bar */}
-        <div className="bg-neutral-50/50 px-8 py-4 border-t border-neutral-100 flex items-center justify-between rounded-b-[32px]">
-          <span className="text-neutral-400 font-bold text-[9px] uppercase tracking-widest">
-            Exibindo {filteredLancamentos.length} de {totalCount} registros
-          </span>
-
-          <div className="flex items-center gap-2">
-            {pageSize !== 'all' && (
-              <>
-                <button
-                  disabled={currentPage === 1}
-                  onClick={() => setCurrentPage(prev => prev - 1)}
-                  className="h-10 px-4 rounded-xl border-2 border-neutral-100 text-neutral-500 font-bold hover:bg-neutral-50 disabled:opacity-50 text-[10px] uppercase tracking-widest transition-all"
-                >
-                  Anterior
-                </button>
-                <div className="flex gap-1">
-                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                    const pageNum = i + 1;
-                    return (
-                      <button
-                        key={pageNum}
-                        onClick={() => setCurrentPage(pageNum)}
-                        className={`w-10 h-10 rounded-xl text-[10px] font-black transition-all ${
-                          currentPage === pageNum
-                            ? 'bg-neutral-900 text-white shadow-md'
-                            : 'border-2 border-neutral-100 text-neutral-400 hover:bg-neutral-50'
-                        }`}
-                      >
-                        {pageNum}
-                      </button>
-                    );
-                  })}
-                  {totalPages > 5 && <span className="flex items-end pb-2 text-neutral-400">...</span>}
-                </div>
-                <button
-                  disabled={currentPage === totalPages}
-                  onClick={() => setCurrentPage(prev => prev + 1)}
-                  className="h-10 px-4 rounded-xl border-2 border-neutral-100 text-neutral-500 font-bold hover:bg-neutral-50 disabled:opacity-50 text-[10px] uppercase tracking-widest transition-all"
-                >
-                  Próximo
-                </button>
-              </>
-            )}
-          </div>
-        </div>
+        <LancamentosPagination
+          filteredCount={filteredLancamentos.length}
+          totalCount={totalCount}
+          pageSize={pageSize}
+          currentPage={currentPage}
+          totalPages={totalPages}
+          setCurrentPage={setCurrentPage}
+        />
       </div>
 
-      <div className="lancamentos-print-report" aria-label="Relatório dos lançamentos selecionados">
-        <div className="lancamentos-print-report__sheet">
-          <header className="lancamentos-print-report__header">
-            <div>
-              <h1>{titleOverride || 'Financeiro / Extrato'}</h1>
-              <p>Relatório dos lançamentos selecionados</p>
-            </div>
-            <div className="lancamentos-print-report__meta">
-              <strong>Emissão: {new Date().toLocaleDateString('pt-BR')}</strong>
-              <span>{selectedPrintLancamentos.length} lançamento{selectedPrintLancamentos.length === 1 ? '' : 's'}</span>
-            </div>
-          </header>
+      <LancamentosPrintReport
+        titleOverride={titleOverride}
+        isOperationalView={isOperationalView}
+        operationalTotals={operationalTotals}
+        printTotals={printTotals}
+        selectedPrintLancamentos={selectedPrintLancamentos}
+        formatPrintDate={formatPrintDate}
+        getDaysOverdue={getDaysOverdue}
+        getPrintStatus={getPrintStatus}
+        getSaldoAPagar={getSaldoAPagar}
+        getValorLiquido={getValorLiquido}
+        valueFormatter={valueFormatter}
+        entidades={entidades}
+      />
 
-          <section className="lancamentos-print-report__summary" aria-label="Resultado do cálculo">
-            <strong>Resultado do cálculo</strong>
-            {isOperationalView ? (
-              <div className="lancamentos-print-report__grid lancamentos-print-report__grid--operational-summary">
-                <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number"><span className="lancamentos-print-report__label">Valor documento original</span><span className="lancamentos-print-report__value">{valueFormatter(operationalTotals.valorDocOriginal)}</span></div>
-                <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number"><span className="lancamentos-print-report__label">Valor parcela original</span><span className="lancamentos-print-report__value">{valueFormatter(operationalTotals.valorParcOriginal)}</span></div>
-                <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number"><span className="lancamentos-print-report__label">Desconto</span><span className="lancamentos-print-report__value">{valueFormatter(operationalTotals.desconto)}</span></div>
-                <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number"><span className="lancamentos-print-report__label">Acréscimo</span><span className="lancamentos-print-report__value">{valueFormatter(operationalTotals.acrescimo)}</span></div>
-                <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number"><span className="lancamentos-print-report__label">Valor pago</span><span className="lancamentos-print-report__value">{valueFormatter(operationalTotals.valorPago)}</span></div>
-                <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number"><span className="lancamentos-print-report__label">A pagar</span><span className="lancamentos-print-report__value">{valueFormatter(operationalTotals.aPagar)}</span></div>
-              </div>
-            ) : (
-              <div className="lancamentos-print-report__grid lancamentos-print-report__grid--financial-summary">
-                <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number"><span className="lancamentos-print-report__label">Valor previsto</span><span className="lancamentos-print-report__value">{valueFormatter(printTotals.valorPrevisto)}</span></div>
-                <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number"><span className="lancamentos-print-report__label">Desconto</span><span className="lancamentos-print-report__value">{valueFormatter(printTotals.desconto)}</span></div>
-                <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number"><span className="lancamentos-print-report__label">Acréscimo</span><span className="lancamentos-print-report__value">{valueFormatter(printTotals.acrescimo)}</span></div>
-                <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number"><span className="lancamentos-print-report__label">Valor exibido</span><span className="lancamentos-print-report__value">{valueFormatter(printTotals.liquido)}</span></div>
-                <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number"><span className="lancamentos-print-report__label">Entradas</span><span className="lancamentos-print-report__value">{valueFormatter(printTotals.entradas)}</span></div>
-                <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number"><span className="lancamentos-print-report__label">Saídas</span><span className="lancamentos-print-report__value">{valueFormatter(printTotals.saidas)}</span></div>
-                <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number"><span className="lancamentos-print-report__label">Valor líquido exibido</span><span className="lancamentos-print-report__value">{valueFormatter(printTotals.liquido)}</span></div>
-              </div>
-            )}
-          </section>
-
-          {isOperationalView ? (
-            <section className="lancamentos-print-report__items" aria-label="Lançamentos operacionais">
-              {selectedPrintLancamentos.map(item => (
-                <article className="lancamentos-print-report__item" key={`print-${item.id}`}>
-                  <section className="lancamentos-print-report__block">
-                    <h2>Identificação</h2>
-                    <div className="lancamentos-print-report__grid lancamentos-print-report__grid--operational-identification">
-                      <div className="lancamentos-print-report__cell">
-                        <span className="lancamentos-print-report__label">Documento</span>
-                        <span className="lancamentos-print-report__value">{item.codigo_sequencial ? `${item.codigo_sequencial}${item.numero_parcela ? `-${item.numero_parcela}` : ''}` : '-'}</span>
-                      </div>
-                      <div className="lancamentos-print-report__cell">
-                        <span className="lancamentos-print-report__label">Entidade</span>
-                        <span className="lancamentos-print-report__value">{entidades.find(entidade => entidade.id === item.entidade_id)?.nome_razao_social || 'N/A'}</span>
-                      </div>
-                      <div className="lancamentos-print-report__cell">
-                        <span className="lancamentos-print-report__label">Vencimento / referência</span>
-                        <span className="lancamentos-print-report__value">
-                          {formatPrintDate(item.data_vencimento)}
-                          <small>{getDaysOverdue(item.data_vencimento) > 0 ? `${getDaysOverdue(item.data_vencimento)} dia(s)` : getDaysOverdue(item.data_vencimento) === 0 ? 'Hoje' : '-'}</small>
-                        </span>
-                      </div>
-                      <div className="lancamentos-print-report__cell">
-                        <span className="lancamentos-print-report__label">Data do documento</span>
-                        <span className="lancamentos-print-report__value">{formatPrintDate(item.data_emissao)}</span>
-                      </div>
-                      <div className="lancamentos-print-report__cell">
-                        <span className="lancamentos-print-report__label">Status</span>
-                        <span className="lancamentos-print-report__value">{getPrintStatus(item)}</span>
-                      </div>
-                    </div>
-                  </section>
-
-                  <section className="lancamentos-print-report__block">
-                    <h2>Memória do cálculo</h2>
-                    <div className="lancamentos-print-report__grid lancamentos-print-report__grid--operational-values">
-                      <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number">
-                        <span className="lancamentos-print-report__label">Valor documento original</span>
-                        <span className="lancamentos-print-report__value">{valueFormatter(item.valor_original || item.valor_previsto)}</span>
-                      </div>
-                      <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number">
-                        <span className="lancamentos-print-report__label">Valor parcela original</span>
-                        <span className="lancamentos-print-report__value">{valueFormatter(item.valor_previsto)}</span>
-                      </div>
-                      <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number">
-                        <span className="lancamentos-print-report__label">Desconto</span>
-                        <span className="lancamentos-print-report__value">{valueFormatter(calculateAdjustmentAmount(item.desconto_valor, item.desconto_tipo, item.valor_previsto))}</span>
-                      </div>
-                      <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number">
-                        <span className="lancamentos-print-report__label">Acréscimo</span>
-                        <span className="lancamentos-print-report__value">{valueFormatter(calculateAdjustmentAmount(item.acrescimo_valor, item.acrescimo_tipo, item.valor_previsto))}</span>
-                      </div>
-                      <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number">
-                        <span className="lancamentos-print-report__label">Valor pago</span>
-                        <span className="lancamentos-print-report__value">{valueFormatter(item.valor_recebido || 0)}</span>
-                      </div>
-                      <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number">
-                        <span className="lancamentos-print-report__label">A pagar</span>
-                        <span className="lancamentos-print-report__value">{valueFormatter(getSaldoAPagar(item))}</span>
-                      </div>
-                    </div>
-                  </section>
-                </article>
-              ))}
-            </section>
-          ) : (
-            <section className="lancamentos-print-report__items" aria-label="Lançamentos financeiros">
-              {selectedPrintLancamentos.map(item => (
-                <article className="lancamentos-print-report__item" key={`print-${item.id}`}>
-                  <section className="lancamentos-print-report__block">
-                    <h2>Identificação</h2>
-                    <div className="lancamentos-print-report__grid lancamentos-print-report__grid--financial-identification">
-                      <div className="lancamentos-print-report__cell">
-                        <span className="lancamentos-print-report__label">Documento</span>
-                        <span className="lancamentos-print-report__value">{item.codigo_sequencial ? `${item.codigo_sequencial}${item.numero_parcela ? `-${item.numero_parcela}` : ''}` : '-'}</span>
-                      </div>
-                      <div className="lancamentos-print-report__cell">
-                        <span className="lancamentos-print-report__label">Fluxo</span>
-                        <span className="lancamentos-print-report__value">{item.tipo === 'entrada' ? 'Entrada' : 'Saída'}</span>
-                      </div>
-                      <div className="lancamentos-print-report__cell">
-                        <span className="lancamentos-print-report__label">Entidade</span>
-                        <span className="lancamentos-print-report__value">{entidades.find(entidade => entidade.id === item.entidade_id)?.nome_razao_social || 'N/A'}</span>
-                      </div>
-                      <div className="lancamentos-print-report__cell">
-                        <span className="lancamentos-print-report__label">Vencimento</span>
-                        <span className="lancamentos-print-report__value">{formatPrintDate(item.data_vencimento)}</span>
-                      </div>
-                      <div className="lancamentos-print-report__cell">
-                        <span className="lancamentos-print-report__label">Pagamento</span>
-                        <span className="lancamentos-print-report__value">{formatPrintDate(item.data_pagamento)}</span>
-                      </div>
-                    </div>
-                  </section>
-
-                  <section className="lancamentos-print-report__block">
-                    <h2>Valores</h2>
-                    <div className="lancamentos-print-report__grid lancamentos-print-report__grid--financial-values">
-                      <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number">
-                        <span className="lancamentos-print-report__label">Valor previsto</span>
-                        <span className="lancamentos-print-report__value">{valueFormatter(item.valor_previsto)}</span>
-                      </div>
-                      <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number">
-                        <span className="lancamentos-print-report__label">Desconto</span>
-                        <span className="lancamentos-print-report__value">{valueFormatter(calculateAdjustmentAmount(item.desconto_valor, item.desconto_tipo, item.valor_previsto))}</span>
-                      </div>
-                      <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number">
-                        <span className="lancamentos-print-report__label">Acréscimo</span>
-                        <span className="lancamentos-print-report__value">{valueFormatter(calculateAdjustmentAmount(item.acrescimo_valor, item.acrescimo_tipo, item.valor_previsto))}</span>
-                      </div>
-                      <div className="lancamentos-print-report__cell lancamentos-print-report__cell--number">
-                        <span className="lancamentos-print-report__label">Valor exibido</span>
-                        <span className="lancamentos-print-report__value">{valueFormatter(getValorLiquido(item))}</span>
-                      </div>
-                      <div className="lancamentos-print-report__cell">
-                        <span className="lancamentos-print-report__label">Status</span>
-                        <span className="lancamentos-print-report__value">{getPrintStatus(item)}</span>
-                      </div>
-                    </div>
-                  </section>
-                </article>
-              ))}
-            </section>
-          )}
-
-        </div>
-      </div>
-
-      <AnimatePresence>
-        {selectedLogItem && (
-          <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSelectedLogItem(null)} className="absolute inset-0 bg-neutral-900/60 backdrop-blur-sm" />
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="relative z-10 w-full max-w-[560px] max-h-[80vh] bg-white rounded-3xl shadow-2xl overflow-hidden">
-              <header className="px-6 py-5 border-b border-neutral-100 flex items-center justify-between bg-neutral-50/70">
-                <div>
-                  <h3 className="text-xs font-black uppercase tracking-widest text-neutral-900">Logs completos</h3>
-                  <p className="text-[9px] font-bold uppercase tracking-widest text-secondary mt-1">Registro {selectedLogItem.codigo_sequencial || selectedLogItem.id}</p>
-                </div>
-                <button type="button" onClick={() => setSelectedLogItem(null)} className="p-2 rounded-xl hover:bg-neutral-200"><X className="w-5 h-5 text-secondary" /></button>
-              </header>
-              <div className="p-6 max-h-[60vh] overflow-y-auto space-y-2">
-                {(selectedLogItem.observacoes || 'Sem logs registrados.')
-                  .replace(/\\n/g, '\n')
-                  .split(/\r?\n/)
-                  .map(log => log.trim())
-                  .filter(Boolean)
-                  .map((log, index) => (
-                    <div key={`${selectedLogItem.id}-log-${index}`} className="flex items-start gap-3 rounded-xl border border-neutral-100 bg-neutral-50/70 px-4 py-3">
-                      <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-neutral-200 text-[8px] font-black text-neutral-500">
-                        {index + 1}
-                      </span>
-                      <p className="min-w-0 whitespace-pre-wrap break-words text-xs leading-relaxed font-bold text-neutral-700">{log}</p>
-                    </div>
-                  ))}
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      <LogsCompletoModal selectedLogItem={selectedLogItem} onClose={() => setSelectedLogItem(null)} />
     </div>
   );
 }
