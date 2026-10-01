@@ -157,7 +157,7 @@ export interface ImportConfirmationMetadata {
   extractedCount?: number;
   ocrCount?: number;
   consistency?: ImportConsistencyState;
-  rawTransactions?: Array<Pick<ImportTransaction, 'data_original' | 'descricao_original' | 'valor_original' | 'data_transacao' | 'descricao_banco' | 'valor' | 'tipo_movimento' | 'pagina_origem' | 'linha_origem' | 'formato_arquivo' | 'origem_extracao' | 'origem_arquivo'>>;
+  rawTransactions?: Array<Pick<ImportTransaction, 'data_original' | 'descricao_original' | 'valor_original' | 'valor_centavos' | 'data_transacao' | 'descricao_banco' | 'numero_documento' | 'valor' | 'tipo_movimento' | 'hash_transacao' | 'pagina_origem' | 'linha_origem' | 'formato_arquivo' | 'origem_extracao' | 'origem_arquivo' | 'confianca_extracao' | 'estado_revisao' | 'motivo_alerta'>>;
   sourceOrigin?: ImportSourceOrigin;
   alerts?: ImportParserAlert[];
   pendingReviewCount?: number;

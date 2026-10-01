@@ -10,7 +10,6 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0'
 import pdfParse from 'npm:pdf-parse@1.1.1'
 // @ts-expect-error Deno resolves this npm module in the Edge Function runtime.
 import * as XLSX from 'npm:xlsx@0.18.5'
-import { runBankStatementOcr } from '../_shared/ocrBankStatement.ts'
 
 type SourceOrigin = 'texto' | 'ocr'
 type FileOrigin = 'pdf_texto' | 'pdf_ocr' | 'csv' | 'xlsx'
@@ -384,22 +383,268 @@ const normalizedPeriod = (text: string): [string, string] | undefined => {
   return start && end ? [start, end] : undefined
 }
 
+const MAX_PDF_PAGES = 15
+const OPENAI_TIMEOUT_MS = 45_000
+const OPENAI_MAX_ATTEMPTS = 2
+const OPENAI_RESPONSE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['openingBalance', 'closingBalance', 'totalEntries', 'totalExits', 'reportedTransactionCount', 'periodStart', 'periodEnd', 'bankIdentified', 'sourceOrigin', 'transactions', 'pendingReviews'],
+  properties: {
+    openingBalance: { type: ['number', 'null'] },
+    closingBalance: { type: ['number', 'null'] },
+    totalEntries: { type: ['number', 'null'] },
+    totalExits: { type: ['number', 'null'] },
+    reportedTransactionCount: { type: ['integer', 'null'] },
+    periodStart: { type: ['string', 'null'] },
+    periodEnd: { type: ['string', 'null'] },
+    bankIdentified: { type: ['string', 'null'] },
+    sourceOrigin: { type: 'string', enum: ['texto', 'ocr'] },
+    transactions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['date', 'description', 'credit', 'debit', 'document', 'pagina', 'linha', 'confidence', 'alert', 'origem'],
+        properties: {
+          date: { type: 'string' },
+          description: { type: 'string', 'minLength': 1 },
+          credit: { type: ['number', 'null'] },
+          debit: { type: ['number', 'null'] },
+          document: { type: ['string', 'null'] },
+          pagina: { type: 'integer', minimum: 1 },
+          linha: { type: 'integer', minimum: 1 },
+          confidence: { type: 'number', minimum: 0, maximum: 1 },
+          alert: { type: ['string', 'null'] },
+          origem: { type: 'string', enum: ['texto', 'ocr'] },
+        },
+      },
+    },
+    pendingReviews: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['data_original', 'data_transacao', 'valor', 'tipo_movimento', 'descricao', 'pagina_origem', 'linha_origem', 'origem_extracao', 'confianca_extracao', 'motivos', 'trecho'],
+        properties: {
+          data_original: { type: ['string', 'null'] },
+          data_transacao: { type: ['string', 'null'] },
+          valor: { type: ['number', 'null'] },
+          tipo_movimento: { type: ['string', 'null'], enum: ['credito', 'debito', null] },
+          descricao: { type: ['string', 'null'] },
+          pagina_origem: { type: ['integer', 'null'], minimum: 1 },
+          linha_origem: { type: ['integer', 'null'], minimum: 1 },
+          origem_extracao: { type: 'string', enum: ['texto', 'ocr'] },
+          confianca_extracao: { type: 'number', minimum: 0, maximum: 1 },
+          motivos: { type: 'array', items: { type: 'string', minLength: 1 }, minItems: 1 },
+          trecho: { type: 'string', minLength: 1, maxLength: 500 },
+        },
+      },
+    },
+  },
+} as const
+
+type OpenAiPreview = {
+  openingBalance: number | null
+  closingBalance: number | null
+  totalEntries: number | null
+  totalExits: number | null
+  reportedTransactionCount: number | null
+  periodStart: string | null
+  periodEnd: string | null
+  bankIdentified: string | null
+  sourceOrigin: SourceOrigin
+  transactions: Array<{
+    date: string
+    description: string
+    credit: number | null
+    debit: number | null
+    document: string | null
+    pagina: number
+    linha: number
+    confidence: number
+    alert: string | null
+    origem: SourceOrigin
+  }>
+  pendingReviews: PendingReview[]
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
+const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
+const isValidIsoDate = (value: unknown): value is string => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && Boolean(toIsoDate(value).iso)
+const optionalNumber = (value: number | null): number | undefined => value === null ? undefined : value
+const optionalString = (value: string | null): string | undefined => value === null ? undefined : value
+
+const validatePdfBytes = async (bytes: ArrayBuffer): Promise<number> => {
+  const signature = new TextDecoder().decode(bytes.slice(0, 5))
+  if (signature !== '%PDF-') fail('A assinatura real do PDF é inválida')
+  let parsed: any
+  try {
+    parsed = await pdfParse(new Uint8Array(bytes))
+  } catch {
+    fail('O conteúdo do PDF é inválido ou não pôde ser lido')
+  }
+  const pages = Number(parsed?.numpages)
+  if (!Number.isInteger(pages) || pages < 1) fail('O PDF não informa uma quantidade válida de páginas')
+  if (pages > MAX_PDF_PAGES) fail('O PDF excede o limite de 15 páginas')
+  return pages
+}
+
+const openAiRequest = async (
+  apiKey: string,
+  url: string,
+  request: () => RequestInit,
+  timeoutMs = OPENAI_TIMEOUT_MS,
+): Promise<Response> => {
+  for (let attempt = 0; attempt < OPENAI_MAX_ATTEMPTS; attempt += 1) {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
+    let response: Response
+    try {
+      const init = request()
+      response = await fetch(url, {
+        ...init,
+        headers: { ...(init.headers as Record<string, string> || {}), Authorization: `Bearer ${apiKey}` },
+        signal: controller.signal,
+      })
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') fail(`Tempo limite de ${Math.round(timeoutMs / 1000)} segundos excedido`)
+      throw new Error('Falha de comunicação com o provedor de extração')
+    } finally {
+      clearTimeout(timer)
+    }
+    const retryable = response.status === 429 || response.status >= 500
+    if (!retryable || attempt === OPENAI_MAX_ATTEMPTS - 1) return response
+    await response.body?.cancel()
+    await new Promise<void>(resolve => setTimeout(resolve, 250 * (2 ** attempt)))
+  }
+  fail('Falha de comunicação com o provedor de extração')
+}
+
+const readOpenAiJson = async (response: Response, phase: string): Promise<unknown> => {
+  if (!response.ok) fail(`Falha do provedor de extração na fase ${phase} (${response.status})`)
+  try {
+    return await response.json()
+  } catch {
+    fail(`Resposta inválida do provedor de extração na fase ${phase}`)
+  }
+}
+
+const extractResponseText = (payload: unknown): string => {
+  if (!isRecord(payload)) fail('Resposta estruturada do provedor é inválida')
+  const response = payload as Record<string, unknown>
+  const status = response.status
+  if (status === 'incomplete' || status === 'failed' || status === 'cancelled' || status === 'canceled') fail(`Resposta do provedor não concluída: ${status}`)
+  if (status !== 'completed') fail('Resposta do provedor não foi concluída')
+  if (!Array.isArray(response.output)) fail('Resposta do provedor não possui saída')
+  const output = response.output as unknown[]
+  const textParts: string[] = []
+  for (const outputItem of output) {
+    if (!isRecord(outputItem)) continue
+    if (['refusal', 'incomplete', 'failed', 'cancelled', 'canceled'].includes(String(outputItem.status)) || outputItem.type === 'refusal') fail('O provedor recusou ou interrompeu a extração')
+    if (!Array.isArray(outputItem.content)) continue
+    for (const contentItem of outputItem.content) {
+      if (!isRecord(contentItem)) continue
+      if (contentItem.type === 'refusal' || typeof contentItem.refusal === 'string') fail('O provedor recusou a extração')
+      if (contentItem.type === 'output_text' && typeof contentItem.text === 'string') textParts.push(contentItem.text)
+    }
+  }
+  const text = textParts.join('').trim()
+  if (!text) fail('A saída estruturada do provedor está vazia')
+  return text
+}
+
+const validateOpenAiPreview = (value: unknown, pages: number): OpenAiPreview => {
+  if (!isRecord(value)) fail('O JSON estruturado do provedor não possui contrato válido')
+  const preview = value as Partial<OpenAiPreview>
+  for (const field of ['openingBalance', 'closingBalance', 'totalEntries', 'totalExits']) {
+    const fieldValue = preview[field as keyof OpenAiPreview]
+    if (fieldValue !== null && !isFiniteNumber(fieldValue)) fail(`Campo numérico inválido na saída do provedor: ${field}`)
+  }
+  if (preview.reportedTransactionCount === undefined || (preview.reportedTransactionCount !== null && (!Number.isInteger(preview.reportedTransactionCount) || preview.reportedTransactionCount < 0))) fail('Quantidade informada inválida na saída do provedor')
+  if (preview.periodStart === undefined || (preview.periodStart !== null && !isValidIsoDate(preview.periodStart))) fail('Período inicial inválido na saída do provedor')
+  if (preview.periodEnd === undefined || (preview.periodEnd !== null && !isValidIsoDate(preview.periodEnd))) fail('Período final inválido na saída do provedor')
+  if (preview.bankIdentified === undefined || (preview.bankIdentified !== null && typeof preview.bankIdentified !== 'string')) fail('Banco identificado inválido na saída do provedor')
+  if (!['texto', 'ocr'].includes(String(preview.sourceOrigin)) || !Array.isArray(preview.transactions) || !Array.isArray(preview.pendingReviews)) fail('Contrato de preview inválido na saída do provedor')
+  const transactions = preview.transactions
+  for (const [index, transaction] of transactions.entries()) {
+    if (!isRecord(transaction) || !isValidIsoDate(transaction.date) || typeof transaction.description !== 'string' || !transaction.description.trim() || !Number.isInteger(transaction.pagina) || transaction.pagina < 1 || transaction.pagina > pages || !Number.isInteger(transaction.linha) || transaction.linha < 1 || !isFiniteNumber(transaction.confidence) || transaction.confidence < 0.85 || transaction.confidence > 1 || !['texto', 'ocr'].includes(String(transaction.origem))) fail(`Transação ${index + 1} inválida na saída do provedor`)
+    const credit = transaction.credit
+    const debit = transaction.debit
+    if ((credit !== null && !isFiniteNumber(credit)) || (debit !== null && !isFiniteNumber(debit)) || (credit !== null && credit <= 0) || (debit !== null && debit <= 0) || (credit !== null) === (debit !== null) || transaction.origem !== preview.sourceOrigin) fail(`Direção ou origem inválida na transação ${index + 1}`)
+    if (transaction.alert !== null && typeof transaction.alert !== 'string') fail(`Alerta inválido na transação ${index + 1}`)
+    if (transaction.document !== null && typeof transaction.document !== 'string') fail(`Documento inválido na transação ${index + 1}`)
+  }
+  for (const [index, review] of preview.pendingReviews.entries()) {
+    if (!isRecord(review) || !['texto', 'ocr'].includes(String(review.origem_extracao)) || review.origem_extracao !== preview.sourceOrigin || !isFiniteNumber(review.confianca_extracao) || review.confianca_extracao < 0 || review.confianca_extracao > 1 || !Array.isArray(review.motivos) || review.motivos.length === 0 || review.motivos.some(reason => typeof reason !== 'string' || !reason.trim()) || typeof review.trecho !== 'string' || !review.trecho.trim() || review.trecho.length > 500) fail(`Pendência ${index + 1} inválida na saída do provedor`)
+    if (review.data_original === undefined || (review.data_original !== null && typeof review.data_original !== 'string')) fail(`Data original inválida na pendência ${index + 1}`)
+    if (review.valor === undefined || (review.valor !== null && !isFiniteNumber(review.valor))) fail(`Valor inválido na pendência ${index + 1}`)
+    if (review.tipo_movimento === undefined || (review.tipo_movimento !== null && !['credito', 'debito'].includes(review.tipo_movimento))) fail(`Tipo inválido na pendência ${index + 1}`)
+    if (review.descricao === undefined || (review.descricao !== null && typeof review.descricao !== 'string')) fail(`Descrição inválida na pendência ${index + 1}`)
+    if (review.data_transacao === undefined || (review.data_transacao !== null && !isValidIsoDate(review.data_transacao))) fail(`Data inválida na pendência ${index + 1}`)
+    if (review.pagina_origem === undefined || (review.pagina_origem !== null && (!Number.isInteger(review.pagina_origem) || review.pagina_origem < 1 || review.pagina_origem > pages))) fail(`Página inválida na pendência ${index + 1}`)
+    if (review.linha_origem === undefined || (review.linha_origem !== null && (!Number.isInteger(review.linha_origem) || review.linha_origem < 1))) fail(`Linha inválida na pendência ${index + 1}`)
+  }
+  return preview as OpenAiPreview
+}
+
+const toExtractedResult = (preview: OpenAiPreview): ExtractedResult => ({
+  openingBalance: optionalNumber(preview.openingBalance),
+  closingBalance: optionalNumber(preview.closingBalance),
+  totalEntries: optionalNumber(preview.totalEntries),
+  totalExits: optionalNumber(preview.totalExits),
+  reportedTransactionCount: optionalNumber(preview.reportedTransactionCount),
+  transactions: preview.transactions.map(transaction => ({
+    date: transaction.date,
+    description: transaction.description.trim(),
+    credit: transaction.credit === null ? undefined : transaction.credit,
+    debit: transaction.debit === null ? undefined : transaction.debit,
+    document: optionalString(transaction.document),
+    pagina: transaction.pagina,
+    linha: transaction.linha,
+    confidence: transaction.confidence,
+    alert: transaction.alert,
+    origem: transaction.origem,
+    origem_arquivo: transaction.origem === 'ocr' ? 'pdf_ocr' : 'pdf_texto',
+  })),
+  pendingReviews: preview.pendingReviews.map(review => ({
+    ...review,
+    data_original: optionalString(review.data_original),
+    data_transacao: optionalString(review.data_transacao),
+    valor: optionalNumber(review.valor),
+    tipo_movimento: review.tipo_movimento === null ? undefined : review.tipo_movimento,
+    descricao: optionalString(review.descricao),
+    pagina_origem: review.pagina_origem === null ? undefined : review.pagina_origem,
+    linha_origem: review.linha_origem === null ? undefined : review.linha_origem,
+  })),
+  sourceOrigin: preview.sourceOrigin,
+})
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders })
   if (req.method !== 'POST') return new Response(JSON.stringify({ error: 'Método não permitido' }), { status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+  let supabaseAdmin: any = null
+  let authenticatedClient: any = null
+  let lotId: string | undefined
+  let openAiFileId: string | undefined
+  let failurePhase = 'autenticacao'
   try {
     const authorization = req.headers.get('Authorization') || ''
     const tokenMatch = authorization.match(/^Bearer\s+(.+)$/i)
     if (!tokenMatch) fail('Token de autenticação ausente ou inválido')
-    const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '', { auth: { autoRefreshToken: false, persistSession: false } })
+    supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '', { auth: { autoRefreshToken: false, persistSession: false } })
     const { data: authData, error: authError } = await supabaseAdmin.auth.getUser(tokenMatch[1])
     if (authError || !authData.user) fail('Token de autenticação inválido')
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY')
+    if (anonKey) authenticatedClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', anonKey, { global: { headers: { Authorization: authorization } }, auth: { autoRefreshToken: false, persistSession: false } })
     const { data: profile, error: profileError } = await supabaseAdmin.from('profiles').select('role').eq('id', authData.user.id).maybeSingle()
     if (profileError || !profile || !['master', 'gerente'].includes(profile.role)) fail('Usuário não autorizado a processar extratos')
 
+    failurePhase = 'validacao_do_lote'
     const body = await req.json() as { lot_id?: string; storage_path?: string; file_type?: 'pdf' | 'xlsx' | 'csv'; file_hash?: string; mime_type?: string }
+    lotId = body.lot_id
     if (!body.lot_id || !/^[0-9a-f-]{36}$/i.test(body.lot_id)) fail('Lote de importação inválido')
-    if (!body.storage_path || body.storage_path.split('/')[0] !== authData.user.id) fail('Caminho do arquivo não pertence ao usuário autenticado')
+    if (!body.storage_path || !/^[0-9a-f-]{36}\/[^/]+\/[^/]+$/i.test(body.storage_path) || body.storage_path.includes('..')) fail('Caminho do arquivo é inválido')
     if (!body.file_hash || !/^[a-f0-9]{64}$/.test(body.file_hash)) fail('Hash SHA-256 do arquivo é obrigatório')
     const extension = body.storage_path.toLowerCase().split('.').pop()
     const fileType = body.file_type || (extension === 'xlsx' ? 'xlsx' : extension === 'pdf' ? 'pdf' : extension === 'csv' ? 'csv' : undefined)
@@ -408,12 +653,13 @@ serve(async (req) => {
     if (body.mime_type !== expectedMime) fail('MIME informado incompatível com a extensão do arquivo')
     const { data: lot, error: lotError } = await supabaseAdmin.from('extratos_bancarios').select('id, conta_bancaria_id, arquivo_nome, arquivo_tamanho, arquivo_mime_type, arquivo_hash, storage_path, importado_por, status').eq('id', body.lot_id).maybeSingle()
     if (lotError || !lot) fail('Lote de importação não encontrado')
-    if (lot.status !== 'em_validacao' || lot.importado_por !== authData.user.id) fail('Lote de importação não está disponível para processamento')
+    if (lot.status !== 'em_validacao' || (lot.importado_por !== authData.user.id && !['master', 'gerente'].includes(profile.role))) fail('Lote de importação não está disponível para processamento')
     if (lot.storage_path !== body.storage_path || lot.arquivo_hash !== body.file_hash || lot.arquivo_mime_type !== expectedMime) fail('Os metadados do lote não correspondem ao arquivo')
     if (lot.arquivo_tamanho <= 0 || lot.arquivo_tamanho > MAX_FILE_SIZE) fail('O tamanho do arquivo é inválido')
 
+    failurePhase = 'validacao_do_arquivo'
     const { data: storageObject, error: objectError } = await supabaseAdmin.schema('storage').from('objects').select('name, bucket_id, owner_id, metadata').eq('bucket_id', 'bank-statements').eq('name', body.storage_path).maybeSingle()
-    if (objectError || !storageObject || storageObject.owner_id !== authData.user.id) fail('Arquivo privado não encontrado')
+    if (objectError || !storageObject || storageObject.owner_id !== lot.importado_por) fail('Arquivo privado não encontrado')
     const objectMime = typeof storageObject.metadata?.mimetype === 'string' ? storageObject.metadata.mimetype.toLowerCase() : ''
     if (objectMime !== expectedMime) fail('MIME armazenado incompatível com a extensão do arquivo')
     const { data: file, error: fileError } = await supabaseAdmin.storage.from('bank-statements').download(body.storage_path)
@@ -434,49 +680,101 @@ serve(async (req) => {
       return new Response(JSON.stringify(result), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    let sourceOrigin: SourceOrigin = 'texto'
-    let pdfData: { text: string; pages: number; layouts: LayoutPage[] }
+    const pages = await validatePdfBytes(fileBytes)
+    const openAiKey = Deno.env.get('OPENAI_API_KEY')
+    if (!openAiKey) fail('Provedor de extração não configurado')
+    failurePhase = 'upload_openai'
+    const uploadResponse = await openAiRequest(openAiKey, 'https://api.openai.com/v1/files', () => {
+      const form = new FormData()
+      form.append('purpose', 'user_data')
+      form.append('file', new File([new Uint8Array(fileBytes)], lot.arquivo_nome, { type: PDF_MIME_TYPE }))
+      return { method: 'POST', body: form }
+    })
+    const uploadPayload = await readOpenAiJson(uploadResponse, 'upload')
+    if (!isRecord(uploadPayload) || typeof uploadPayload.id !== 'string' || !uploadPayload.id) fail('O provedor não retornou o identificador do arquivo')
+    const uploadRecord = uploadPayload as Record<string, unknown>
+    openAiFileId = uploadRecord.id as string
+
+    failurePhase = 'respostas_openai'
+    const prompt = `Analise exclusivamente o PDF bancário anexado e produza a prévia estruturada solicitada. O arquivo possui ${pages} página(s). Preserve o contrato: valores de crédito e débito devem ser positivos e mutuamente exclusivos; use data ISO YYYY-MM-DD; registre página e linha de origem; use origem texto para conteúdo selecionável e ocr somente quando a página for imagem; só inclua em transactions registros com confiança de pelo menos 0.85; mova qualquer registro ambíguo para pendingReviews em vez de inventar dados. Ignore cabeçalhos, rodapés, saldos e totais que não sejam transações. Identifique totais, saldos, período e banco somente quando estiverem claramente presentes no PDF. Não inclua explicações fora do JSON.`
+    const responseResponse = await openAiRequest(openAiKey, 'https://api.openai.com/v1/responses', () => ({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'gpt-4o',
+        input: [{ role: 'user', content: [{ type: 'input_file', file_id: openAiFileId }, { type: 'input_text', text: prompt }] }],
+        text: { format: { type: 'json_schema', name: 'bank_statement_preview', strict: true, schema: OPENAI_RESPONSE_SCHEMA } },
+      }),
+    }))
+    const responsePayload = await readOpenAiJson(responseResponse, 'responses')
+    const responseText = extractResponseText(responsePayload)
+    let parsedPayload: unknown
     try {
-      pdfData = await buildLayoutPages(fileBytes)
-    } catch (error) {
-      log('Falha no leitor textual/layout; encaminhando para OCR', { error: error instanceof Error ? error.message : String(error) })
-      pdfData = { text: '', pages: 1, layouts: [] }
+      parsedPayload = JSON.parse(responseText)
+    } catch {
+      fail('A saída do provedor não contém JSON válido')
     }
-    if (!pdfData.text.trim()) {
-      const ocr = await runBankStatementOcr(fileBytes, PDF_MIME_TYPE)
-      sourceOrigin = 'ocr'
-      pdfData = { text: ocr.text, pages: ocr.pages || 1, layouts: [] }
-    }
-    const result = extractText(pdfData.text, sourceOrigin, pdfData.pages, sourceOrigin === 'texto' ? pdfData.layouts : [])
+    const preview = validateOpenAiPreview(parsedPayload, pages)
+    const result = toExtractedResult(preview)
     const dates = result.transactions.map(transaction => transaction.date).sort()
-    const period = normalizedPeriod(pdfData.text)
-    log('Extração concluída', { user_id: authData.user.id, pages: pdfData.pages, transactions: result.transactions.length, pending_reviews: result.pendingReviews.length, origin: sourceOrigin })
-    const periodStart = period?.[0] || dates[0]
-    const periodEnd = period?.[1] || dates[dates.length - 1]
-    const bankIdentified = classifyBankName(pdfData.text)
+    const periodStart = optionalString(preview.periodStart) || dates[0]
+    const periodEnd = optionalString(preview.periodEnd) || dates[dates.length - 1]
+    const bankIdentified = optionalString(preview.bankIdentified)
+    log('Extração concluída', { user_id: authData.user.id, pages, transactions: result.transactions.length, pending_reviews: result.pendingReviews.length, origin: result.sourceOrigin })
     return new Response(JSON.stringify({
       ...result,
-      pages: pdfData.pages,
+      pages,
       periodStart,
       periodEnd,
       bankIdentified,
       parserMetadata: {
-        pages: pdfData.pages,
+        pages,
         periodStart,
         periodEnd,
         balances: { opening: result.openingBalance, closing: result.closingBalance },
         totals: { entries: result.totalEntries, exits: result.totalExits },
         reportedTransactionCount: result.reportedTransactionCount,
         bankIdentified,
-        sourceOrigin,
-        sourceFileOrigin: sourceOrigin === 'ocr' ? 'pdf_ocr' : 'pdf_texto',
-        alerts: sourceOrigin === 'ocr' ? [{ code: 'ocr_origin', message: 'Origem OCR: valide os dados normalizados antes da confirmação.', severity: 'warning' }] : [],
+        sourceOrigin: result.sourceOrigin,
+        sourceFileOrigin: result.sourceOrigin === 'ocr' ? 'pdf_ocr' : 'pdf_texto',
+        alerts: result.sourceOrigin === 'ocr' ? [{ code: 'ocr_origin', message: 'Origem OCR: valide os dados normalizados antes da confirmação.', severity: 'warning' }] : [],
         pendingReviews: result.pendingReviews,
       },
     }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Falha ao processar o extrato'
-    console.error('[parse-bank-statement]', message)
-    return new Response(JSON.stringify({ error: message }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    if (authenticatedClient && lotId && /^[0-9a-f-]{36}$/i.test(lotId)) {
+      try {
+        await authenticatedClient.rpc('marcar_importacao_erro', {
+          p_lote_id: lotId,
+          p_metadata_erro: { codigo_erro: 'processing_error', mensagem: 'Falha ao processar o extrato.', fase: failurePhase, tentativa: 1 },
+        })
+      } catch {
+        log('Falha ao registrar erro do lote', { fase: failurePhase })
+      }
+    }
+    log('Falha no processamento', { fase: failurePhase })
+    return new Response(JSON.stringify({ error: 'Falha ao processar o extrato.' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+  } finally {
+    if (openAiFileId) {
+      let cleanupSucceeded = false
+      try {
+        const cleanupKey = Deno.env.get('OPENAI_API_KEY')
+        if (!cleanupKey) fail('Provedor de extração não configurado')
+        const cleanupResponse = await openAiRequest(cleanupKey, `https://api.openai.com/v1/files/${encodeURIComponent(openAiFileId)}`, () => ({ method: 'DELETE' }), 5_000)
+        cleanupSucceeded = cleanupResponse.ok || cleanupResponse.status === 404
+        if (!cleanupSucceeded) await cleanupResponse.body?.cancel()
+      } catch {
+        cleanupSucceeded = false
+      }
+      if (cleanupSucceeded) {
+        log('Arquivo temporário do provedor removido', { status: 'concluido' })
+      } else {
+        try {
+          if (supabaseAdmin) await supabaseAdmin.from('openai_cleanup_queue').insert({ openai_file_id: openAiFileId })
+        } catch {
+          log('Falha ao registrar limpeza pendente', { status: 'falhou' })
+        }
+      }
+    }
   }
 })

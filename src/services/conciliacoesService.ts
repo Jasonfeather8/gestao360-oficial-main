@@ -135,12 +135,22 @@ const parseMoney = (raw: string): number => {
   return negative ? -Math.abs(value) : value;
 };
 
-const parseDelimitedRecords = (content: string, delimiter: string): string[][] => {
+type ParsedDelimitedRecord = {
+  cells: string[];
+  physicalLine: number;
+};
+
+const CSV_PHYSICAL_LINE = Symbol('csvPhysicalLine');
+type CsvRowWithPhysicalLine = Record<string, string> & { [CSV_PHYSICAL_LINE]?: number };
+
+const parseDelimitedRecords = (content: string, delimiter: string): ParsedDelimitedRecord[] => {
   const text = content.replace(/^\uFEFF/, '');
-  const records: string[][] = [];
+  const records: ParsedDelimitedRecord[] = [];
   let row: string[] = [];
   let field = '';
   let quoted = false;
+  let physicalLine = 1;
+  let recordStartLine = 1;
 
   for (let index = 0; index < text.length; index += 1) {
     const char = text[index];
@@ -154,19 +164,30 @@ const parseDelimitedRecords = (content: string, delimiter: string): string[][] =
     } else if (char === delimiter && !quoted) {
       row.push(field);
       field = '';
-    } else if ((char === '\n' || char === '\r') && !quoted) {
-      if (char === '\r' && text[index + 1] === '\n') index += 1;
-      row.push(field);
-      if (row.some(cell => cell.trim() !== '')) records.push(row);
-      row = [];
-      field = '';
+    } else if ((char === '\n' || char === '\r')) {
+      if (quoted) {
+        field += char;
+        if (char === '\r' && text[index + 1] === '\n') {
+          field += '\n';
+          index += 1;
+        }
+        physicalLine += 1;
+      } else {
+        if (char === '\r' && text[index + 1] === '\n') index += 1;
+        row.push(field);
+        if (row.some(cell => cell.trim() !== '')) records.push({ cells: row, physicalLine: recordStartLine });
+        row = [];
+        field = '';
+        physicalLine += 1;
+        recordStartLine = physicalLine;
+      }
     } else {
       field += char;
     }
   }
   if (field !== '' || row.length > 0) {
     row.push(field);
-    if (row.some(cell => cell.trim() !== '')) records.push(row);
+    if (row.some(cell => cell.trim() !== '')) records.push({ cells: row, physicalLine: recordStartLine });
   }
   if (quoted) throw friendlyError('O CSV possui aspas não fechadas.');
   return records;
@@ -208,23 +229,42 @@ const validateDate = (date: string): boolean => {
   return !Number.isNaN(parsed.valueOf()) && parsed.toISOString().slice(0, 10) === date;
 };
 
-const buildHash = async (accountId: string, transaction: Omit<ImportTransaction, 'hash_transacao'>): Promise<string> =>
-  sha256(JSON.stringify([
+const normalizeHashText = (value: string | undefined): string =>
+  (value || '').normalize('NFC').replace(/\s+/gu, ' ').trim().toUpperCase();
+
+const utf8ByteLength = (value: string): number => new TextEncoder().encode(value).byteLength;
+
+const buildHash = async (accountId: string, transaction: Omit<ImportTransaction, 'hash_transacao'>): Promise<string> => {
+  if (!Number.isInteger(transaction.valor_centavos) || transaction.pagina_origem === undefined || transaction.linha_origem === undefined) {
+    throw friendlyError('A transação não possui centavos ou origem página/linha para calcular o hash.');
+  }
+  const descricao = normalizeHashText(transaction.descricao_banco);
+  const documento = normalizeHashText(transaction.numero_documento);
+  const canonical = [
+    'v1',
     accountId,
     transaction.data_transacao,
-    transaction.valor.toFixed(2),
-    transaction.descricao_banco,
-    transaction.numero_documento || '',
-  ]));
+    transaction.valor_centavos.toString(),
+    `${utf8ByteLength(descricao)}:${descricao}`,
+    `${utf8ByteLength(documento)}:${documento}`,
+    transaction.pagina_origem.toString(),
+    transaction.linha_origem.toString(),
+  ].join('|');
+  return sha256(canonical);
+};
 
 export const parseCsv = (content: string): CsvParseResult => {
   const records = parseDelimitedRecords(content, detectDelimiter(content));
   if (records.length < 2) throw friendlyError('O CSV precisa conter cabeçalho e ao menos uma linha.');
-  const headers = records[0].map(header => header.trim());
+  const headers = records[0].cells.map(header => header.trim());
   if (headers.some(header => !header)) throw friendlyError('O cabeçalho do CSV possui uma coluna sem nome.');
   if (new Set(headers).size !== headers.length) throw friendlyError('O cabeçalho do CSV possui colunas duplicadas.');
-  if (records.slice(1).some(cells => cells.length > headers.length)) throw friendlyError('O CSV possui linhas com mais campos que o cabeçalho.');
-  const rows = records.slice(1).map(cells => Object.fromEntries(headers.map((header, index) => [header, (cells[index] || '').trim()])));
+  if (records.slice(1).some(record => record.cells.length > headers.length)) throw friendlyError('O CSV possui linhas com mais campos que o cabeçalho.');
+  const rows = records.slice(1).map(({ cells, physicalLine }) => {
+    const row = Object.fromEntries(headers.map((header, index) => [header, (cells[index] || '').trim()])) as CsvRowWithPhysicalLine;
+    Object.defineProperty(row, CSV_PHYSICAL_LINE, { value: physicalLine, enumerable: false });
+    return row;
+  });
   return { headers, rows };
 };
 
@@ -253,6 +293,7 @@ export const buildCsvTransactions = async (
     const value = importMode === 'entrada' ? Math.abs(parsedValue) : importMode === 'saida' ? -Math.abs(parsedValue) : parsedValue;
     const roundedValue = Number(value.toFixed(2));
     if (!Number.isFinite(roundedValue) || roundedValue === 0) throw friendlyError(`Valor inválido na linha ${index + 2}.`);
+    const physicalLine = (row as CsvRowWithPhysicalLine)[CSV_PHYSICAL_LINE] ?? index + 2;
     const base = {
       data_transacao: date,
       data_original: rawDate.trim(),
@@ -263,12 +304,14 @@ export const buildCsvTransactions = async (
       descricao_original: description,
       numero_documento: (row[mapping.documento] || '').trim() || undefined,
       tipo_movimento: value > 0 ? 'credito' as const : 'debito' as const,
-      linha_origem: index + 2,
+      pagina_origem: 1,
+      linha_origem: physicalLine,
       confianca_extracao: 1,
       motivo_alerta: null,
       formato_arquivo: origemArquivo,
       origem_extracao: 'estruturado' as const,
       origem_arquivo: origemArquivo,
+      estado_revisao: 'valida' as const,
     };
     const hash = await buildHash(accountId, base);
     if (hashes.has(hash)) throw friendlyError(`A linha ${index + 2} é duplicada dentro do arquivo.`);
@@ -522,6 +565,7 @@ export const conciliacoesService = {
           : [];
         const summary = transactions.length ? summarize(transactions) : { periodStart: undefined, periodEnd: undefined, totalEntries: 0, totalExits: 0 };
         const parserMetadata: ImportParserMetadata = {
+          pages: 1,
           periodStart: summary.periodStart,
           periodEnd: summary.periodEnd,
           totals: { entries: summary.totalEntries, exits: summary.totalExits },
@@ -529,15 +573,17 @@ export const conciliacoesService = {
           sourceFileOrigin: fileType,
         };
         const consistencyMetadata: ImportConfirmationMetadata = {
+          pages: 1,
           periodStart: summary.periodStart,
           periodEnd: summary.periodEnd,
           parserTotals: parserMetadata.totals,
           parserMetadata,
           extractedCount: transactions.length,
           sourceOrigin: 'estruturado',
+          pendingReviewCount: 0,
           reviewState: 'validated',
         };
-        return { lot, preview: { fileName: file.name, fileType, mimeType: lot.mimeType, ...summary, size: file.size, transactions, sourceOrigin: 'estruturado', firstRows: parsed.rows.slice(0, 5), sourceRows: parsed.rows, sourceHeaders: parsed.headers, parserTotals: parserMetadata.totals, parserMetadata, consistency: validateImportConsistency(transactions, consistencyMetadata) } };
+        return { lot, preview: { fileName: file.name, fileType, mimeType: lot.mimeType, ...summary, size: file.size, pages: 1, transactions, sourceOrigin: 'estruturado', firstRows: parsed.rows.slice(0, 5), sourceRows: parsed.rows, sourceHeaders: parsed.headers, parserTotals: parserMetadata.totals, parserMetadata, consistency: validateImportConsistency(transactions, consistencyMetadata) } };
       }
 
       const { data, error: functionError } = await supabase.functions.invoke('parse-bank-statement', { body: { lot_id: lot.id, storage_path: storagePath, file_type: 'pdf', file_hash: lot.fileHash, mime_type: lot.mimeType } });
@@ -618,17 +664,42 @@ export const conciliacoesService = {
     if (lot.status !== 'em_validacao') throw friendlyError('Somente lotes em validação podem ser confirmados.');
     if (!lot.formatoArquivo || !lot.origemExtracao) throw friendlyError('O lote precisa informar formato e origem da extração.');
     if (transactions.length === 0) throw friendlyError('O lote precisa conter ao menos uma transação.');
-    if (transactions.some(transaction => transaction.estado_revisao === 'pendente_revisao')) throw friendlyError('Resolva explicitamente todas as transações pendentes antes de confirmar o lote.');
-    if (metadata.reviewState === 'has_pending_reviews' || (metadata.pendingReviewCount || 0) > 0) throw friendlyError('O lote possui pendências de revisão que não podem ser importadas silenciosamente.');
+    if (transactions.some(transaction => !Number.isFinite(transaction.confianca_extracao) || transaction.confianca_extracao < 0.85 || transaction.confianca_extracao > 1)) throw friendlyError('Todas as transações precisam ter confiança de extração mínima de 0,85.');
+    const { data: revalidatedData, error: revalidationError } = await supabase.rpc('revalidar_preview_extrato', {
+      p_lote_id: lot.id,
+      p_transacoes: transactions,
+    });
+    if (revalidationError) throw revalidationError;
+    if (!Array.isArray(revalidatedData) || revalidatedData.length !== transactions.length || revalidatedData.some(item => !item || typeof item !== 'object')) {
+      throw friendlyError('A revalidação do preview retornou um contrato inválido.');
+    }
+    transactions = (revalidatedData as Array<Partial<ImportTransaction>>).map((revalidated, index) => {
+      const original = transactions[index];
+      return {
+        ...original,
+        ...revalidated,
+        arquivo_nome: original.arquivo_nome,
+        arquivo_hash: original.arquivo_hash,
+        extrato_lote_id: original.extrato_lote_id,
+        formato_arquivo: original.formato_arquivo,
+        origem_extracao: original.origem_extracao,
+        origem_arquivo: original.origem_arquivo,
+      };
+    });
     const effectiveMetadata: ImportConfirmationMetadata = {
       ...metadata,
+      pages: metadata.pages ?? (lot.formatoArquivo === 'pdf' ? undefined : 1),
       extractedCount: metadata.extractedCount ?? transactions.length,
       sourceOrigin: metadata.sourceOrigin ?? lot.origemExtracao,
     };
     if (effectiveMetadata.sourceOrigin !== lot.origemExtracao) throw friendlyError('A origem da extração não corresponde ao lote.');
     if (effectiveMetadata.extractedCount !== transactions.length) throw friendlyError('A quantidade de registros extraídos não confere com o lote.');
+    if (effectiveMetadata.pendingReviewCount !== 0 || effectiveMetadata.reviewState !== 'validated') throw friendlyError('O lote não está validado ou possui pendências de revisão.');
+    if (transactions.some(transaction => transaction.estado_revisao !== 'valida')) throw friendlyError('Todas as transações precisam estar no estado valida.');
+    if (transactions.some(transaction => !Number.isFinite(transaction.confianca_extracao) || transaction.confianca_extracao < 0.85)) throw friendlyError('Todas as transações precisam ter confiança de extração mínima de 0,85.');
     const consistency = validateImportConsistency(transactions, effectiveMetadata);
     if (consistency.criticalErrors.length > 0) throw friendlyError(`A confirmação foi bloqueada: ${consistency.criticalErrors.map(issue => issue.message).join(' ')}`);
+    if (consistency.extractedCount !== transactions.length || consistency.criticalErrors.length !== 0) throw friendlyError('A consistência final do lote é inválida.');
     if (lot.fileSize <= 0 || lot.fileSize > MAX_IMPORT_SIZE || !/^[a-f0-9]{64}$/.test(lot.fileHash)) throw friendlyError('Os metadados do arquivo são inválidos.');
     const storageSegments = lot.storagePath.split('/');
     if (storageSegments[0] !== lot.userId || storageSegments[1] !== lot.id || storageSegments.length !== 3) throw friendlyError('O caminho do arquivo não pertence ao lote.');
@@ -645,6 +716,7 @@ export const conciliacoesService = {
       || transaction.origem_arquivo !== expectedFileOrigin
     );
     if (incompleteIndex >= 0) throw friendlyError(`A transação ${incompleteIndex + 1} não possui proveniência completa do lote.`);
+    const expectedHashes = await Promise.all(transactions.map(transaction => buildHash(lot.contaBancariaId, transaction)));
     const hashes = new Set<string>();
     transactions.forEach((transaction, index) => {
       if (!validateDate(transaction.data_transacao) || !/^\d{4}-\d{2}-\d{2}$/.test(transaction.data_transacao)) throw friendlyError(`Data inválida na transação ${index + 1}.`);
@@ -652,11 +724,13 @@ export const conciliacoesService = {
       if (transaction.descricao_original !== undefined && !transaction.descricao_original.trim()) throw friendlyError(`A descrição original da transação ${index + 1} não pode ficar vazia.`);
       if (!Number.isFinite(transaction.valor) || transaction.valor === 0) throw friendlyError(`Valor inválido na transação ${index + 1}.`);
       if (!Number.isInteger(transaction.valor_centavos) || transaction.valor_centavos !== Math.round(transaction.valor * 100) || transaction.valor_centavos === 0) throw friendlyError(`Valor em centavos inválido na transação ${index + 1}.`);
-      if (transaction.confianca_extracao !== undefined && (!Number.isFinite(transaction.confianca_extracao) || transaction.confianca_extracao < 0 || transaction.confianca_extracao > 1)) throw friendlyError(`Confiança de extração inválida na transação ${index + 1}.`);
-      if (transaction.arquivo_nome !== undefined && (transaction.arquivo_nome !== lot.fileName || transaction.arquivo_hash !== lot.fileHash || transaction.extrato_lote_id !== lot.id)) throw friendlyError(`A origem do arquivo da transação ${index + 1} não corresponde ao lote.`);
+      if (!Number.isFinite(transaction.confianca_extracao) || transaction.confianca_extracao < 0.85 || transaction.confianca_extracao > 1) throw friendlyError(`Confiança de extração inválida na transação ${index + 1}.`);
+      if (transaction.estado_revisao !== 'valida') throw friendlyError(`A transação ${index + 1} não está no estado valida.`);
+      if (!Number.isInteger(transaction.pagina_origem) || !Number.isInteger(transaction.linha_origem) || transaction.pagina_origem < 1 || transaction.linha_origem < 1) throw friendlyError(`A origem página/linha da transação ${index + 1} é inválida.`);
+      if (transaction.arquivo_nome !== lot.fileName || transaction.arquivo_hash !== lot.fileHash || transaction.extrato_lote_id !== lot.id) throw friendlyError(`A origem do arquivo da transação ${index + 1} não corresponde ao lote.`);
       if (!transaction.descricao_banco.trim()) throw friendlyError(`A descrição da transação ${index + 1} não pode ficar vazia.`);
       if ((transaction.valor > 0 && transaction.tipo_movimento !== 'credito') || (transaction.valor < 0 && transaction.tipo_movimento !== 'debito')) throw friendlyError(`A direção da transação ${index + 1} não corresponde ao valor.`);
-      if (!/^[a-f0-9]{64}$/.test(transaction.hash_transacao) || hashes.has(transaction.hash_transacao)) throw friendlyError(`A transação ${index + 1} possui hash inválido ou duplicado.`);
+      if (!/^[a-f0-9]{64}$/.test(transaction.hash_transacao) || transaction.hash_transacao !== expectedHashes[index] || hashes.has(transaction.hash_transacao)) throw friendlyError(`A transação ${index + 1} possui hash inválido ou duplicado.`);
       hashes.add(transaction.hash_transacao);
     });
     const { data, error } = await supabase.rpc('confirmar_importacao_extrato', {
@@ -676,7 +750,9 @@ export const conciliacoesService = {
       p_metadata: {
         ...effectiveMetadata,
         consistency,
-        rawTransactions: transactions.map(({ data_original, descricao_original, valor_original, data_transacao, descricao_banco, valor, tipo_movimento, pagina_origem, linha_origem, formato_arquivo, origem_extracao, origem_arquivo }) => ({ data_original, descricao_original, valor_original, data_transacao, descricao_banco, valor, tipo_movimento, pagina_origem, linha_origem, formato_arquivo, origem_extracao, origem_arquivo })),
+        pendingReviewCount: 0,
+        reviewState: 'validated',
+        rawTransactions: transactions.map(({ data_original, descricao_original, valor_original, valor_centavos, data_transacao, descricao_banco, numero_documento, valor, tipo_movimento, hash_transacao, pagina_origem, linha_origem, formato_arquivo, origem_extracao, origem_arquivo, confianca_extracao, estado_revisao, motivo_alerta }) => ({ data_original, descricao_original, valor_original, valor_centavos, data_transacao, descricao_banco, numero_documento, valor, tipo_movimento, hash_transacao, pagina_origem, linha_origem, formato_arquivo, origem_extracao, origem_arquivo, confianca_extracao, estado_revisao, motivo_alerta })),
       },
     });
     if (error) {
@@ -689,12 +765,19 @@ export const conciliacoesService = {
 
   cleanupImport: async (lot: ImportLotDraft): Promise<void> => {
     if (lot.status === 'confirmado') return;
+    const storageSegments = lot.storagePath.split('/');
+    if (storageSegments.length !== 3 || storageSegments[0] !== lot.userId || storageSegments[1] !== lot.id || !storageSegments[2]) {
+      throw friendlyError('O caminho do arquivo não corresponde ao lote para limpeza.');
+    }
     const { data: persistedLot, error: statusLookupError } = await supabase
       .from('extratos_bancarios')
-      .select('status')
+      .select('status, storage_path, importado_por')
       .eq('id', lot.id)
       .maybeSingle();
     if (!statusLookupError && persistedLot?.status === 'confirmado') return;
+    if (!statusLookupError && persistedLot && (persistedLot.storage_path !== lot.storagePath || persistedLot.importado_por !== lot.userId)) {
+      throw friendlyError('Os metadados do arquivo não correspondem ao lote para limpeza.');
+    }
 
     let cancelError: unknown = statusLookupError;
     if (!statusLookupError && persistedLot?.status === 'em_validacao') {
