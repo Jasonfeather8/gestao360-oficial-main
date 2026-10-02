@@ -154,8 +154,12 @@ export interface ImportLotRecord {
   arquivo_nome: string;
   data_inicio: string | null;
   data_fim: string | null;
+  total_transacoes: number;
   metadata: unknown;
   status: ImportLotStatus;
+  importado_por: string;
+  created_at: string;
+  lastAction?: { action: string; occurredAt: string | null } | null;
 }
 
 export interface ImportLotDraft {

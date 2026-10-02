@@ -958,7 +958,7 @@ export default function Conciliacao() {
       />
 
       {(role === 'master' || role === 'gerente') && (
-        <ConciliacaoImportLotsPanel lots={importLots} selectedMonth={selectedMonth} />
+        <ConciliacaoImportLotsPanel lots={importLots} contas={contas} selectedContaId={selectedContaId} />
       )}
 
       <ConciliacaoClosingPanel

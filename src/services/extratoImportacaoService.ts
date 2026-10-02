@@ -407,12 +407,32 @@ export const extratoImportacaoService = {
   getConciliationLots: async (accountId: string): Promise<ImportLotRecord[]> => {
     const { data, error } = await supabase
       .from('extratos_bancarios')
-      .select('id, conta_bancaria_id, arquivo_nome, data_inicio, data_fim, metadata, status')
+      .select('id, conta_bancaria_id, arquivo_nome, data_inicio, data_fim, total_transacoes, metadata, status, importado_por, created_at')
       .eq('conta_bancaria_id', accountId)
-      .in('status', ['em_revisao', 'confirmado'])
+      .in('status', ['em_validacao', 'em_revisao', 'erro', 'cancelado', 'confirmado'])
       .order('created_at', { ascending: false });
     if (error) throw error;
-    return (data || []) as ImportLotRecord[];
+
+    const lots = (data || []) as ImportLotRecord[];
+    const lotIds = lots.map(lot => lot.id);
+    if (lotIds.length === 0) return lots;
+
+    const { data: auditEntries, error: auditError } = await supabase
+      .from('auditoria_logs')
+      .select('registro_id, acao, data_hora')
+      .eq('tabela_afetada', 'extratos_bancarios')
+      .in('registro_id', lotIds)
+      .order('data_hora', { ascending: false });
+
+    if (auditError) return lots;
+
+    const latestActions = new Map<string, { action: string; occurredAt: string | null }>();
+    for (const entry of auditEntries || []) {
+      if (!latestActions.has(entry.registro_id)) {
+        latestActions.set(entry.registro_id, { action: entry.acao, occurredAt: entry.data_hora });
+      }
+    }
+    return lots.map(lot => ({ ...lot, lastAction: latestActions.get(lot.id) || null }));
   },
 
   prepareImportFile: async (file: File, contaBancariaId: string, userId: string): Promise<{ lot: ImportLotDraft; preview: ImportPreview }> => {
