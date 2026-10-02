@@ -218,6 +218,13 @@ test('Etapa 6 — decisão Master usa RPC e a documentação mantém a autoridad
   assert.match(readProjectFile('docs/modulo-1-gestao-previsoes.md'), /A aprovação Master não é concedida pelo formulário: a role e as funções autorizadas continuam sendo a autoridade do banco/);
 });
 
+test('Etapa 6 — fila Master vazia é um resultado válido da RPC de disponibilidade', async () => {
+  await withMockRpc([], async calls => {
+    assert.deepEqual(await masterApprovalService.getQueue(), []);
+    assert.deepEqual(calls, [{ name: 'get_master_approval_queue', args: undefined }]);
+  });
+});
+
 test('Etapa 6 — transações bancárias permanecem imutáveis e campos comerciais ficam no payload de lançamento', () => {
   const securityEvidence = readProjectFile('docs/fase-3-seguranca-auditoria.md');
   const launchService = readProjectFile('src/services/lancamentosService.ts');
