@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, Clock3, FileSpreadsheet, ShieldAlert, UserRound } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Clock3, FileSearch, FileSpreadsheet, ShieldAlert, UserRound } from 'lucide-react';
 import type { ContaBancaria } from '../../types';
 import type { ImportLotRecord } from '../../types/extratoImportacao';
 
@@ -6,6 +6,8 @@ type ConciliacaoImportLotsPanelProps = {
   lots: ImportLotRecord[];
   contas: ContaBancaria[];
   selectedContaId: string;
+  canReviewTechnical: boolean;
+  onOpenTechnicalReview: (lot: ImportLotRecord) => void;
 };
 
 const asRecord = (value: unknown): Record<string, unknown> | null =>
@@ -54,13 +56,13 @@ const formatDateTime = (value: string) => {
 
 const statusDetails: Record<ImportLotRecord['status'], { label: string; classes: string; next: string }> = {
   em_validacao: { label: 'Em validação', classes: 'bg-blue-100 text-blue-800', next: 'Acompanhar a validação do lote' },
-  em_revisao: { label: 'Em revisão', classes: 'bg-amber-100 text-amber-800', next: 'Aguardar análise conforme o fluxo atual' },
+  em_revisao: { label: 'Em revisão', classes: 'bg-amber-100 text-amber-800', next: 'Abrir revisão técnica; confirmação segue bloqueada até validação' },
   erro: { label: 'Erro', classes: 'bg-red-100 text-red-800', next: 'Consultar o erro; nenhuma ação disponível nesta tela' },
   cancelado: { label: 'Cancelado', classes: 'bg-neutral-100 text-neutral-700', next: 'Nenhuma ação pendente para este lote' },
   confirmado: { label: 'Confirmado', classes: 'bg-emerald-100 text-emerald-800', next: 'Nenhuma ação pendente para este lote' },
 };
 
-export default function ConciliacaoImportLotsPanel({ lots, contas, selectedContaId }: ConciliacaoImportLotsPanelProps) {
+export default function ConciliacaoImportLotsPanel({ lots, contas, selectedContaId, canReviewTechnical, onOpenTechnicalReview }: ConciliacaoImportLotsPanelProps) {
   const selectedAccountName = contas.find(account => account.id === selectedContaId)?.nome || 'Conta não identificada';
 
   return (
@@ -150,8 +152,13 @@ export default function ConciliacaoImportLotsPanel({ lots, contas, selectedConta
                 {lot.status === 'em_revisao' && (
                   <div className="mt-3 space-y-3">
                     <p className="flex items-start gap-2 rounded-xl bg-white/80 px-3 py-2 text-[10px] font-bold text-amber-900">
-                      <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" /> Pendências em modo somente leitura.
+                      <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" /> Pendências em revisão técnica; nenhuma ação desta seção aprova o lote ou altera dados financeiros.
                     </p>
+                    {canReviewTechnical && (
+                      <button type="button" onClick={() => onOpenTechnicalReview(lot)} className="inline-flex items-center gap-2 rounded-xl bg-amber-700 px-4 py-2.5 text-[9px] font-black uppercase tracking-widest text-white shadow-sm hover:bg-amber-800">
+                        <FileSearch className="h-4 w-4" /> Abrir revisão técnica
+                      </button>
+                    )}
                     {reviewReasons.length > 0 && (
                       <div className="text-[9px] text-neutral-700">
                         <p className="mb-1 font-black uppercase tracking-widest">Motivos da revisão</p>

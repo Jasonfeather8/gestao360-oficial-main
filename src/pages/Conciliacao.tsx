@@ -30,12 +30,13 @@ import { useConciliacao, useConciliacaoImportLots, useContas, useLancamentos, us
 import ConciliacaoHeader from '../components/conciliacao/ConciliacaoHeader';
 import ConciliacaoCompetenceSummary from '../components/conciliacao/ConciliacaoCompetenceSummary';
 import ConciliacaoImportLotsPanel from '../components/conciliacao/ConciliacaoImportLotsPanel';
+import RevisaoTecnicaLoteModal from '../components/conciliacao/RevisaoTecnicaLoteModal';
 import ConciliacaoClosingPanel from '../components/conciliacao/ConciliacaoClosingPanel';
 import ConciliacaoPendingTransfers from '../components/conciliacao/ConciliacaoPendingTransfers';
 import { useAuth } from '../hooks/useAuth';
 import { useUIStore } from '../store/uiStore';
 import { LancamentoFinanceiro, TransacaoBanco, TransferenciaBancaria, TransferenciaDestinoSugestao } from '../types';
-import { ImportConfirmationMetadata, ImportLotDraft, ImportMode, ImportPreview, ImportReviewDecisionItem, ImportReviewSubmissionMetadata } from '../types/extratoImportacao';
+import { ImportConfirmationMetadata, ImportLotDraft, ImportLotRecord, ImportMode, ImportPreview, ImportReviewDecisionItem, ImportReviewSubmissionMetadata } from '../types/extratoImportacao';
 import { attachImportLotMetadata, buildCsvTransactions, parseCsv, validateImportConsistency } from '../services/conciliacoesService';
 import Button from '../components/Button';
 import ImportarExtratoModal from '../components/conciliacao/ImportarExtratoModal';
@@ -126,6 +127,7 @@ export default function Conciliacao() {
   const [selectedLancamentoIds, setSelectedLancamentoIds] = useState<string[]>([]);
   const [directionFilter, setDirectionFilter] = useState<'todos' | 'entrada' | 'saida'>('todos');
   const [reviewFilter, setReviewFilter] = useState<'todos' | 'pendencias'>('todos');
+  const [technicalReviewLot, setTechnicalReviewLot] = useState<ImportLotRecord | null>(null);
   const [operationNotice, setOperationNotice] = useState<string | null>(null);
   const [completionCandidate, setCompletionCandidate] = useState<{ id: number; requestedAt: number; contaId: string; mes: string } | null>(null);
   const [completionNotice, setCompletionNotice] = useState<string | null>(null);
@@ -958,8 +960,15 @@ export default function Conciliacao() {
       />
 
       {(role === 'master' || role === 'gerente') && (
-        <ConciliacaoImportLotsPanel lots={importLots} contas={contas} selectedContaId={selectedContaId} />
+        <ConciliacaoImportLotsPanel
+          lots={importLots}
+          contas={contas}
+          selectedContaId={selectedContaId}
+          canReviewTechnical={role === 'master' || role === 'gerente'}
+          onOpenTechnicalReview={setTechnicalReviewLot}
+        />
       )}
+      {technicalReviewLot && <RevisaoTecnicaLoteModal lot={technicalReviewLot} onClose={() => setTechnicalReviewLot(null)} />}
 
       <ConciliacaoClosingPanel
         selectedMonth={selectedMonth}

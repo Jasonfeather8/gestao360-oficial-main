@@ -18,7 +18,7 @@ import { diagnosticLogger } from '../services/diagnosticLogger';
 import { implantacaoService } from '../services/implantacaoService';
 import { masterApprovalService } from '../services/masterApprovalService';
 import { extratoImportacaoService } from '../services/extratoImportacaoService';
-import { ImportConfirmationMetadata, ImportLotDraft, ImportReviewSubmissionMetadata, ImportTransaction } from '../types/extratoImportacao';
+import { ImportConfirmationMetadata, ImportLotDraft, ImportReviewSubmissionMetadata, ImportTransaction, TechnicalImportReviewDecision } from '../types/extratoImportacao';
 
 export function useNotifications() {
   const queryClient = useQueryClient();
@@ -370,6 +370,16 @@ export function useConciliacaoImportLots(accountId: string) {
     queryFn: () => extratoImportacaoService.getConciliationLots(accountId),
     enabled: (role === 'master' || role === 'gerente') && Boolean(accountId),
   });
+}
+
+export function useRegistrarRevisaoTecnicaImportacao() {
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: ({ lotId, decision }: { lotId: string; decision: TechnicalImportReviewDecision }) =>
+      extratoImportacaoService.registerTechnicalReviewDecision(lotId, decision),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['conciliationImportLots'] }),
+  });
+  return { registrarDecisaoTecnica: mutation.mutateAsync, isRegistrandoDecisaoTecnica: mutation.isPending };
 }
 
 export function useConciliacao() {

@@ -148,6 +148,25 @@ export interface ImportPreview {
 
 export type ImportLotStatus = 'em_validacao' | 'em_revisao' | 'confirmado' | 'cancelado' | 'erro';
 
+export type TechnicalImportReviewAction =
+  | 'marcar_duplicado'
+  | 'marcar_cabecalho_rodape'
+  | 'excluir_composicao_financeira'
+  | 'reprocessar_pagina'
+  | 'substituir_arquivo'
+  | 'registrar_pagina_ausente'
+  | 'registrar_pagina_ilegivel';
+
+export interface TechnicalImportReviewDecision {
+  acao: TechnicalImportReviewAction;
+  justificativa: string;
+  pagina?: number;
+  transactionIndex?: number;
+  hash_transacao?: string;
+  registrado_por?: string;
+  registrado_em?: string;
+}
+
 export interface ImportLotRecord {
   id: string;
   conta_bancaria_id: string;

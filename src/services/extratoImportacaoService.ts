@@ -15,6 +15,7 @@ import {
   ImportReviewSubmissionMetadata,
   ImportTransaction,
   PdfParseResult,
+  TechnicalImportReviewDecision,
 } from '../types/extratoImportacao';
 
 type XlsxParseResult = {
@@ -625,6 +626,35 @@ export const extratoImportacaoService = {
     const { data, error } = await supabase.rpc('enviar_importacao_para_revisao', {
       p_lote_id: lot.id,
       p_metadata_revisao,
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  registerTechnicalReviewDecision: async (lotId: string, decision: TechnicalImportReviewDecision) => {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(lotId)) throw friendlyError('O identificador do lote é inválido.');
+    if (!decision.justificativa.trim()) throw friendlyError('A justificativa da decisão técnica é obrigatória.');
+    const validActions = ['marcar_duplicado', 'marcar_cabecalho_rodape', 'excluir_composicao_financeira', 'reprocessar_pagina', 'substituir_arquivo', 'registrar_pagina_ausente', 'registrar_pagina_ilegivel'];
+    if (!validActions.includes(decision.acao)) throw friendlyError('A ação técnica é inválida.');
+    const transactionAction = ['marcar_duplicado', 'marcar_cabecalho_rodape', 'excluir_composicao_financeira'].includes(decision.acao);
+    const pageAction = ['reprocessar_pagina', 'registrar_pagina_ausente', 'registrar_pagina_ilegivel'].includes(decision.acao);
+    const hasValidIndex = Number.isInteger(decision.transactionIndex) && (decision.transactionIndex as number) >= 0;
+    const hasValidHash = /^[a-f0-9]{64}$/i.test(decision.hash_transacao || '');
+    if (transactionAction && (!hasValidIndex && !hasValidHash || decision.hash_transacao && !hasValidHash)) {
+      throw friendlyError('A ação exige índice ou hash válido da transação.');
+    }
+    if (pageAction && (!Number.isInteger(decision.pagina) || (decision.pagina as number) < 1)) {
+      throw friendlyError('A ação exige uma página válida.');
+    }
+    const { data, error } = await supabase.rpc('registrar_revisao_tecnica_importacao', {
+      p_lote_id: lotId,
+      p_decisao: {
+        acao: decision.acao,
+        justificativa: decision.justificativa.trim(),
+        ...(decision.pagina !== undefined ? { pagina: decision.pagina } : {}),
+        ...(decision.transactionIndex !== undefined ? { transactionIndex: decision.transactionIndex } : {}),
+        ...(decision.hash_transacao ? { hash_transacao: decision.hash_transacao } : {}),
+      },
     });
     if (error) throw error;
     return data;
