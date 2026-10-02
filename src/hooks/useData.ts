@@ -17,7 +17,8 @@ import { cofreService } from '../services/cofreService';
 import { diagnosticLogger } from '../services/diagnosticLogger';
 import { implantacaoService } from '../services/implantacaoService';
 import { masterApprovalService } from '../services/masterApprovalService';
-import { ImportConfirmationMetadata, ImportLotDraft, ImportTransaction } from '../types/extratoImportacao';
+import { extratoImportacaoService } from '../services/extratoImportacaoService';
+import { ImportConfirmationMetadata, ImportLotDraft, ImportReviewSubmissionMetadata, ImportTransaction } from '../types/extratoImportacao';
 
 export function useNotifications() {
   const queryClient = useQueryClient();
@@ -420,6 +421,11 @@ export function useConciliacao() {
     onSuccess: invalidateConfirmedImportData,
   });
 
+  const submitImportForReviewMutation = useMutation({
+    mutationFn: ({ lot, metadata }: { lot: ImportLotDraft; metadata: ImportReviewSubmissionMetadata }) =>
+      extratoImportacaoService.submitImportForReview(lot, metadata),
+  });
+
   const linkMutation = useMutation({
     mutationFn: conciliacoesService.linkConciliacao,
     onSuccess: () => {
@@ -482,9 +488,11 @@ export function useConciliacao() {
     isCleaning: cleanupMutation.isPending,
     prepareImport: prepareImportMutation.mutateAsync,
     confirmImport: confirmImportMutation.mutateAsync,
+    submitImportForReview: submitImportForReviewMutation.mutateAsync,
     cancelImport: conciliacoesService.cleanupImport,
     isPreparingImport: prepareImportMutation.isPending,
     isConfirmingImport: confirmImportMutation.isPending,
+    isSubmittingImportReview: submitImportForReviewMutation.isPending,
     linkConciliacao: linkMutation.mutateAsync,
     unlinkConciliacao: unlinkMutation.mutateAsync,
     cleanupTransacoes: cleanupMutation.mutateAsync,

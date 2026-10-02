@@ -34,7 +34,7 @@ import ConciliacaoPendingTransfers from '../components/conciliacao/ConciliacaoPe
 import { useAuth } from '../hooks/useAuth';
 import { useUIStore } from '../store/uiStore';
 import { LancamentoFinanceiro, TransacaoBanco, TransferenciaBancaria, TransferenciaDestinoSugestao } from '../types';
-import { ImportConfirmationMetadata, ImportLotDraft, ImportMode, ImportPreview } from '../types/extratoImportacao';
+import { ImportConfirmationMetadata, ImportLotDraft, ImportMode, ImportPreview, ImportReviewDecisionItem, ImportReviewSubmissionMetadata } from '../types/extratoImportacao';
 import { attachImportLotMetadata, buildCsvTransactions, parseCsv, validateImportConsistency } from '../services/conciliacoesService';
 import Button from '../components/Button';
 import ImportarExtratoModal from '../components/conciliacao/ImportarExtratoModal';
@@ -59,6 +59,14 @@ const getLancamentoAdjustedCents = (lancamento: LancamentoFinanceiro): number =>
   return lancamento.tipo === 'saida' ? -adjustedCents : adjustedCents;
 };
 
+const isValidReviewDate = (value?: string) => {
+  const date = value?.trim() || '';
+  const brDate = date.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  const normalized = brDate ? `${brDate[3]}-${brDate[2].padStart(2, '0')}-${brDate[1].padStart(2, '0')}` : date;
+  const parsed = new Date(`${normalized}T00:00:00Z`);
+  return /^\d{4}-\d{2}-\d{2}$/.test(normalized) && !Number.isNaN(parsed.valueOf()) && parsed.toISOString().slice(0, 10) === normalized;
+};
+
 export default function Conciliacao() {
   const navigate = useNavigate();
   const {
@@ -68,11 +76,13 @@ export default function Conciliacao() {
     fechamentos = [],
     prepareImport,
     confirmImport,
+    submitImportForReview,
     fecharPeriodo,
     decidirFechamento,
     cancelImport,
     isPreparingImport,
     isConfirmingImport,
+    isSubmittingImportReview,
     isFechandoPeriodo,
     isDecidindoFechamento,
     workspaceDataUpdatedAt,
@@ -142,6 +152,7 @@ export default function Conciliacao() {
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
   const [csvPreviewRows, setCsvPreviewRows] = useState<Array<Record<string, string>>>([]);
   const [importPreviewTab, setImportPreviewTab] = useState<'entradas' | 'saidas' | 'pendencias'>('entradas');
+  const [importReviewDecisions, setImportReviewDecisions] = useState<Record<number, ImportReviewDecisionItem>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importTraceIdRef = useRef<string | null>(null);
 
@@ -309,8 +320,8 @@ export default function Conciliacao() {
     importTraceIdRef.current = traceId;
     const startedAt = Date.now();
     let currentStage = 'cancelamento do lote';
-    if (isPreparingImport || isConfirmingImport) {
-      diagnosticLogger.warn(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: cancelamento bloqueado por operação em andamento`, { etapa: currentStage, preparando: isPreparingImport, confirmando: isConfirmingImport });
+    if (isPreparingImport || isConfirmingImport || isSubmittingImportReview) {
+      diagnosticLogger.warn(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: cancelamento bloqueado por operação em andamento`, { etapa: currentStage, preparando: isPreparingImport, confirmando: isConfirmingImport, enviandoRevisao: isSubmittingImportReview });
       return false;
     }
     if (importLot) {
@@ -341,10 +352,123 @@ export default function Conciliacao() {
     setCsvHeaders([]);
     setCsvPreviewRows([]);
     setImportPreviewTab('entradas');
+    setImportReviewDecisions({});
     setColumnMapping({ data: '', valor: '', descricao: '', documento: '' });
     if (fileInputRef.current) fileInputRef.current.value = '';
     diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: estado de importação limpo`, { resultado: 'sucesso' });
   };
+
+  const handleEditPendingJustification = (index: number) => {
+    setImportReviewDecisions(current => {
+      if (!current[index]) return current;
+      const updated = { ...current };
+      delete updated[index];
+      return updated;
+    });
+    setImportError('');
+  };
+
+  const handleConfirmPendingReview = (index: number, justification: string) => {
+    const pending = importPreview?.pendingReviews?.[index];
+    if (!pending || !isValidReviewDate(pending.data_transacao || pending.data_original) || !Number.isFinite(pending.valor) || !pending.tipo_movimento || !(pending.descricao?.trim() || pending.trecho.trim()) || !Number.isFinite(pending.confianca_extracao) || pending.confianca_extracao < 0.85 || pending.confianca_extracao > 1 || !justification.trim()) {
+      setImportError('Não é possível confirmar a leitura: confira data, valor, movimento, descrição/trecho, confiança mínima de 0,85 e justificativa.');
+      return;
+    }
+    setImportReviewDecisions(current => ({
+      ...current,
+      [index]: { pendencia_index: index, categoria: 'conciliavel', decisao: 'aprovar', justificativa: justification.trim() },
+    }));
+    setImportError('');
+  };
+
+  const handleRequestPendingReprocessing = async (index: number, justification: string) => {
+    const pendingReviews = importPreview?.pendingReviews || [];
+    if (!importLot || !pendingReviews[index] || !justification.trim()) {
+      setImportError('Informe uma justificativa para solicitar o reprocessamento.');
+      return;
+    }
+    if (isPreparingImport || isConfirmingImport || isSubmittingImportReview) {
+      setImportError('Aguarde a operação atual terminar antes de solicitar o reprocessamento.');
+      return;
+    }
+    const decision: ImportReviewDecisionItem = {
+      pendencia_index: index,
+      categoria: 'revisao_tecnica',
+      decisao: 'rejeitar',
+      justificativa: justification.trim(),
+    };
+    const decisions = Object.values({ ...importReviewDecisions, [index]: decision }).filter((value): value is ImportReviewDecisionItem => Boolean(value));
+    setImportReviewDecisions(current => ({ ...current, [index]: decision }));
+    setImportError('');
+    try {
+      await submitImportForReview({
+        lot: importLot,
+        metadata: {
+          reviewState: 'in_review',
+          pendingReviews,
+          reviewReasons: Array.from(new Set(decisions.map(item => item.categoria))),
+          reviewDecisions: decisions,
+        },
+      });
+      alert('Reprocessamento solicitado com sucesso. A importação não foi confirmada.');
+      resetImportState();
+      setModalOpen('isImportarCSVOpen', false);
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : 'Não foi possível solicitar o reprocessamento.');
+    }
+  };
+
+  const handleSubmitImportReview = async () => {
+    if (!importLot || !importPreview) return;
+    if (isPreparingImport || isConfirmingImport || isSubmittingImportReview) {
+      setImportError('Aguarde a operação atual terminar antes de enviar o lote para conciliação.');
+      return;
+    }
+    const pendingReviews = importPreview.pendingReviews || [];
+    if (!pendingReviews.length) {
+      setImportError('Não há pendências para enviar à conciliação.');
+      return;
+    }
+    const criticalErrors = importPreview.consistency.criticalErrors.filter(issue => issue.code !== 'pending_review');
+    if (criticalErrors.length) {
+      setImportError('Envio bloqueado: corrija primeiro os erros críticos indicados no lote.');
+      return;
+    }
+    const missingDecision = pendingReviews.findIndex((pending, index) => {
+      const decision = importReviewDecisions[index];
+      return !decision || decision.categoria !== 'conciliavel' || decision.decisao !== 'aprovar' || !decision.justificativa.trim()
+        || !isValidReviewDate(pending.data_transacao || pending.data_original)
+        || !Number.isFinite(pending.valor)
+        || !pending.tipo_movimento
+        || !(pending.descricao?.trim() || pending.trecho.trim())
+        || !Number.isFinite(pending.confianca_extracao)
+        || pending.confianca_extracao < 0.85
+        || pending.confianca_extracao > 1;
+    });
+    if (missingDecision >= 0) {
+      const decision = importReviewDecisions[missingDecision];
+      setImportError(decision?.categoria === 'revisao_tecnica'
+        ? 'Envio bloqueado: há item solicitado para reprocessamento. Todas as pendências precisam ser confirmadas como conciliáveis.'
+        : 'Envio bloqueado: confirme individualmente todas as pendências válidas, com justificativa.');
+      setImportPreviewTab('pendencias');
+      return;
+    }
+    const metadata: ImportReviewSubmissionMetadata = {
+      reviewState: 'in_review',
+      pendingReviews,
+      reviewReasons: ['conciliavel'],
+      reviewDecisions: pendingReviews.map((_, index) => importReviewDecisions[index]),
+    };
+    try {
+      await submitImportForReview({ lot: importLot, metadata });
+      alert('Lote enviado para conciliação com sucesso. A importação ainda não foi confirmada.');
+      resetImportState();
+      setModalOpen('isImportarCSVOpen', false);
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : 'Não foi possível enviar o lote para conciliação.');
+    }
+  };
+
   const handleImportCSVSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!importLot || !importPreview) return;
@@ -358,6 +482,7 @@ export default function Conciliacao() {
         diagnosticLogger.warn(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: confirmação bloqueada por pendências de revisão`, { pendencias: importPreview.pendingReviews.length });
         throw new Error('Existem itens pendentes de revisão. Nenhum item ambíguo pode ser confirmado silenciosamente.');
       }
+      if (importPreview.consistency.criticalErrors.length) throw new Error(`A confirmação foi bloqueada: ${importPreview.consistency.criticalErrors.map(issue => issue.message).join(' ')}`);
       if (importPreview.fileType === 'csv' || importPreview.fileType === 'xlsx') {
         let rows: Array<Record<string, string>>;
         currentStage = `parsing ${importPreview.fileType.toUpperCase()}`;
@@ -1109,8 +1234,14 @@ export default function Conciliacao() {
             importError={importError}
             handleImportCancel={handleImportCancel}
             handleImportCSVSubmit={handleImportCSVSubmit}
+            reviewDecisions={importReviewDecisions}
+            onEditPendingJustification={handleEditPendingJustification}
+            onConfirmPendingReview={handleConfirmPendingReview}
+            onRequestPendingReprocessing={handleRequestPendingReprocessing}
+            onSubmitImportReview={handleSubmitImportReview}
             isPreparingImport={isPreparingImport}
             isConfirmingImport={isConfirmingImport}
+            isSubmittingImportReview={isSubmittingImportReview}
           />
         )}
 

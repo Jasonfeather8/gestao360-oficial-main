@@ -568,7 +568,9 @@ export const extratoImportacaoService = {
     if (metadata.reviewReasons.some(reason => !['revisao_tecnica', 'conciliavel'].includes(reason))) throw friendlyError('A categoria da revisão é inválida.');
     if (metadata.reviewDecisions?.some(decision =>
       !decision
-      || !/^[a-f0-9]{64}$/.test(decision.hash_transacao)
+      || (decision.hash_transacao !== undefined && !/^[a-f0-9]{64}$/.test(decision.hash_transacao))
+      || (!decision.hash_transacao && (!Number.isInteger(decision.pendencia_index) || (decision.pendencia_index as number) < 0 || (decision.pendencia_index as number) >= metadata.pendingReviews.length))
+      || (decision.pendencia_index !== undefined && (!Number.isInteger(decision.pendencia_index) || decision.pendencia_index < 0 || decision.pendencia_index >= metadata.pendingReviews.length))
       || !['revisao_tecnica', 'conciliavel'].includes(decision.categoria)
       || !['aprovar', 'rejeitar'].includes(decision.decisao)
       || typeof decision.justificativa !== 'string'
@@ -579,8 +581,9 @@ export const extratoImportacaoService = {
       reviewState: 'in_review',
       pendingReviews: metadata.pendingReviews,
       reviewReasons: metadata.reviewReasons,
-      reviewDecisions: metadata.reviewDecisions?.map(({ hash_transacao, categoria, decisao, justificativa }) => ({
-        hash_transacao,
+      reviewDecisions: metadata.reviewDecisions?.map(({ hash_transacao, pendencia_index, categoria, decisao, justificativa }) => ({
+        ...(hash_transacao ? { hash_transacao } : {}),
+        ...(pendencia_index !== undefined ? { pendencia_index } : {}),
         categoria,
         decisao,
         justificativa: justificativa.trim(),

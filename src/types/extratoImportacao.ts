@@ -12,7 +12,8 @@ export type ImportAlertSeverity = 'critical' | 'warning' | 'info';
 export type ImportConfidence = number;
 
 export interface ImportReviewDecisionItem {
-  hash_transacao: string;
+  hash_transacao?: string;
+  pendencia_index?: number;
   categoria: ImportReviewCategory;
   decisao: ImportReviewDecision;
   justificativa: string;
