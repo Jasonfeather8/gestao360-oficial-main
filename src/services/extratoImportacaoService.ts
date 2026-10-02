@@ -11,6 +11,7 @@ import {
   ImportMode,
   ImportParserMetadata,
   ImportPreview,
+  ImportReviewSubmissionMetadata,
   ImportTransaction,
   PdfParseResult,
 } from '../types/extratoImportacao';
@@ -560,6 +561,39 @@ export const extratoImportacaoService = {
     }
   },
 
+  submitImportForReview: async (lot: ImportLotDraft, metadata: ImportReviewSubmissionMetadata) => {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(lot.id)) throw friendlyError('O identificador do lote é inválido.');
+    if (lot.status !== 'em_validacao') throw friendlyError('Somente lotes em validação podem ser enviados para revisão.');
+    if (!metadata || metadata.reviewState !== 'in_review' || !Array.isArray(metadata.pendingReviews) || !Array.isArray(metadata.reviewReasons) || (metadata.pendingReviews.length === 0 && metadata.reviewReasons.length === 0)) throw friendlyError('O contrato de revisão precisa informar ao menos uma pendência ou motivo.');
+    if (metadata.reviewReasons.some(reason => !['revisao_tecnica', 'conciliavel'].includes(reason))) throw friendlyError('A categoria da revisão é inválida.');
+    if (metadata.reviewDecisions?.some(decision =>
+      !decision
+      || !/^[a-f0-9]{64}$/.test(decision.hash_transacao)
+      || !['revisao_tecnica', 'conciliavel'].includes(decision.categoria)
+      || !['aprovar', 'rejeitar'].includes(decision.decisao)
+      || typeof decision.justificativa !== 'string'
+      || !decision.justificativa.trim()
+    )) throw friendlyError('O contrato das decisões de revisão é inválido.');
+
+    const p_metadata_revisao: ImportReviewSubmissionMetadata = {
+      reviewState: 'in_review',
+      pendingReviews: metadata.pendingReviews,
+      reviewReasons: metadata.reviewReasons,
+      reviewDecisions: metadata.reviewDecisions?.map(({ hash_transacao, categoria, decisao, justificativa }) => ({
+        hash_transacao,
+        categoria,
+        decisao,
+        justificativa: justificativa.trim(),
+      })),
+    };
+    const { data, error } = await supabase.rpc('enviar_importacao_para_revisao', {
+      p_lote_id: lot.id,
+      p_metadata_revisao,
+    });
+    if (error) throw error;
+    return data;
+  },
+
   confirmImport: async (lot: ImportLotDraft, transactions: ImportTransaction[], metadata: ImportConfirmationMetadata = {}) => {
     if (!lot.id || !lot.contaBancariaId || !lot.userId || !lot.fileName || !lot.mimeType || !lot.storagePath) throw friendlyError('O contrato do lote está incompleto.');
     if (lot.status !== 'em_validacao') throw friendlyError('Somente lotes em validação podem ser confirmados.');
@@ -681,7 +715,7 @@ export const extratoImportacaoService = {
     }
 
     let cancelError: unknown = statusLookupError;
-    if (!statusLookupError && persistedLot?.status === 'em_validacao') {
+    if (!statusLookupError && (persistedLot?.status === 'em_validacao' || persistedLot?.status === 'em_revisao')) {
       try {
         const { error } = await supabase.rpc('cancelar_importacao_extrato', { p_lote_id: lot.id });
         cancelError = error;
@@ -708,5 +742,6 @@ export const extratoImportacaoService = {
 };
 
 export const prepareImportFile = extratoImportacaoService.prepareImportFile;
+export const submitImportForReview = extratoImportacaoService.submitImportForReview;
 export const confirmImport = extratoImportacaoService.confirmImport;
 export const cleanupImport = extratoImportacaoService.cleanupImport;

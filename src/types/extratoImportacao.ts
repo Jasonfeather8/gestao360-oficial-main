@@ -5,9 +5,25 @@ export type ImportMode = 'entrada' | 'saida' | 'ambos';
 export type ImportSourceOrigin = 'texto' | 'ocr' | 'estruturado';
 export type ImportFileOrigin = 'pdf_texto' | 'pdf_ocr' | 'csv' | 'xlsx' | 'ofx_estruturado';
 export type ImportReviewStatus = 'valida' | 'pendente_revisao';
-export type ImportBatchReviewState = 'validated' | 'has_pending_reviews';
+export type ImportBatchReviewState = 'validated' | 'has_pending_reviews' | 'in_review';
+export type ImportReviewCategory = 'revisao_tecnica' | 'conciliavel';
+export type ImportReviewDecision = 'aprovar' | 'rejeitar';
 export type ImportAlertSeverity = 'critical' | 'warning' | 'info';
 export type ImportConfidence = number;
+
+export interface ImportReviewDecisionItem {
+  hash_transacao: string;
+  categoria: ImportReviewCategory;
+  decisao: ImportReviewDecision;
+  justificativa: string;
+}
+
+export interface ImportReviewSubmissionMetadata {
+  reviewState: 'in_review';
+  pendingReviews: ImportReviewItem[];
+  reviewReasons: ImportReviewCategory[];
+  reviewDecisions?: ImportReviewDecisionItem[];
+}
 
 export interface ImportParserTotals {
   entries?: number;
@@ -75,6 +91,7 @@ export interface ImportReviewItem {
   linha_origem?: number;
   origem_extracao: ImportSourceOrigin;
   confianca_extracao: ImportConfidence;
+  categoria?: ImportReviewCategory;
   motivos: string[];
   trecho: string;
 }
@@ -126,7 +143,7 @@ export interface ImportPreview {
   consistency: ImportConsistencyState;
 }
 
-export type ImportLotStatus = 'em_validacao' | 'confirmado' | 'cancelado' | 'erro';
+export type ImportLotStatus = 'em_validacao' | 'em_revisao' | 'confirmado' | 'cancelado' | 'erro';
 
 export interface ImportLotDraft {
   id: string;
@@ -162,6 +179,8 @@ export interface ImportConfirmationMetadata {
   alerts?: ImportParserAlert[];
   pendingReviewCount?: number;
   reviewState?: ImportBatchReviewState;
+  reviewReasons?: ImportReviewCategory[];
+  reviewDecisions?: ImportReviewDecisionItem[];
 }
 
 export interface CsvParseResult {
