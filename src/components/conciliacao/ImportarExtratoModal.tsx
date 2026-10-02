@@ -52,6 +52,7 @@ interface ImportarExtratoModalProps {
   csvPreviewRows: Array<Record<string, string>>;
   importError: string;
   handleImportCancel: () => Promise<boolean>;
+  onSubmitCriticalErrorsForReview: () => Promise<void>;
   handleImportCSVSubmit: (event: React.FormEvent) => Promise<void>;
   reviewDecisions: Record<number, ImportReviewDecisionItem>;
   onEditPendingJustification: (index: number) => void;
@@ -83,6 +84,7 @@ export default function ImportarExtratoModal({
   csvPreviewRows,
   importError,
   handleImportCancel,
+  onSubmitCriticalErrorsForReview,
   handleImportCSVSubmit,
   reviewDecisions,
   onEditPendingJustification,
@@ -108,6 +110,11 @@ export default function ImportarExtratoModal({
       && Number.isFinite(pending.confianca_extracao) && pending.confianca_extracao >= 0.85 && pending.confianca_extracao <= 1;
   });
   const isBusy = isPreparingImport || isConfirmingImport || isSubmittingImportReview;
+  const requestImportCancel = () => {
+    if (isBusy) return;
+    if (importLot && !window.confirm('Cancelar este lote? O arquivo temporário será removido e o registro histórico do lote será mantido. Nenhuma transação bancária será apagada.')) return;
+    void handleImportCancel();
+  };
   const confirmReadingEnabled = Boolean(selectedPending
     && isValidReviewDate(selectedPending.data_transacao || selectedPending.data_original)
     && Number.isFinite(selectedPending.valor)
@@ -120,14 +127,15 @@ export default function ImportarExtratoModal({
 
   return (
     <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={handleImportCancel} className="absolute inset-0 bg-black/60 backdrop-blur-xs" />
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={requestImportCancel} className="absolute inset-0 bg-black/60 backdrop-blur-xs" />
       <motion.form initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} onSubmit={handleImportCSVSubmit} className="bg-white w-full max-w-[600px] rounded-[40px] shadow-2xl border-2 border-neutral-100 flex flex-col relative z-20 overflow-hidden">
+        <input type="file" ref={fileInputRef} onChange={(event) => { const file = event.target.files?.[0]; event.currentTarget.value = ''; if (file) void processFile(file); }} accept=".csv,.xlsx,.pdf,application/pdf,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden" />
         <header className="px-10 py-8 border-b bg-neutral-50/50 flex justify-between items-center shrink-0">
           <div>
             <h2 className="text-xl font-black uppercase tracking-tighter">Motor de Importação</h2>
             <p className="text-[10px] text-primary uppercase font-black tracking-widest mt-1">Transforme arquivos brutos em inteligência financeira</p>
           </div>
-          <button type="button" onClick={handleImportCancel} className="p-3 hover:bg-neutral-200 rounded-2xl transition-all">
+          <button type="button" onClick={requestImportCancel} className="p-3 hover:bg-neutral-200 rounded-2xl transition-all">
             <X className="w-6 h-6 text-neutral-400" />
           </button>
         </header>
@@ -162,10 +170,9 @@ export default function ImportarExtratoModal({
 
           {!importPreview ? (
             <div
-              onClick={() => fileInputRef.current?.click()} 
+              onClick={() => fileInputRef.current?.click()}
               className="border-4 border-dashed rounded-[32px] p-16 text-center cursor-pointer bg-neutral-50 hover:bg-neutral-100 hover:border-primary/30 transition-all group"
             >
-              <input type="file" ref={fileInputRef} onChange={(e) => e.target.files?.[0] && void processFile(e.target.files[0])} accept=".csv,.xlsx,.pdf,application/pdf,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden" />
               <div className="w-20 h-20 bg-white rounded-3xl shadow-sm flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform">
                 <Upload className="w-10 h-10 text-primary" />
               </div>
@@ -342,19 +349,31 @@ export default function ImportarExtratoModal({
 
         <footer className="px-8 py-6 border-t bg-neutral-50/50 flex flex-wrap justify-end items-center gap-3 shrink-0">
           {(importError || (pendingReviews.length > 0 && !allPendingApproved && !hasCriticalErrors)) && <p className="mr-auto w-full text-[10px] font-black text-red-600 uppercase">{importError || (reviewDecisions && Object.values(reviewDecisions).some(decision => decision.categoria === 'revisao_tecnica') ? 'Envio bloqueado: há solicitação de reprocessamento; todas as pendências devem ser confirmadas como conciliáveis.' : 'Envio bloqueado: revise individualmente e confirme todas as pendências válidas com justificativa.')}</p>}
-          {pendingReviews.length > 0 ? (
+          {hasCriticalErrors ? (
             <>
-              <button type="button" disabled={isBusy} onClick={() => { setImportPreviewTab('pendencias'); setSelectedPendingIndex(0); }} className="rounded-xl bg-amber-100 px-4 py-3 text-[9px] font-black uppercase text-amber-900 disabled:opacity-40">Revisar pendências</button>
-              <Button type="button" disabled={!allPendingApproved || hasCriticalErrors || isBusy} onClick={() => void onSubmitImportReview()}>
-                {isSubmittingImportReview ? 'Enviando...' : 'Enviar para conciliação'}
+              <Button type="button" disabled={isBusy} onClick={() => void onSubmitCriticalErrorsForReview()}>
+                {isSubmittingImportReview ? 'Enviando...' : 'Enviar para revisão técnica'}
               </Button>
+              <button type="button" disabled={isBusy} onClick={() => fileInputRef.current?.click()} className="inline-flex items-center gap-2 rounded-xl bg-amber-100 px-4 py-3 text-[9px] font-black uppercase text-amber-900 disabled:opacity-40"><RotateCcw className="h-4 w-4" />Reprocessar/substituir arquivo</button>
+              <button type="button" disabled={isBusy} onClick={requestImportCancel} className="px-4 py-3 text-[9px] font-black uppercase text-neutral-500 tracking-widest hover:text-neutral-900 transition-colors disabled:opacity-40">Cancelar lote</button>
             </>
           ) : (
-            <Button type="submit" disabled={!importPreview || isBusy || hasCriticalErrors || Boolean(importPreview?.consistency.criticalErrors.length) || ((importPreview?.fileType === 'csv' || importPreview?.fileType === 'xlsx') && (!columnMapping.data || !columnMapping.valor || !columnMapping.descricao))}>
-              {isPreparingImport || isConfirmingImport ? 'Processando...' : 'Confirmar importação'}
-            </Button>
+            <>
+              {pendingReviews.length > 0 ? (
+                <>
+                  <button type="button" disabled={isBusy} onClick={() => { setImportPreviewTab('pendencias'); setSelectedPendingIndex(0); }} className="rounded-xl bg-amber-100 px-4 py-3 text-[9px] font-black uppercase text-amber-900 disabled:opacity-40">Revisar pendências</button>
+                  <Button type="button" disabled={!allPendingApproved || isBusy} onClick={() => void onSubmitImportReview()}>
+                    {isSubmittingImportReview ? 'Enviando...' : 'Enviar para conciliação'}
+                  </Button>
+                </>
+              ) : (
+                <Button type="submit" disabled={!importPreview || isBusy || Boolean(importPreview?.consistency.criticalErrors.length) || ((importPreview?.fileType === 'csv' || importPreview?.fileType === 'xlsx') && (!columnMapping.data || !columnMapping.valor || !columnMapping.descricao))}>
+                  {isPreparingImport || isConfirmingImport ? 'Processando...' : 'Confirmar importação'}
+                </Button>
+              )}
+              <button type="button" disabled={isBusy} onClick={requestImportCancel} className="px-4 py-3 text-[9px] font-black uppercase text-neutral-500 tracking-widest hover:text-neutral-900 transition-colors disabled:opacity-40">Cancelar lote</button>
+            </>
           )}
-          <button type="button" disabled={isBusy} onClick={() => void handleImportCancel()} className="px-4 py-3 text-[9px] font-black uppercase text-neutral-500 tracking-widest hover:text-neutral-900 transition-colors disabled:opacity-40">Cancelar lote</button>
         </footer>
       </motion.form>
     </div>

@@ -433,6 +433,12 @@ export function useConciliacao() {
   const submitImportForReviewMutation = useMutation({
     mutationFn: ({ lot, metadata }: { lot: ImportLotDraft; metadata: ImportReviewSubmissionMetadata }) =>
       extratoImportacaoService.submitImportForReview(lot, metadata),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['conciliationImportLots'] }),
+  });
+
+  const cancelImportMutation = useMutation({
+    mutationFn: conciliacoesService.cleanupImport,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['conciliationImportLots'] }),
   });
 
   const linkMutation = useMutation({
@@ -498,7 +504,7 @@ export function useConciliacao() {
     prepareImport: prepareImportMutation.mutateAsync,
     confirmImport: confirmImportMutation.mutateAsync,
     submitImportForReview: submitImportForReviewMutation.mutateAsync,
-    cancelImport: conciliacoesService.cleanupImport,
+    cancelImport: cancelImportMutation.mutateAsync,
     isPreparingImport: prepareImportMutation.isPending,
     isConfirmingImport: confirmImportMutation.isPending,
     isSubmittingImportReview: submitImportForReviewMutation.isPending,

@@ -24,6 +24,8 @@ export interface ImportReviewSubmissionMetadata {
   pendingReviews: ImportReviewItem[];
   reviewReasons: ImportReviewCategory[];
   reviewDecisions?: ImportReviewDecisionItem[];
+  criticalErrors?: ImportConsistencyIssue[];
+  preview?: ImportPreview;
 }
 
 export interface ImportParserTotals {

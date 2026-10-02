@@ -240,6 +240,22 @@ export default function Conciliacao() {
     }
   };
 
+  const preserveImportAttempt = async () => {
+    if (!importLot || !importPreview || importLot.status === 'em_revisao') return;
+    await submitImportForReview({
+      lot: importLot,
+      metadata: {
+        reviewState: 'in_review',
+        pendingReviews: importPreview.pendingReviews || [],
+        reviewReasons: ['revisao_tecnica'],
+        reviewDecisions: Object.values(importReviewDecisions),
+        criticalErrors: importPreview.consistency.criticalErrors,
+        preview: importPreview,
+      },
+    });
+    setImportLot(current => current?.id === importLot.id ? { ...current, status: 'em_revisao' } : current);
+  };
+
   const processFile = async (file: File) => {
     const traceId = crypto.randomUUID();
     importTraceIdRef.current = traceId;
@@ -254,14 +270,20 @@ export default function Conciliacao() {
     });
     setImportError('');
     if (importLot) {
-      currentStage = 'limpeza do lote anterior';
-      diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: iniciando cancelamento do lote anterior`, { contaId: importLot.contaBancariaId });
-      if (!(await handleImportCancel())) {
-        diagnosticLogger.warn(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: processamento bloqueado ao cancelar o lote anterior`, { etapa: currentStage, duracaoMs: Date.now() - startedAt });
+      currentStage = 'preservação e cancelamento do lote anterior';
+      diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: preservando e cancelando lote anterior`, { contaId: importLot.contaBancariaId });
+      try {
+        await preserveImportAttempt();
+        await cancelImport(importLot);
+        resetImportState();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Não foi possível preservar e encerrar o lote anterior.';
+        setImportError(message);
+        diagnosticLogger.error(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: falha ao preservar lote anterior`, { etapa: currentStage, duracaoMs: Date.now() - startedAt, erro: error });
         return;
       }
       importTraceIdRef.current = traceId;
-      diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: lote anterior cancelado e estado limpo`, { etapa: currentStage, resultado: 'sucesso', duracaoMs: Date.now() - startedAt });
+      diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: lote anterior preservado e cancelado`, { etapa: currentStage, resultado: 'sucesso', duracaoMs: Date.now() - startedAt });
     }
     try {
       currentStage = 'validação da sessão';
@@ -328,12 +350,13 @@ export default function Conciliacao() {
     }
     if (importLot) {
       try {
-        diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: cancelamento do lote iniciado`, { contaId: importLot.contaBancariaId });
+        diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: preservação e cancelamento do lote iniciados`, { contaId: importLot.contaBancariaId });
+        await preserveImportAttempt();
         await cancelImport(importLot);
         diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: cancelamento do lote concluído`, { resultado: 'sucesso', duracaoMs: Date.now() - startedAt });
       } catch (error) {
         diagnosticLogger.error(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: falha na etapa ${currentStage}`, { etapa: currentStage, duracaoMs: Date.now() - startedAt, erro: error });
-        setImportError('Não foi possível remover o arquivo temporário. Tente cancelar novamente.');
+        setImportError(error instanceof Error ? error.message : 'Não foi possível remover o arquivo temporário. Tente cancelar novamente.');
         return false;
       }
     } else {
@@ -417,6 +440,33 @@ export default function Conciliacao() {
       setModalOpen('isImportarCSVOpen', false);
     } catch (error) {
       setImportError(error instanceof Error ? error.message : 'Não foi possível solicitar o reprocessamento.');
+    }
+  };
+
+  const handleSubmitCriticalErrorsForReview = async () => {
+    if (!importLot || !importPreview) return;
+    if (isPreparingImport || isConfirmingImport || isSubmittingImportReview) {
+      setImportError('Aguarde a operação atual terminar antes de enviar o lote para revisão técnica.');
+      return;
+    }
+    const criticalErrors = importPreview.consistency.criticalErrors;
+    if (!criticalErrors.length) return;
+    try {
+      await submitImportForReview({
+        lot: importLot,
+        metadata: {
+          reviewState: 'in_review',
+          pendingReviews: importPreview.pendingReviews || [],
+          reviewReasons: ['revisao_tecnica'],
+          criticalErrors,
+          preview: importPreview,
+        },
+      });
+      alert('Lote enviado para revisão técnica com sucesso. O arquivo e o histórico foram preservados.');
+      resetImportState();
+      setModalOpen('isImportarCSVOpen', false);
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : 'Não foi possível enviar o lote para revisão técnica.');
     }
   };
 
@@ -1242,6 +1292,7 @@ export default function Conciliacao() {
             csvPreviewRows={csvPreviewRows}
             importError={importError}
             handleImportCancel={handleImportCancel}
+            onSubmitCriticalErrorsForReview={handleSubmitCriticalErrorsForReview}
             handleImportCSVSubmit={handleImportCSVSubmit}
             reviewDecisions={importReviewDecisions}
             onEditPendingJustification={handleEditPendingJustification}

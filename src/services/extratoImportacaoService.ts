@@ -599,6 +599,8 @@ export const extratoImportacaoService = {
         decisao,
         justificativa: justificativa.trim(),
       })),
+      ...(metadata.criticalErrors ? { criticalErrors: metadata.criticalErrors } : {}),
+      ...(metadata.preview ? { preview: metadata.preview } : {}),
     };
     const { data, error } = await supabase.rpc('enviar_importacao_para_revisao', {
       p_lote_id: lot.id,
