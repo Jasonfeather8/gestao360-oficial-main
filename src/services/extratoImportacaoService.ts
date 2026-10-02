@@ -12,6 +12,7 @@ import {
   ImportMode,
   ImportParserMetadata,
   ImportPreview,
+  ImportPreviewComparison,
   ImportReviewSubmissionMetadata,
   ImportTransaction,
   PdfParseResult,
@@ -287,6 +288,59 @@ const summarize = (transactions: ImportTransaction[]) => {
   };
 };
 
+const asRecord = (value: unknown): Record<string, unknown> | null =>
+  typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null;
+
+const previewSnapshot = (preview: ImportPreview | null, fallback: { count: number; entries: number; exits: number; pages?: number; openingBalance?: number; closingBalance?: number }) => ({
+  count: preview?.transactions.length ?? fallback.count,
+  entries: preview?.totalEntries ?? fallback.entries,
+  exits: preview?.totalExits ?? fallback.exits,
+  pages: preview?.pages ?? fallback.pages,
+  openingBalance: preview?.openingBalance ?? fallback.openingBalance,
+  closingBalance: preview?.closingBalance ?? fallback.closingBalance,
+});
+
+const buildReprocessComparison = (
+  previousLot: { id: string; tentativa_numero?: number; metadata: unknown; total_transacoes: number; total_entradas?: number; total_saidas?: number; paginas?: number; saldo_inicial?: number | null; saldo_final?: number | null },
+  currentPreview: ImportPreview,
+  currentAttempt: number,
+): ImportPreviewComparison => {
+  const previousMetadata = asRecord(previousLot.metadata);
+  const previousPreviewRecord = asRecord(previousMetadata?.preview);
+  const previousPreview = previousPreviewRecord && Array.isArray(previousPreviewRecord.transactions)
+    ? previousPreviewRecord as unknown as ImportPreview
+    : null;
+  const previous = previewSnapshot(previousPreview, {
+    count: previousLot.total_transacoes,
+    entries: previousLot.total_entradas || 0,
+    exits: previousLot.total_saidas || 0,
+    pages: previousLot.paginas,
+    openingBalance: previousLot.saldo_inicial ?? undefined,
+    closingBalance: previousLot.saldo_final ?? undefined,
+  });
+  const current = previewSnapshot(currentPreview, { count: 0, entries: 0, exits: 0 });
+  const previousHashes = new Set(previousPreview?.transactions.map(transaction => transaction.hash_transacao) || []);
+  const currentHashes = new Set(currentPreview.transactions.map(transaction => transaction.hash_transacao));
+  return {
+    previousLotId: previousLot.id,
+    previousAttempt: previousLot.tentativa_numero || 1,
+    currentAttempt,
+    comparedAt: new Date().toISOString(),
+    previous,
+    current,
+    differences: {
+      count: current.count - previous.count,
+      entries: Number((current.entries - previous.entries).toFixed(2)),
+      exits: Number((current.exits - previous.exits).toFixed(2)),
+      openingBalance: current.openingBalance === undefined || previous.openingBalance === undefined ? undefined : Number((current.openingBalance - previous.openingBalance).toFixed(2)),
+      closingBalance: current.closingBalance === undefined || previous.closingBalance === undefined ? undefined : Number((current.closingBalance - previous.closingBalance).toFixed(2)),
+      pages: current.pages === undefined || previous.pages === undefined ? undefined : current.pages - previous.pages,
+      addedHashes: currentPreview.transactions.filter(transaction => !previousHashes.has(transaction.hash_transacao)).map(transaction => transaction.hash_transacao),
+      removedHashes: previousPreview?.transactions.filter(transaction => !currentHashes.has(transaction.hash_transacao)).map(transaction => transaction.hash_transacao) || [],
+    },
+  };
+};
+
 const cents = (value: number): number => Math.round(value * 100);
 
 const addConsistencyIssue = (issues: ImportConsistencyIssue[], code: string, message: string, transactionIndex?: number) => {
@@ -408,7 +462,7 @@ export const extratoImportacaoService = {
   getConciliationLots: async (accountId: string): Promise<ImportLotRecord[]> => {
     const { data, error } = await supabase
       .from('extratos_bancarios')
-      .select('id, conta_bancaria_id, arquivo_nome, data_inicio, data_fim, total_transacoes, metadata, status, importado_por, created_at')
+      .select('id, conta_bancaria_id, arquivo_nome, data_inicio, data_fim, total_transacoes, metadata, status, importado_por, tentativa_numero, lote_origem_id, reprocessado_por, reprocessado_em, created_at')
       .eq('conta_bancaria_id', accountId)
       .in('status', ['em_validacao', 'em_revisao', 'erro', 'cancelado', 'confirmado'])
       .order('created_at', { ascending: false });
@@ -436,7 +490,7 @@ export const extratoImportacaoService = {
     return lots.map(lot => ({ ...lot, lastAction: latestActions.get(lot.id) || null }));
   },
 
-  prepareImportFile: async (file: File, contaBancariaId: string, userId: string): Promise<{ lot: ImportLotDraft; preview: ImportPreview }> => {
+  prepareImportFile: async (file: File, contaBancariaId: string, userId: string, reprocessFromId?: string): Promise<{ lot: ImportLotDraft; preview: ImportPreview }> => {
     if (!contaBancariaId) throw friendlyError('Selecione a conta bancária antes de importar.');
     if (file.size <= 0 || file.size > MAX_IMPORT_SIZE) throw friendlyError('O arquivo deve ter até 20 MB.');
     const { data: authData, error: authError } = await supabase.auth.getUser();
@@ -465,21 +519,30 @@ export const extratoImportacaoService = {
       const { error: uploadError } = await supabase.storage.from('bank-statements').upload(storagePath, file, { contentType: lot.mimeType, upsert: false });
       if (uploadError) throw friendlyError(`Não foi possível enviar o arquivo: ${uploadError.message}`);
 
-      const { error: lotError } = await supabase.rpc('preparar_importacao_extrato', {
-        p_lote: {
-          id: lot.id,
-          conta_bancaria_id: lot.contaBancariaId,
-          arquivo_nome: lot.fileName,
-          arquivo_tamanho: lot.fileSize,
-          arquivo_mime_type: lot.mimeType,
-          arquivo_hash: lot.fileHash,
-          storage_path: lot.storagePath,
-          importado_por: lot.userId,
-          ...(lot.formatoArquivo ? { formato_arquivo: lot.formatoArquivo } : {}),
-          ...(lot.origemExtracao ? { origem_extracao: lot.origemExtracao } : {}),
-        },
-      });
+      const lotPayload = {
+        id: lot.id,
+        conta_bancaria_id: lot.contaBancariaId,
+        arquivo_nome: lot.fileName,
+        arquivo_tamanho: lot.fileSize,
+        arquivo_mime_type: lot.mimeType,
+        arquivo_hash: lot.fileHash,
+        storage_path: lot.storagePath,
+        importado_por: lot.userId,
+        ...(lot.formatoArquivo ? { formato_arquivo: lot.formatoArquivo } : {}),
+        ...(lot.origemExtracao ? { origem_extracao: lot.origemExtracao } : {}),
+      };
+      const { data: persistedLot, error: lotError } = reprocessFromId
+        ? await supabase.rpc('preparar_reprocessamento_importacao', { p_lote_id: reprocessFromId, p_novo_lote: lotPayload })
+        : await supabase.rpc('preparar_importacao_extrato', { p_lote: lotPayload });
       if (lotError) throw lotError;
+      if (persistedLot) {
+        const persisted = persistedLot as Record<string, unknown>;
+        lot.status = persisted.status as ImportLotDraft['status'];
+        lot.tentativaNumero = typeof persisted.tentativa_numero === 'number' ? persisted.tentativa_numero : undefined;
+        lot.loteOrigemId = typeof persisted.lote_origem_id === 'string' ? persisted.lote_origem_id : null;
+        lot.reprocessadoPor = typeof persisted.reprocessado_por === 'string' ? persisted.reprocessado_por : null;
+        lot.reprocessadoEm = typeof persisted.reprocessado_em === 'string' ? persisted.reprocessado_em : null;
+      }
 
       if (fileType === 'csv' || fileType === 'xlsx') {
         const parsed: XlsxParseResult = fileType === 'csv'
@@ -591,6 +654,38 @@ export const extratoImportacaoService = {
       await extratoImportacaoService.cleanupImport(lot);
       throw error;
     }
+  },
+
+  reprocessImportLot: async (lotId: string, userId: string): Promise<{ lot: ImportLotDraft; preview: ImportPreview }> => {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(lotId)) throw friendlyError('O identificador do lote é inválido.');
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    if (authError || !authData.user || authData.user.id !== userId) throw friendlyError('Usuário não autenticado para reprocessar o lote.');
+    const { data: previousData, error: previousError } = await supabase
+      .from('extratos_bancarios')
+      .select('id, conta_bancaria_id, arquivo_nome, arquivo_tamanho, arquivo_mime_type, arquivo_hash, storage_path, formato_arquivo, origem_extracao, total_transacoes, total_entradas, total_saidas, paginas, saldo_inicial, saldo_final, tentativa_numero, metadata, status')
+      .eq('id', lotId)
+      .maybeSingle();
+    if (previousError) throw previousError;
+    if (!previousData || previousData.status !== 'em_revisao') throw friendlyError('Somente lotes em revisão podem ser reprocessados.');
+
+    const { data: fileBlob, error: downloadError } = await supabase.storage.from('bank-statements').download(previousData.storage_path);
+    if (downloadError || !fileBlob) throw friendlyError(`Não foi possível preservar o arquivo original para a nova tentativa: ${downloadError?.message || 'arquivo indisponível'}`);
+    const file = new File([fileBlob], previousData.arquivo_nome, { type: previousData.arquivo_mime_type });
+    const result = await extratoImportacaoService.prepareImportFile(file, previousData.conta_bancaria_id, userId, lotId);
+    const comparison = buildReprocessComparison(previousData, result.preview, result.lot.tentativaNumero || (previousData.tentativa_numero || 1) + 1);
+    const { error: previewError } = await supabase.rpc('registrar_preview_reprocessamento_importacao', {
+      p_lote_id: result.lot.id,
+      p_preview: result.preview,
+      p_comparacao: comparison,
+    });
+    if (previewError) {
+      await extratoImportacaoService.cleanupImport(result.lot);
+      throw previewError;
+    }
+    return {
+      lot: result.lot,
+      preview: { ...result.preview, reprocessComparison: comparison },
+    };
   },
 
   submitImportForReview: async (lot: ImportLotDraft, metadata: ImportReviewSubmissionMetadata) => {
@@ -808,6 +903,7 @@ export const extratoImportacaoService = {
 };
 
 export const prepareImportFile = extratoImportacaoService.prepareImportFile;
+export const reprocessImportLot = extratoImportacaoService.reprocessImportLot;
 export const submitImportForReview = extratoImportacaoService.submitImportForReview;
 export const confirmImport = extratoImportacaoService.confirmImport;
 export const cleanupImport = extratoImportacaoService.cleanupImport;

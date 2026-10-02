@@ -144,6 +144,7 @@ export interface ImportPreview {
   parserMetadata?: ImportParserMetadata;
   reportedTransactionCount?: number;
   consistency: ImportConsistencyState;
+  reprocessComparison?: ImportPreviewComparison;
 }
 
 export type ImportLotStatus = 'em_validacao' | 'em_revisao' | 'confirmado' | 'cancelado' | 'erro';
@@ -167,6 +168,39 @@ export interface TechnicalImportReviewDecision {
   registrado_em?: string;
 }
 
+export interface ImportPreviewComparison {
+  previousLotId: string;
+  previousAttempt: number;
+  currentAttempt: number;
+  comparedAt: string;
+  previous: {
+    count: number;
+    entries: number;
+    exits: number;
+    openingBalance?: number;
+    closingBalance?: number;
+    pages?: number;
+  };
+  current: {
+    count: number;
+    entries: number;
+    exits: number;
+    openingBalance?: number;
+    closingBalance?: number;
+    pages?: number;
+  };
+  differences: {
+    count: number;
+    entries: number;
+    exits: number;
+    openingBalance?: number;
+    closingBalance?: number;
+    pages?: number;
+    addedHashes: string[];
+    removedHashes: string[];
+  };
+}
+
 export interface ImportLotRecord {
   id: string;
   conta_bancaria_id: string;
@@ -177,6 +211,10 @@ export interface ImportLotRecord {
   metadata: unknown;
   status: ImportLotStatus;
   importado_por: string;
+  tentativa_numero?: number;
+  lote_origem_id?: string | null;
+  reprocessado_por?: string | null;
+  reprocessado_em?: string | null;
   created_at: string;
   lastAction?: { action: string; occurredAt: string | null } | null;
 }
@@ -193,6 +231,10 @@ export interface ImportLotDraft {
   formatoArquivo?: ImportFileFormat;
   origemExtracao?: ImportSourceOrigin;
   status?: ImportLotStatus;
+  tentativaNumero?: number;
+  loteOrigemId?: string | null;
+  reprocessadoPor?: string | null;
+  reprocessadoEm?: string | null;
 }
 
 export interface ImportConfirmationMetadata {
@@ -217,6 +259,7 @@ export interface ImportConfirmationMetadata {
   reviewState?: ImportBatchReviewState;
   reviewReasons?: ImportReviewCategory[];
   reviewDecisions?: ImportReviewDecisionItem[];
+  reprocessComparison?: ImportPreviewComparison;
 }
 
 export interface CsvParseResult {

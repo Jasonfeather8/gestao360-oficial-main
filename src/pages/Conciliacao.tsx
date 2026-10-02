@@ -77,12 +77,14 @@ export default function Conciliacao() {
     diferencas = [],
     fechamentos = [],
     prepareImport,
+    reprocessImport,
     confirmImport,
     submitImportForReview,
     fecharPeriodo,
     decidirFechamento,
     cancelImport,
     isPreparingImport,
+    isReprocessingImport,
     isConfirmingImport,
     isSubmittingImportReview,
     isFechandoPeriodo,
@@ -256,6 +258,37 @@ export default function Conciliacao() {
       },
     });
     setImportLot(current => current?.id === importLot.id ? { ...current, status: 'em_revisao' } : current);
+  };
+
+  const handleReprocessLot = async (lot: ImportLotRecord) => {
+    if (!user?.id || isReprocessingImport) return;
+    setImportError('');
+    try {
+      const result = await reprocessImport({ lotId: lot.id, userId: user.id });
+      setTechnicalReviewLot(null);
+      setSelectedImportContaId(result.lot.contaBancariaId);
+      setImportMode('ambos');
+      setImportLot(result.lot);
+      setImportPreview(result.preview);
+      setImportPreviewTab('entradas');
+      setImportReviewDecisions({});
+      setCsvContentText('');
+      const headers = result.preview.sourceHeaders || Object.keys(result.preview.firstRows[0] || {});
+      setCsvHeaders(headers);
+      setCsvPreviewRows(result.preview.firstRows);
+      setColumnMapping({
+        data: headers.find(header => /dat/i.test(header)) || '',
+        valor: headers.find(header => /val/i.test(header)) || '',
+        descricao: headers.find(header => /desc/i.test(header)) || '',
+        documento: headers.find(header => /doc/i.test(header)) || '',
+      });
+      setModalOpen('isImportarCSVOpen', true);
+      setOperationNotice(`Nova tentativa ${result.lot.tentativaNumero || '—'} criada; o resultado anterior foi preservado para comparação.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Não foi possível criar a nova tentativa de processamento.';
+      setImportError(message);
+      setOperationNotice(message);
+    }
   };
 
   const processFile = async (file: File) => {
@@ -542,7 +575,7 @@ export default function Conciliacao() {
         currentStage = `parsing ${importPreview.fileType.toUpperCase()}`;
         diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: parsing ${importPreview.fileType.toUpperCase()} iniciado`, { headers: csvHeaders.length, modo: importMode });
         if (importPreview.fileType === 'csv') {
-          rows = parseCsv(csvContentText).rows;
+          rows = csvContentText ? parseCsv(csvContentText).rows : importPreview.sourceRows || [];
         } else {
           rows = importPreview.sourceRows || [];
         }
@@ -579,6 +612,7 @@ export default function Conciliacao() {
         alerts: importPreview.parserMetadata?.alerts,
         pendingReviewCount: importPreview.pendingReviews?.length || 0,
         reviewState: importPreview.pendingReviews?.length ? 'has_pending_reviews' : 'validated',
+        reprocessComparison: importPreview.reprocessComparison,
       };
       diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: metadata de confirmação montada`, {
         paginas: confirmationMetadata.pages,
@@ -968,7 +1002,7 @@ export default function Conciliacao() {
           onOpenTechnicalReview={setTechnicalReviewLot}
         />
       )}
-      {technicalReviewLot && <RevisaoTecnicaLoteModal lot={technicalReviewLot} onClose={() => setTechnicalReviewLot(null)} />}
+      {technicalReviewLot && <RevisaoTecnicaLoteModal lot={technicalReviewLot} onClose={() => setTechnicalReviewLot(null)} onReprocessLot={handleReprocessLot} isReprocessingLot={isReprocessingImport} />}
 
       <ConciliacaoClosingPanel
         selectedMonth={selectedMonth}

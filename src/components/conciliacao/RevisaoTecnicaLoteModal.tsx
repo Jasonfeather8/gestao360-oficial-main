@@ -7,6 +7,8 @@ import type { ImportLotRecord, TechnicalImportReviewAction, TechnicalImportRevie
 type Props = {
   lot: ImportLotRecord;
   onClose: () => void;
+  onReprocessLot: (lot: ImportLotRecord) => Promise<void>;
+  isReprocessingLot: boolean;
 };
 
 type RecordValue = Record<string, unknown>;
@@ -31,7 +33,7 @@ const actionLabels: Record<TechnicalImportReviewAction, string> = {
   registrar_pagina_ilegivel: 'Registrar página ilegível',
 };
 
-export default function RevisaoTecnicaLoteModal({ lot, onClose }: Props) {
+export default function RevisaoTecnicaLoteModal({ lot, onClose, onReprocessLot, isReprocessingLot }: Props) {
   const { role } = useAuth();
   const { registrarDecisaoTecnica, isRegistrandoDecisaoTecnica } = useRegistrarRevisaoTecnicaImportacao();
   const [selectedAction, setSelectedAction] = useState<TechnicalImportReviewDecision | null>(null);
@@ -140,7 +142,10 @@ export default function RevisaoTecnicaLoteModal({ lot, onClose }: Props) {
             <h2 id="technical-review-title" className="mt-2 text-lg font-black text-neutral-900">{lot.arquivo_nome || 'Lote de extrato'}</h2>
             <p className="mt-1 text-[10px] font-bold text-neutral-500">Metadata técnica do lote • Não é aprovação Master nem altera dados financeiros.</p>
           </div>
-          <button type="button" onClick={onClose} aria-label="Fechar revisão técnica" className="rounded-xl p-2 text-neutral-500 hover:bg-neutral-100"><X className="h-5 w-5" /></button>
+          <div className="flex items-center gap-2">
+            {role === 'master' || role === 'gerente' ? <button type="button" onClick={() => void onReprocessLot(lot)} disabled={isReprocessingLot} className="inline-flex items-center gap-2 rounded-xl bg-amber-700 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-white disabled:cursor-not-allowed disabled:opacity-50">{isReprocessingLot ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} Reprocessar lote</button> : null}
+            <button type="button" onClick={onClose} aria-label="Fechar revisão técnica" className="rounded-xl p-2 text-neutral-500 hover:bg-neutral-100"><X className="h-5 w-5" /></button>
+          </div>
         </header>
 
         <div className="overflow-y-auto p-4 sm:p-6">
@@ -264,7 +269,7 @@ export default function RevisaoTecnicaLoteModal({ lot, onClose }: Props) {
             <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-[10px] font-black uppercase tracking-widest text-amber-950">{actionLabels[selectedAction.acao]}{selectedAction.pagina ? ` · Página ${selectedAction.pagina}` : ''}{selectedAction.transactionIndex !== undefined ? ` · Transação ${selectedAction.transactionIndex + 1}` : ''}</h3><button type="button" onClick={() => setSelectedAction(null)} className="text-[9px] font-black uppercase text-neutral-500">Cancelar</button></div>
             <label className="mt-3 block text-[9px] font-black uppercase tracking-widest text-neutral-600">Justificativa obrigatória</label>
             <textarea value={justification} onChange={event => setJustification(event.target.value)} rows={3} maxLength={2000} required placeholder="Descreva o motivo e o encaminhamento técnico..." className="mt-1 w-full resize-y rounded-xl border border-neutral-200 bg-white p-3 text-xs text-neutral-800 outline-none focus:border-amber-400" />
-            <p className="mt-1 text-[9px] text-neutral-500">Reprocessamento e substituição ficam somente como solicitação auditada; não inserem transações nem confirmam o lote.</p>
+            <p className="mt-1 text-[9px] text-neutral-500">Ações de página permanecem auditadas. “Reprocessar lote” cria uma nova tentativa e preserva o resultado anterior.</p>
             <button type="button" onClick={submitDecision} disabled={!justification.trim() || isRegistrandoDecisaoTecnica} className="mt-3 inline-flex items-center gap-2 rounded-xl bg-neutral-900 px-4 py-2.5 text-[9px] font-black uppercase tracking-widest text-white disabled:cursor-not-allowed disabled:opacity-50">
               {isRegistrandoDecisaoTecnica ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />} Registrar decisão técnica
             </button>

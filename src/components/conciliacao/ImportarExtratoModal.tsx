@@ -196,6 +196,17 @@ export default function ImportarExtratoModal({
                   <span>Registros extraídos: {importPreview.consistency.extractedCount}</span>
                   {importPreview.consistency.ocrCount > 0 && <span className="text-violet-700">Registros via OCR: {importPreview.consistency.ocrCount}</span>}
                 </div>
+                {importPreview.reprocessComparison && <div className="rounded-2xl border-2 border-indigo-100 bg-indigo-50 p-4 text-[9px] font-black uppercase text-indigo-900">
+                  <p className="tracking-widest">Comparação da tentativa {importPreview.reprocessComparison.currentAttempt} com a tentativa {importPreview.reprocessComparison.previousAttempt}</p>
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <span>Registros: {importPreview.reprocessComparison.differences.count > 0 ? '+' : ''}{importPreview.reprocessComparison.differences.count}</span>
+                    <span>Páginas: {importPreview.reprocessComparison.differences.pages === undefined ? 'não comparável' : `${importPreview.reprocessComparison.differences.pages > 0 ? '+' : ''}${importPreview.reprocessComparison.differences.pages}`}</span>
+                    <span>Entradas: {valueFormatter(importPreview.reprocessComparison.differences.entries)}</span>
+                    <span>Saídas: {valueFormatter(importPreview.reprocessComparison.differences.exits)}</span>
+                    <span>Novos hashes: {importPreview.reprocessComparison.differences.addedHashes.length}</span>
+                    <span>Hashes removidos: {importPreview.reprocessComparison.differences.removedHashes.length}</span>
+                  </div>
+                </div>}
                 {importPreview.fileType === 'pdf' && <p className="text-[10px] font-black uppercase text-neutral-500">Origem: {importPreview.sourceOrigin === 'ocr' ? 'OCR backend-only • confiança reduzida' : 'texto e layout do PDF'} • o nome do arquivo não classifica o movimento.</p>}
                 <p className="text-[10px] font-black uppercase text-neutral-500">Dados bancários extraídos somente para leitura; data, valor, descrição, direção e proveniência não são editáveis individualmente.</p>
                 {importPreview.consistency.criticalErrors.length > 0 && (

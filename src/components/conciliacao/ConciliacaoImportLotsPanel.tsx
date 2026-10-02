@@ -126,11 +126,19 @@ export default function ConciliacaoImportLotsPanel({ lots, contas, selectedConta
                     <dd className="mt-1 text-[10px] font-bold text-neutral-700">{formatDateTime(lot.created_at)}</dd>
                   </div>
                   <div>
+                    <dt className="text-[8px] font-black uppercase tracking-widest text-neutral-400">Tentativa</dt>
+                    <dd className="mt-1 text-[10px] font-bold text-neutral-700">#{lot.tentativa_numero || 1}{lot.lote_origem_id ? ` · origem ${lot.lote_origem_id}` : ''}</dd>
+                  </div>
+                  <div>
                     <dt className="text-[8px] font-black uppercase tracking-widest text-neutral-400">Responsável pela importação</dt>
                     <dd className="mt-1 flex items-center gap-1 break-all text-[10px] font-bold text-neutral-700">
                       <UserRound className="h-3 w-3 shrink-0 text-neutral-400" /> ID {lot.importado_por || 'não informado'}
                     </dd>
                   </div>
+                  {lot.reprocessado_por && <div>
+                    <dt className="text-[8px] font-black uppercase tracking-widest text-neutral-400">Solicitado por reprocessamento</dt>
+                    <dd className="mt-1 flex items-center gap-1 break-all text-[10px] font-bold text-neutral-700"><UserRound className="h-3 w-3 shrink-0 text-neutral-400" /> ID {lot.reprocessado_por}</dd>
+                  </div>}
                   <div>
                     <dt className="text-[8px] font-black uppercase tracking-widest text-neutral-400">Quantidade de erros</dt>
                     <dd className="mt-1 text-[10px] font-bold text-neutral-700">{errors}</dd>

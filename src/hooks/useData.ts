@@ -418,6 +418,11 @@ export function useConciliacao() {
       conciliacoesService.prepareImportFile(file, contaBancariaId, userId),
   });
 
+  const reprocessImportMutation = useMutation({
+    mutationFn: ({ lotId, userId }: { lotId: string; userId: string }) => extratoImportacaoService.reprocessImportLot(lotId, userId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['conciliationImportLots'] }),
+  });
+
   const invalidateConfirmedImportData = () => {
     [
       'transacoes',
@@ -516,8 +521,10 @@ export function useConciliacao() {
     submitImportForReview: submitImportForReviewMutation.mutateAsync,
     cancelImport: cancelImportMutation.mutateAsync,
     isPreparingImport: prepareImportMutation.isPending,
+    isReprocessingImport: reprocessImportMutation.isPending,
     isConfirmingImport: confirmImportMutation.isPending,
     isSubmittingImportReview: submitImportForReviewMutation.isPending,
+    reprocessImport: reprocessImportMutation.mutateAsync,
     linkConciliacao: linkMutation.mutateAsync,
     unlinkConciliacao: unlinkMutation.mutateAsync,
     cleanupTransacoes: cleanupMutation.mutateAsync,
