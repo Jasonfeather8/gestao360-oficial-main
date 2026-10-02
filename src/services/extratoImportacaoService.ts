@@ -362,6 +362,10 @@ export const validateImportConsistency = (
   const fingerprints = new Set<string>();
   let duplicateCount = 0;
   if (transactions.length === 0) addConsistencyIssue(criticalErrors, 'empty_batch', 'O lote não possui registros extraídos.');
+  if (!Number.isInteger(metadata.pages) || metadata.pages! < 1 || metadata.pages! > 15) addConsistencyIssue(criticalErrors, 'invalid_pages', 'A quantidade de páginas do lote deve estar entre 1 e 15.');
+  if (metadata.extractedCount !== undefined && metadata.extractedCount !== transactions.length) addConsistencyIssue(criticalErrors, 'count_mismatch', 'A quantidade extraída informada não confere com as transações.');
+  if (metadata.reviewState !== 'validated' && metadata.reviewState !== 'has_pending_reviews') addConsistencyIssue(criticalErrors, 'invalid_review_state', 'O lote não está no estado de revisão validado.');
+  if (metadata.pendingReviewCount !== 0 || metadata.reviewState === 'has_pending_reviews') addConsistencyIssue(criticalErrors, 'pending_review', 'O lote possui pendências de revisão ou não informou sua quantidade.');
 
   transactions.forEach((transaction, index) => {
     const valueCents = cents(transaction.valor);
@@ -373,15 +377,26 @@ export const validateImportConsistency = (
     if (transaction.descricao_original !== undefined && !transaction.descricao_original.trim()) addConsistencyIssue(criticalErrors, 'invalid_original_description', `Descrição bruta ausente na transação ${index + 1}.`, index);
     if ((transaction.valor > 0 && transaction.tipo_movimento !== 'credito') || (transaction.valor < 0 && transaction.tipo_movimento !== 'debito')) addConsistencyIssue(criticalErrors, 'direction_mismatch', `Direção incompatível com o sinal na transação ${index + 1}.`, index);
     if (!/^[a-f0-9]{64}$/.test(transaction.hash_transacao)) addConsistencyIssue(criticalErrors, 'invalid_hash', `Hash inválido na transação ${index + 1}.`, index);
-    if (transaction.confianca_extracao !== undefined && (!Number.isFinite(transaction.confianca_extracao) || transaction.confianca_extracao < 0 || transaction.confianca_extracao > 1)) addConsistencyIssue(criticalErrors, 'invalid_confidence', `Confiança de extração inválida na transação ${index + 1}.`, index);
+    if (!Number.isFinite(transaction.confianca_extracao) || transaction.confianca_extracao! < 0.85 || transaction.confianca_extracao! > 1) addConsistencyIssue(criticalErrors, 'invalid_confidence', `Confiança de extração inválida na transação ${index + 1}.`, index);
     if (metadata.sourceOrigin && transaction.origem_extracao !== metadata.sourceOrigin) addConsistencyIssue(criticalErrors, 'origin_mismatch', `Origem de extração incompatível na transação ${index + 1}.`, index);
+    const expectedFileOrigin = transaction.formato_arquivo === 'pdf'
+      ? (transaction.origem_extracao === 'ocr' ? 'pdf_ocr' : 'pdf_texto')
+      : transaction.formato_arquivo === 'csv' || transaction.formato_arquivo === 'xlsx' ? transaction.formato_arquivo : null;
+    if (!transaction.extrato_lote_id || !transaction.arquivo_nome?.trim() || !/^[a-f0-9]{64}$/.test(transaction.arquivo_hash || '')
+      || !transaction.formato_arquivo || !transaction.origem_extracao || !transaction.origem_arquivo
+      || transaction.origem_arquivo !== expectedFileOrigin) {
+      addConsistencyIssue(criticalErrors, 'missing_provenance', `Proveniência do arquivo ou da extração ausente ou inválida na transação ${index + 1}.`, index);
+    }
+    if (transaction.estado_revisao !== 'valida') addConsistencyIssue(criticalErrors, 'invalid_transaction_review_state', `A transação ${index + 1} não está validada para importação.`, index);
     if (hashes.has(transaction.hash_transacao) || fingerprints.has(fingerprint)) {
       duplicateCount += 1;
       addConsistencyIssue(criticalErrors, 'duplicate_transaction', `Transação duplicada na posição ${index + 1}.`, index);
     }
     hashes.add(transaction.hash_transacao);
     fingerprints.add(fingerprint);
-    if (metadata.pages !== undefined && (!Number.isInteger(transaction.pagina_origem) || !Number.isInteger(transaction.linha_origem) || transaction.pagina_origem! < 1 || transaction.linha_origem! < 1 || transaction.pagina_origem! > metadata.pages)) {
+    if (!Number.isInteger(transaction.pagina_origem) || !Number.isInteger(transaction.linha_origem)
+      || transaction.pagina_origem! < 1 || transaction.linha_origem! < 1
+      || !Number.isInteger(metadata.pages) || transaction.pagina_origem! > metadata.pages!) {
       addConsistencyIssue(criticalErrors, 'missing_origin', `Origem página/linha ausente ou inválida na transação ${index + 1}.`, index);
     }
   });
@@ -398,6 +413,16 @@ export const validateImportConsistency = (
     totalsDifferenceCents.exits = difference;
     if (Math.abs(difference) > 1) addConsistencyIssue(criticalErrors, 'exits_total_mismatch', `Divergência crítica no total de saídas: ${Math.abs(difference)} centavo(s).`);
     else if (difference !== 0) alerts.push({ code: 'exits_total_tolerance', message: 'Total de saídas dentro da tolerância de 1 centavo.', severity: 'warning' });
+  }
+  if (metadata.totalEntries !== undefined) {
+    const difference = cents(computedEntries) - cents(metadata.totalEntries);
+    totalsDifferenceCents.entries = difference;
+    if (!Number.isFinite(metadata.totalEntries) || metadata.totalEntries < 0 || Math.abs(difference) > 1) addConsistencyIssue(criticalErrors, 'entries_total_mismatch', `Divergência crítica no total de entradas: ${Math.abs(difference)} centavo(s).`);
+  }
+  if (metadata.totalExits !== undefined) {
+    const difference = cents(computedExits) - cents(metadata.totalExits);
+    totalsDifferenceCents.exits = difference;
+    if (!Number.isFinite(metadata.totalExits) || metadata.totalExits < 0 || Math.abs(difference) > 1) addConsistencyIssue(criticalErrors, 'exits_total_mismatch', `Divergência crítica no total de saídas: ${Math.abs(difference)} centavo(s).`);
   }
 
   let balanceDifferenceCents: number | undefined;

@@ -100,6 +100,29 @@ export default function ImportarExtratoModal({
   const pendingReviews = importPreview?.pendingReviews || [];
   const selectedPending = pendingReviews[selectedPendingIndex];
   const hasCriticalErrors = Boolean(importPreview?.consistency.criticalErrors.some(issue => issue.code !== 'pending_review'));
+  const canConfirmImport = Boolean(importPreview && importLot?.status === 'em_validacao'
+    && importPreview.consistency.criticalErrors.length === 0
+    && Number.isInteger(importPreview.pages) && importPreview.pages! >= 1 && importPreview.pages! <= 15
+    && importPreview.consistency.extractedCount > 0
+    && (importPreview.reportedTransactionCount === undefined || importPreview.reportedTransactionCount === importPreview.consistency.extractedCount)
+    && (importPreview.consistency.totalsDifferenceCents === undefined || Object.values(importPreview.consistency.totalsDifferenceCents).every(value => value !== undefined && Math.abs(value) <= 1))
+    && Math.abs(Math.round(importPreview.totalEntries * 100) - Math.round(importPreview.consistency.computedEntries * 100)) <= 1
+    && Math.abs(Math.round(importPreview.totalExits * 100) - Math.round(importPreview.consistency.computedExits * 100)) <= 1
+    && (importPreview.consistency.balanceDifferenceCents === undefined || Math.abs(importPreview.consistency.balanceDifferenceCents) <= 1)
+    && pendingReviews.length === 0
+    && importPreview.transactions.length === importPreview.consistency.extractedCount
+    && importPreview.transactions.every(transaction => Number.isInteger(transaction.pagina_origem) && transaction.pagina_origem! >= 1 && transaction.pagina_origem! <= importPreview.pages!
+      && Number.isInteger(transaction.linha_origem) && transaction.linha_origem! >= 1
+      && transaction.extrato_lote_id === importLot.id
+      && transaction.arquivo_nome === importLot.fileName
+      && transaction.arquivo_hash === importLot.fileHash
+      && transaction.formato_arquivo === importLot.formatoArquivo
+      && transaction.origem_extracao === importLot.origemExtracao
+      && transaction.origem_arquivo === (importLot.formatoArquivo === 'pdf' ? (importLot.origemExtracao === 'ocr' ? 'pdf_ocr' : 'pdf_texto') : importLot.formatoArquivo)
+      && /^[a-f0-9]{64}$/.test(transaction.hash_transacao)
+      && Number.isFinite(transaction.confianca_extracao) && transaction.confianca_extracao! >= 0.85 && transaction.confianca_extracao! <= 1
+      && transaction.estado_revisao === 'valida')
+    && ((importPreview.fileType !== 'csv' && importPreview.fileType !== 'xlsx') || Boolean(columnMapping.data && columnMapping.valor && columnMapping.descricao)));
   const allPendingApproved = pendingReviews.length > 0 && pendingReviews.every((pending, index) => {
     const decision = reviewDecisions[index];
     return decision?.categoria === 'conciliavel' && decision.decisao === 'aprovar' && Boolean(decision.justificativa.trim())
@@ -378,7 +401,7 @@ export default function ImportarExtratoModal({
                   </Button>
                 </>
               ) : (
-                <Button type="submit" disabled={!importPreview || isBusy || Boolean(importPreview?.consistency.criticalErrors.length) || ((importPreview?.fileType === 'csv' || importPreview?.fileType === 'xlsx') && (!columnMapping.data || !columnMapping.valor || !columnMapping.descricao))}>
+                <Button type="submit" disabled={!canConfirmImport || isBusy}>
                   {isPreparingImport || isConfirmingImport ? 'Processando...' : 'Confirmar importação'}
                 </Button>
               )}
