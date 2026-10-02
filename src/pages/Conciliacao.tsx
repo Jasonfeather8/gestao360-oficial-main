@@ -26,9 +26,10 @@ import {
   Filter,
   ShieldCheck
 } from 'lucide-react';
-import { useConciliacao, useContas, useLancamentos, useEntidades, useTransferencias } from '../hooks/useData';
+import { useConciliacao, useConciliacaoImportLots, useContas, useLancamentos, useEntidades, useTransferencias } from '../hooks/useData';
 import ConciliacaoHeader from '../components/conciliacao/ConciliacaoHeader';
 import ConciliacaoCompetenceSummary from '../components/conciliacao/ConciliacaoCompetenceSummary';
+import ConciliacaoImportLotsPanel from '../components/conciliacao/ConciliacaoImportLotsPanel';
 import ConciliacaoClosingPanel from '../components/conciliacao/ConciliacaoClosingPanel';
 import ConciliacaoPendingTransfers from '../components/conciliacao/ConciliacaoPendingTransfers';
 import { useAuth } from '../hooks/useAuth';
@@ -108,6 +109,7 @@ export default function Conciliacao() {
     },
   });
   const { data: entidades = [] } = useEntidades();
+  const { data: importLots = [] } = useConciliacaoImportLots(selectedContaId);
 
   const {
     isImportarCSVOpen, isTransferenciaBancariaOpen, setModalOpen, selectedTransacaoForConciliationId,
@@ -901,6 +903,10 @@ export default function Conciliacao() {
         operationNotice={operationNotice}
         completionNotice={completionNotice}
       />
+
+      {(role === 'master' || role === 'gerente') && (
+        <ConciliacaoImportLotsPanel lots={importLots} selectedMonth={selectedMonth} />
+      )}
 
       <ConciliacaoClosingPanel
         selectedMonth={selectedMonth}

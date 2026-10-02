@@ -40,9 +40,9 @@ export default function ConciliacaoCompetenceSummary({
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-[10px] font-black uppercase tracking-widest">
         <span className="rounded-xl bg-neutral-50 px-3 py-2 text-neutral-600">Extrato: {periodProgress.total}</span>
         <span className="rounded-xl bg-emerald-50 px-3 py-2 text-emerald-700">Identificadas: {periodProgress.identified}</span>
-        <span className="rounded-xl bg-amber-50 px-3 py-2 text-amber-700">Pendentes: {periodProgress.pending}</span>
+        <span className="rounded-xl bg-amber-50 px-3 py-2 text-amber-700">Não identificados: {periodProgress.pending}</span>
         <span className="rounded-xl bg-neutral-50 px-3 py-2 text-neutral-600">Conciliado: {periodProgress.percentage}%</span>
-        <span className="rounded-xl bg-neutral-50 px-3 py-2 text-neutral-600">Diferenças: {periodProgress.differenceCount} • {valueFormatter(periodProgress.differenceCents / 100)}</span>
+        <span className="rounded-xl bg-neutral-50 px-3 py-2 text-neutral-600">Divergências de valores: {periodProgress.differenceCount} • {valueFormatter(periodProgress.differenceCents / 100)}</span>
         <span className={`rounded-xl px-3 py-2 ${periodProgress.residualCents === 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>Residual global: {periodProgress.residualCents}¢ ({valueFormatter(periodProgress.residualCents / 100)})</span>
         <span className={`rounded-xl px-3 py-2 ${periodProgress.unclassifiedDifferenceCount === 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>Não classificadas: {periodProgress.unclassifiedDifferenceCount}</span>
         <span className="rounded-xl bg-neutral-100 px-3 py-2 text-neutral-600">Fechamento: {periodProgress.fechamentoStatus === 'aguardando_master' ? 'Aguardando Master' : periodProgress.fechamentoStatus === 'aprovado' ? 'Aprovado' : periodProgress.fechamentoStatus === 'reprovado' ? 'Reprovado' : 'Aberto'}</span>

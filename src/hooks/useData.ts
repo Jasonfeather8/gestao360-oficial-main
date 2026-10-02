@@ -363,6 +363,15 @@ export function useRecorrencias() {
   return { ...query, stopRecorrencia: stopMutation.mutateAsync, isStopping: stopMutation.isPending };
 }
 
+export function useConciliacaoImportLots(accountId: string) {
+  const { role } = useAuth();
+  return useQuery({
+    queryKey: ['conciliationImportLots', accountId],
+    queryFn: () => extratoImportacaoService.getConciliationLots(accountId),
+    enabled: (role === 'master' || role === 'gerente') && Boolean(accountId),
+  });
+}
+
 export function useConciliacao() {
   const queryClient = useQueryClient();
 

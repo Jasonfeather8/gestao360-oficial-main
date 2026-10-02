@@ -8,6 +8,7 @@ import {
   ImportFileOrigin,
   ImportFileType,
   ImportLotDraft,
+  ImportLotRecord,
   ImportMode,
   ImportParserMetadata,
   ImportPreview,
@@ -403,6 +404,16 @@ export const attachImportLotMetadata = (transactions: ImportTransaction[], lot: 
   });
 
 export const extratoImportacaoService = {
+  getConciliationLots: async (accountId: string): Promise<ImportLotRecord[]> => {
+    const { data, error } = await supabase
+      .from('extratos_bancarios')
+      .select('id, conta_bancaria_id, arquivo_nome, data_inicio, data_fim, metadata, status')
+      .eq('conta_bancaria_id', accountId)
+      .in('status', ['em_revisao', 'confirmado'])
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data || []) as ImportLotRecord[];
+  },
 
   prepareImportFile: async (file: File, contaBancariaId: string, userId: string): Promise<{ lot: ImportLotDraft; preview: ImportPreview }> => {
     if (!contaBancariaId) throw friendlyError('Selecione a conta bancária antes de importar.');
