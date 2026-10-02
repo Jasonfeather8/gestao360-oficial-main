@@ -718,18 +718,21 @@ export default function Conciliacao() {
     }, 0);
     const total = periodTransactions.length;
     const pending = total - identified.length;
-    const readyForClosing = total > 0 && pending === 0 && residualCents === 0 && unclassifiedDifferences.length === 0;
+    const importLotsInReview = importLots.filter(lot => lot.status === 'em_revisao').length;
+    const readyForClosing = total > 0 && pending === 0 && residualCents === 0 && unclassifiedDifferences.length === 0 && importLotsInReview === 0;
     const state = total === 0 || identified.length === 0
       ? 'Aguardando conciliação'
       : unclassifiedDifferences.length > 0
         ? 'Bloqueado por diferença sem classificação'
         : pending > 0
           ? 'Existem pendências'
-          : readyForClosing && periodDifferences.length > 0
-            ? '100% com diferenças justificadas/pronto para fechamento'
-            : readyForClosing
-              ? '100% identificado'
-              : '100% identificado, residual não explicado';
+          : importLotsInReview > 0
+            ? 'Aguardando revisão de lote'
+            : readyForClosing && periodDifferences.length > 0
+              ? '100% com diferenças justificadas/pronto para fechamento'
+              : readyForClosing
+                ? '100% identificado'
+                : '100% identificado, residual não explicado';
     return {
       total,
       identified: identified.length,
@@ -743,7 +746,7 @@ export default function Conciliacao() {
       state,
       fechamentoStatus: fechamentoAtual?.status || 'aberto',
     };
-  }, [periodTransactions, conciliacoes, diferencas, transferencias, lancamentos, fechamentoAtual]);
+  }, [periodTransactions, conciliacoes, diferencas, transferencias, lancamentos, fechamentoAtual, importLots]);
 
   const realDataUpdatedAt = Math.max(workspaceDataUpdatedAt, lancamentosDataUpdatedAt);
   const handledOperationId = useRef<number | null>(null);
