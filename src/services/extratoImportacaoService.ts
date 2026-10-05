@@ -13,6 +13,7 @@ import {
   ImportParserMetadata,
   ImportPreview,
   ImportPreviewComparison,
+  ImportReviewItem,
   ImportReviewSubmissionMetadata,
   ImportTransaction,
   PdfParseResult,
@@ -72,6 +73,12 @@ const normalizeDate = (value: string): string => {
   const isoMatch = clean.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (isoMatch) return clean;
   throw friendlyError(`Data inválida no extrato: ${value}`);
+};
+
+export const normalizeIsoDate = (value: string): string => {
+  const normalized = normalizeDate(value);
+  if (!validateDate(normalized)) throw friendlyError(`Data inválida no extrato: ${value}`);
+  return normalized;
 };
 
 const parseMoney = (raw: string): number => {
@@ -189,7 +196,7 @@ const normalizeHashText = (value: string | undefined): string =>
 
 const utf8ByteLength = (value: string): number => new TextEncoder().encode(value).byteLength;
 
-const buildHash = async (accountId: string, transaction: Omit<ImportTransaction, 'hash_transacao'>): Promise<string> => {
+export const buildHash = async (accountId: string, transaction: Omit<ImportTransaction, 'hash_transacao'>): Promise<string> => {
   if (!Number.isInteger(transaction.valor_centavos) || transaction.pagina_origem === undefined || transaction.linha_origem === undefined) {
     throw friendlyError('A transação não possui centavos ou origem página/linha para calcular o hash.');
   }
@@ -482,6 +489,46 @@ export const attachImportLotMetadata = (transactions: ImportTransaction[], lot: 
       origem_arquivo: origemArquivo,
     };
   });
+
+export const convertApprovedReviewsToTransactions = async (
+  accountId: string,
+  reviews: ImportReviewItem[],
+  lot: ImportLotDraft,
+): Promise<ImportTransaction[]> => {
+  if (!lot.formatoArquivo || !lot.origemExtracao) throw friendlyError('O lote não possui formato e origem de extração válidos.');
+  const converted = await Promise.all(reviews.map(async (review, index) => {
+    const rawDate = review.data_transacao?.trim() || review.data_original?.trim() || '';
+    const date = normalizeIsoDate(rawDate);
+    if (!Number.isFinite(review.valor) || review.valor === 0) throw friendlyError(`Valor inválido na pendência ${index + 1}.`);
+    if (review.tipo_movimento !== 'credito' && review.tipo_movimento !== 'debito') throw friendlyError(`Movimento inválido na pendência ${index + 1}.`);
+    const description = review.descricao?.trim() || review.trecho.trim();
+    if (!description) throw friendlyError(`Descrição ausente na pendência ${index + 1}.`);
+    const paginaOrigem = (Number.isInteger(review.pagina_origem) && review.pagina_origem! >= 1) ? review.pagina_origem! : 1;
+    const linhaOrigem = (Number.isInteger(review.linha_origem) && review.linha_origem! >= 1) ? review.linha_origem! : (index + 1);
+    const value = review.tipo_movimento === 'credito' ? Math.abs(review.valor) : -Math.abs(review.valor);
+    const transaction: Omit<ImportTransaction, 'hash_transacao'> = {
+      data_transacao: date,
+      data_original: rawDate,
+      valor: Number(value.toFixed(2)),
+      valor_original: value,
+      valor_centavos: Math.round(value * 100),
+      descricao_banco: description,
+      descricao_original: description,
+      tipo_movimento: review.tipo_movimento,
+      pagina_origem: paginaOrigem,
+      linha_origem: linhaOrigem,
+      confianca_extracao: 1,
+      motivo_alerta: null,
+      formato_arquivo: lot.formatoArquivo,
+      origem_extracao: review.origem_extracao || lot.origemExtracao,
+      estado_revisao: 'valida',
+    };
+    const hash_transacao = await buildHash(accountId, transaction);
+    const [withLotMetadata] = attachImportLotMetadata([{ ...transaction, hash_transacao }], lot);
+    return withLotMetadata;
+  }));
+  return converted;
+};
 
 export const extratoImportacaoService = {
   getConciliationLots: async (accountId: string): Promise<ImportLotRecord[]> => {

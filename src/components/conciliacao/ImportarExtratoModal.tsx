@@ -12,7 +12,7 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { ContaBancaria, TransacaoBanco } from '../../types';
-import { ImportLotDraft, ImportMode, ImportPreview, ImportReviewDecisionItem } from '../../types/extratoImportacao';
+import { ImportLotDraft, ImportMode, ImportPreview, ImportReviewDecisionItem, ImportReviewItem } from '../../types/extratoImportacao';
 import Button from '../Button';
 
 type ColumnMapping = {
@@ -56,6 +56,7 @@ interface ImportarExtratoModalProps {
   handleImportCSVSubmit: (event: React.FormEvent) => Promise<void>;
   reviewDecisions: Record<number, ImportReviewDecisionItem>;
   onEditPendingJustification: (index: number) => void;
+  onUpdatePendingReview?: (index: number, fields: Partial<ImportReviewItem>) => void;
   onConfirmPendingReview: (index: number, justification: string) => void;
   onRequestPendingReprocessing: (index: number, justification: string) => Promise<void>;
   onSubmitImportReview: () => Promise<void>;
@@ -88,6 +89,7 @@ export default function ImportarExtratoModal({
   handleImportCSVSubmit,
   reviewDecisions,
   onEditPendingJustification,
+  onUpdatePendingReview,
   onConfirmPendingReview,
   onRequestPendingReprocessing,
   onSubmitImportReview,
@@ -126,11 +128,11 @@ export default function ImportarExtratoModal({
   const allPendingApproved = pendingReviews.length > 0 && pendingReviews.every((pending, index) => {
     const decision = reviewDecisions[index];
     return decision?.categoria === 'conciliavel' && decision.decisao === 'aprovar' && Boolean(decision.justificativa.trim())
-      && isValidReviewDate(pending.data_transacao || pending.data_original)
+      && isValidReviewDate(pending.data_transacao ?? pending.data_original)
       && Number.isFinite(pending.valor)
-      && Boolean(pending.tipo_movimento)
+      && (pending.tipo_movimento === 'credito' || pending.tipo_movimento === 'debito')
       && Boolean(pending.descricao?.trim() || pending.trecho.trim())
-      && Number.isFinite(pending.confianca_extracao) && pending.confianca_extracao >= 0.85 && pending.confianca_extracao <= 1;
+      && Number.isFinite(pending.confianca_extracao);
   });
   const isBusy = isPreparingImport || isConfirmingImport || isSubmittingImportReview;
   const requestImportCancel = () => {
@@ -139,14 +141,21 @@ export default function ImportarExtratoModal({
     void handleImportCancel();
   };
   const confirmReadingEnabled = Boolean(selectedPending
-    && isValidReviewDate(selectedPending.data_transacao || selectedPending.data_original)
+    && isValidReviewDate(selectedPending.data_transacao ?? selectedPending.data_original)
     && Number.isFinite(selectedPending.valor)
-    && selectedPending.tipo_movimento
+    && (selectedPending.tipo_movimento === 'credito' || selectedPending.tipo_movimento === 'debito')
     && (selectedPending.descricao?.trim() || selectedPending.trecho.trim())
     && Number.isFinite(selectedPending.confianca_extracao)
-    && selectedPending.confianca_extracao >= 0.85
-    && selectedPending.confianca_extracao <= 1
     && reviewJustifications[selectedPendingIndex]?.trim());
+  const confirmSelectedPending = () => {
+    if (!selectedPending) return;
+    const nextPendingIndex = Array.from({ length: pendingReviews.length }, (_, offset) => (selectedPendingIndex + offset + 1) % pendingReviews.length)
+      .find(index => index !== selectedPendingIndex && !reviewDecisions[index]);
+    onConfirmPendingReview(selectedPendingIndex, reviewJustifications[selectedPendingIndex] || '');
+    if (nextPendingIndex !== undefined) {
+      setSelectedPendingIndex(nextPendingIndex);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
@@ -307,11 +316,11 @@ export default function ImportarExtratoModal({
                             <div className="grid grid-cols-2 gap-3 text-[10px]">
                               <div><p className="font-black uppercase text-neutral-500">Página original</p><p className="font-bold text-neutral-900">{selectedPending.pagina_origem || '—'}</p></div>
                               <div><p className="font-black uppercase text-neutral-500">Linha original</p><p className="font-bold text-neutral-900">{selectedPending.linha_origem || '—'}</p></div>
-                              <div><p className="font-black uppercase text-neutral-500">Data extraída</p><p className="font-bold text-neutral-900">{selectedPending.data_transacao || selectedPending.data_original || 'Ausente'}</p></div>
-                              <div><p className="font-black uppercase text-neutral-500">Valor extraído</p><p className="font-bold text-neutral-900">{typeof selectedPending.valor === 'number' ? valueFormatter(selectedPending.valor) : 'Ausente'}</p></div>
-                              <div><p className="font-black uppercase text-neutral-500">Tipo de movimento</p><p className="font-bold text-neutral-900">{selectedPending.tipo_movimento || 'Ausente'}</p></div>
-                              <div><p className="font-black uppercase text-neutral-500">Descrição extraída</p><p className="font-bold text-neutral-900 break-words">{selectedPending.descricao || 'Ausente'}</p></div>
-                              <div><p className="font-black uppercase text-neutral-500">Confiança da extração</p><p className="font-bold text-neutral-900">{Number.isFinite(selectedPending.confianca_extracao) ? `${Math.round(selectedPending.confianca_extracao * 100)}%` : 'Ausente'} • mínimo 85%</p></div>
+                              <label className="space-y-1"><span className="font-black uppercase text-neutral-500">Data</span><input type="text" value={selectedPending.data_transacao ?? selectedPending.data_original ?? ''} onChange={event => onUpdatePendingReview?.(selectedPendingIndex, { data_transacao: event.target.value })} disabled={isBusy} placeholder="AAAA-MM-DD ou DD/MM/AAAA" className="w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 font-bold text-neutral-900 outline-none focus:border-primary disabled:opacity-60" /></label>
+                              <label className="space-y-1"><span className="font-black uppercase text-neutral-500">Valor</span><input type="number" step="any" value={selectedPending.valor ?? ''} onChange={event => onUpdatePendingReview?.(selectedPendingIndex, { valor: event.target.value === '' ? undefined : Number(event.target.value) })} disabled={isBusy} className="w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 font-bold text-neutral-900 outline-none focus:border-primary disabled:opacity-60" /></label>
+                              <label className="space-y-1"><span className="font-black uppercase text-neutral-500">Tipo de movimento</span><select value={selectedPending.tipo_movimento || ''} onChange={event => onUpdatePendingReview?.(selectedPendingIndex, { tipo_movimento: event.target.value === 'credito' || event.target.value === 'debito' ? event.target.value : undefined })} disabled={isBusy} className="w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 font-bold text-neutral-900 outline-none focus:border-primary disabled:opacity-60"><option value="">Selecione</option><option value="credito">Crédito</option><option value="debito">Débito</option></select></label>
+                              <label className="space-y-1"><span className="font-black uppercase text-neutral-500">Descrição</span><textarea value={selectedPending.descricao || ''} onChange={event => onUpdatePendingReview?.(selectedPendingIndex, { descricao: event.target.value })} disabled={isBusy} rows={2} className="w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 font-bold text-neutral-900 outline-none focus:border-primary disabled:opacity-60" /></label>
+                              <div><p className="font-black uppercase text-neutral-500">Confiança da extração</p><p className="font-bold text-neutral-900">{Number.isFinite(selectedPending.confianca_extracao) ? `${Math.round(selectedPending.confianca_extracao * 100)}%` : 'Ausente'} • validada por revisão humana</p></div>
                               <div><p className="font-black uppercase text-neutral-500">Origem da extração</p><p className="font-bold text-neutral-900">{selectedPending.origem_extracao}</p></div>
                             </div>
                             <div className="rounded-2xl border border-amber-300 bg-white p-4">
@@ -323,8 +332,14 @@ export default function ImportarExtratoModal({
                               <textarea value={reviewJustifications[selectedPendingIndex] || ''} onChange={event => { onEditPendingJustification(selectedPendingIndex); setReviewJustifications(current => ({ ...current, [selectedPendingIndex]: event.target.value })); }} rows={3} className="w-full rounded-2xl border-2 border-neutral-200 bg-white p-3 text-xs outline-none focus:border-primary" placeholder="Explique a decisão de revisão..." />
                             </label>
                             {reviewDecisions[selectedPendingIndex] && <p className={`text-[9px] font-black uppercase ${reviewDecisions[selectedPendingIndex].categoria === 'conciliavel' ? 'text-emerald-700' : 'text-red-700'}`}>{reviewDecisions[selectedPendingIndex].categoria === 'conciliavel' ? 'Leitura confirmada como conciliável' : 'Reprocessamento solicitado; envio bloqueado'}</p>}
+                            {allPendingApproved && (
+                              <div className="rounded-2xl border-2 border-emerald-200 bg-emerald-50 p-3 text-[10px] font-black uppercase tracking-wider text-emerald-800 flex items-center gap-2">
+                                <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                                <span>Todas as pendências foram confirmadas como conciliáveis. Pronto para importar!</span>
+                              </div>
+                            )}
                             <div className="flex flex-wrap gap-3">
-                              <button type="button" disabled={!confirmReadingEnabled || isBusy} onClick={() => onConfirmPendingReview(selectedPendingIndex, reviewJustifications[selectedPendingIndex] || '')} className="inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-3 text-[9px] font-black uppercase text-white disabled:cursor-not-allowed disabled:opacity-40"><CheckCircle2 className="h-4 w-4" />Confirmar leitura</button>
+                              <button type="button" disabled={!confirmReadingEnabled || isBusy} onClick={confirmSelectedPending} className="inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-3 text-[9px] font-black uppercase text-white disabled:cursor-not-allowed disabled:opacity-40"><CheckCircle2 className="h-4 w-4" />Confirmar leitura</button>
                               <button type="button" disabled={!reviewJustifications[selectedPendingIndex]?.trim() || isBusy} onClick={() => { void onRequestPendingReprocessing(selectedPendingIndex, reviewJustifications[selectedPendingIndex] || ''); }} className="inline-flex items-center gap-2 rounded-xl bg-amber-700 px-4 py-3 text-[9px] font-black uppercase text-white disabled:cursor-not-allowed disabled:opacity-40"><RotateCcw className="h-4 w-4" />Solicitar reprocessamento</button>
                             </div>
                             {hasCriticalErrors && <p className="text-[9px] font-bold text-red-700">O envio para conciliação fica bloqueado até resolver os erros críticos do lote.</p>}
@@ -397,7 +412,7 @@ export default function ImportarExtratoModal({
                 <>
                   <button type="button" disabled={isBusy} onClick={() => { setImportPreviewTab('pendencias'); setSelectedPendingIndex(0); }} className="rounded-xl bg-amber-100 px-4 py-3 text-[9px] font-black uppercase text-amber-900 disabled:opacity-40">Revisar pendências</button>
                   <Button type="button" disabled={!allPendingApproved || isBusy} onClick={() => void onSubmitImportReview()}>
-                    {isSubmittingImportReview ? 'Enviando...' : 'Enviar para conciliação'}
+                    {isConfirmingImport ? 'Importando...' : 'Aprovar e Importar Transações'}
                   </Button>
                 </>
               ) : (

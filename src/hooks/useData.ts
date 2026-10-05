@@ -427,6 +427,7 @@ export function useConciliacao() {
     [
       'transacoes',
       'conciliacoes',
+      'conciliationImportLots',
       'transferenciasAbertas',
       'transferenciasSugestoesDestino',
       'transferenciasPendentesMaster',

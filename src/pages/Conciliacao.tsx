@@ -36,8 +36,8 @@ import ConciliacaoPendingTransfers from '../components/conciliacao/ConciliacaoPe
 import { useAuth } from '../hooks/useAuth';
 import { useUIStore } from '../store/uiStore';
 import { LancamentoFinanceiro, TransacaoBanco, TransferenciaBancaria, TransferenciaDestinoSugestao } from '../types';
-import { ImportConfirmationMetadata, ImportLotDraft, ImportLotRecord, ImportMode, ImportPreview, ImportReviewDecisionItem, ImportReviewSubmissionMetadata } from '../types/extratoImportacao';
-import { attachImportLotMetadata, buildCsvTransactions, parseCsv, validateImportConsistency } from '../services/conciliacoesService';
+import { ImportConfirmationMetadata, ImportLotDraft, ImportLotRecord, ImportMode, ImportPreview, ImportReviewDecisionItem, ImportReviewItem } from '../types/extratoImportacao';
+import { attachImportLotMetadata, buildCsvTransactions, convertApprovedReviewsToTransactions, parseCsv, validateImportConsistency } from '../services/conciliacoesService';
 import Button from '../components/Button';
 import ImportarExtratoModal from '../components/conciliacao/ImportarExtratoModal';
 import MarcarTransferenciaModal from '../components/MarcarTransferenciaModal';
@@ -428,10 +428,18 @@ export default function Conciliacao() {
     setImportError('');
   };
 
+  const handleUpdatePendingReview = (index: number, fields: Partial<ImportReviewItem>) => {
+    handleEditPendingJustification(index);
+    setImportPreview(current => current ? {
+      ...current,
+      pendingReviews: current.pendingReviews?.map((pending, pendingIndex) => pendingIndex === index ? { ...pending, ...fields } : pending),
+    } : current);
+  };
+
   const handleConfirmPendingReview = (index: number, justification: string) => {
     const pending = importPreview?.pendingReviews?.[index];
-    if (!pending || !isValidReviewDate(pending.data_transacao || pending.data_original) || !Number.isFinite(pending.valor) || !pending.tipo_movimento || !(pending.descricao?.trim() || pending.trecho.trim()) || !Number.isFinite(pending.confianca_extracao) || pending.confianca_extracao < 0.85 || pending.confianca_extracao > 1 || !justification.trim()) {
-      setImportError('Não é possível confirmar a leitura: confira data, valor, movimento, descrição/trecho, confiança mínima de 0,85 e justificativa.');
+    if (!pending || !isValidReviewDate(pending.data_transacao ?? pending.data_original) || !Number.isFinite(pending.valor) || (pending.tipo_movimento !== 'credito' && pending.tipo_movimento !== 'debito') || !(pending.descricao?.trim() || pending.trecho.trim()) || !Number.isFinite(pending.confianca_extracao) || !justification.trim()) {
+      setImportError('Não é possível confirmar a leitura: confira data, valor, movimento, descrição/trecho, confiança válida e justificativa.');
       return;
     }
     setImportReviewDecisions(current => ({
@@ -518,19 +526,17 @@ export default function Conciliacao() {
     }
     const criticalErrors = importPreview.consistency.criticalErrors.filter(issue => issue.code !== 'pending_review');
     if (criticalErrors.length) {
-      setImportError('Envio bloqueado: corrija primeiro os erros críticos indicados no lote.');
+      setImportError(`A confirmação foi bloqueada: ${criticalErrors.map(issue => issue.message).join(' ')}`);
       return;
     }
     const missingDecision = pendingReviews.findIndex((pending, index) => {
       const decision = importReviewDecisions[index];
       return !decision || decision.categoria !== 'conciliavel' || decision.decisao !== 'aprovar' || !decision.justificativa.trim()
-        || !isValidReviewDate(pending.data_transacao || pending.data_original)
+        || !isValidReviewDate(pending.data_transacao ?? pending.data_original)
         || !Number.isFinite(pending.valor)
-        || !pending.tipo_movimento
+        || (pending.tipo_movimento !== 'credito' && pending.tipo_movimento !== 'debito')
         || !(pending.descricao?.trim() || pending.trecho.trim())
-        || !Number.isFinite(pending.confianca_extracao)
-        || pending.confianca_extracao < 0.85
-        || pending.confianca_extracao > 1;
+        || !Number.isFinite(pending.confianca_extracao);
     });
     if (missingDecision >= 0) {
       const decision = importReviewDecisions[missingDecision];
@@ -540,19 +546,52 @@ export default function Conciliacao() {
       setImportPreviewTab('pendencias');
       return;
     }
-    const metadata: ImportReviewSubmissionMetadata = {
-      reviewState: 'in_review',
-      pendingReviews,
-      reviewReasons: ['conciliavel'],
-      reviewDecisions: pendingReviews.map((_, index) => importReviewDecisions[index]),
-    };
     try {
-      await submitImportForReview({ lot: importLot, metadata });
-      alert('Lote enviado para conciliação com sucesso. A importação ainda não foi confirmada.');
+      const approvedTransactions = await convertApprovedReviewsToTransactions(
+        importLot.contaBancariaId,
+        pendingReviews,
+        importLot,
+      );
+      const transactions = [...importPreview.transactions, ...approvedTransactions];
+      const totalEntries = importPreview.parserTotals?.entries
+        ?? transactions.filter(transaction => transaction.valor > 0).reduce((total, transaction) => total + transaction.valor, 0);
+      const totalExits = importPreview.parserTotals?.exits
+        ?? transactions.filter(transaction => transaction.valor < 0).reduce((total, transaction) => total + Math.abs(transaction.valor), 0);
+      const metadata: ImportConfirmationMetadata = {
+        pages: importPreview.pages,
+        periodStart: importPreview.periodStart,
+        periodEnd: importPreview.periodEnd,
+        openingBalance: importPreview.openingBalance,
+        closingBalance: importPreview.closingBalance,
+        bankIdentified: importPreview.bankIdentified,
+        totalEntries,
+        totalExits,
+        parserTotals: importPreview.parserTotals,
+        reportedTransactionCount: importPreview.reportedTransactionCount,
+        extractedCount: transactions.length,
+        ocrCount: transactions.filter(transaction => transaction.origem_extracao === 'ocr').length,
+        consistency: importPreview.consistency,
+        parserMetadata: importPreview.parserMetadata,
+        sourceOrigin: importPreview.sourceOrigin,
+        alerts: importPreview.parserMetadata?.alerts,
+        pendingReviewCount: 0,
+        reviewState: 'validated',
+        reviewReasons: ['conciliavel'],
+        reviewDecisions: pendingReviews.map((_, index) => importReviewDecisions[index]),
+        reprocessComparison: importPreview.reprocessComparison,
+      };
+      const consistency = validateImportConsistency(transactions, metadata);
+      if (consistency.criticalErrors.length > 0) {
+        setImportError(`A confirmação foi bloqueada: ${consistency.criticalErrors.map(issue => issue.message).join(' ')}`);
+        return;
+      }
+      const confirmationMetadata: ImportConfirmationMetadata = { ...metadata, consistency };
+      await confirmImport({ lot: importLot, transactions, metadata: confirmationMetadata });
       resetImportState();
       setModalOpen('isImportarCSVOpen', false);
+      alert('Importação confirmada com sucesso.');
     } catch (error) {
-      setImportError(error instanceof Error ? error.message : 'Não foi possível enviar o lote para conciliação.');
+      setImportError(error instanceof Error ? error.message : 'Não foi possível confirmar a importação.');
     }
   };
 
@@ -1339,6 +1378,7 @@ export default function Conciliacao() {
             handleImportCSVSubmit={handleImportCSVSubmit}
             reviewDecisions={importReviewDecisions}
             onEditPendingJustification={handleEditPendingJustification}
+            onUpdatePendingReview={handleUpdatePendingReview}
             onConfirmPendingReview={handleConfirmPendingReview}
             onRequestPendingReprocessing={handleRequestPendingReprocessing}
             onSubmitImportReview={handleSubmitImportReview}

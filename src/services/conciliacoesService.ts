@@ -1,7 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { Conciliacao, FechamentoConciliacao, TransacaoBanco, ConciliacaoAtomicaPayload, ConciliacaoAtomicaResult } from '../types';
 import { cleanupImport, confirmImport, prepareImportFile } from './extratoImportacaoService';
-export { attachImportLotMetadata, buildCsvTransactions, getImportFileType, parseCsv, validateImportConsistency } from './extratoImportacaoService';
+export { attachImportLotMetadata, buildCsvTransactions, buildHash, convertApprovedReviewsToTransactions, getImportFileType, normalizeIsoDate, parseCsv, validateImportConsistency } from './extratoImportacaoService';
 
 const friendlyError = (message: string) => new Error(message);
 const WORKSPACE_PAGE_SIZE = 500;
