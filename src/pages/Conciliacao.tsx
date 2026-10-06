@@ -285,6 +285,57 @@ export default function Conciliacao() {
     };
   };
 
+  const handleResumeValidationLot = (lot: ImportLotRecord) => {
+    if (role !== 'master' && role !== 'gerente') return;
+    try {
+      if (lot.status !== 'em_validacao') throw new Error('Somente lotes em validação podem ser retomados.');
+      const draft = getImportDraftFromLot(lot);
+      const metadata = typeof lot.metadata === 'object' && lot.metadata !== null ? lot.metadata as Record<string, unknown> : {};
+      const previewValue = metadata.preview;
+      if (typeof previewValue !== 'object' || previewValue === null || Array.isArray(previewValue)) {
+        throw new Error('Este lote não possui uma prévia preservada para retomar a validação.');
+      }
+      const preview = previewValue as ImportPreview;
+      if (typeof preview.fileName !== 'string' || !Array.isArray(preview.transactions) || !Array.isArray(preview.firstRows)
+        || typeof preview.consistency !== 'object' || preview.consistency === null
+        || !Array.isArray(preview.consistency.criticalErrors)
+        || !['csv', 'xlsx', 'pdf'].includes(preview.fileType)) {
+        throw new Error('A prévia preservada deste lote está incompleta e não pode ser retomada.');
+      }
+      const headers = preview.sourceHeaders || Object.keys(preview.firstRows[0] || {});
+      const savedDecisions = Array.isArray(metadata.reviewDecisions) ? metadata.reviewDecisions : [];
+      const restoredDecisions = Object.fromEntries(savedDecisions.flatMap((decision, index) => {
+        if (typeof decision !== 'object' || decision === null || Array.isArray(decision)) return [];
+        const item = decision as ImportReviewDecisionItem;
+        const pendingIndex = Number.isInteger(item.pendencia_index) ? item.pendencia_index as number : index;
+        if (pendingIndex < 0 || pendingIndex >= (preview.pendingReviews?.length || 0)
+          || !['conciliavel', 'revisao_tecnica'].includes(item.categoria)
+          || !['aprovar', 'rejeitar'].includes(item.decisao)
+          || typeof item.justificativa !== 'string') return [];
+        return [[pendingIndex, item]];
+      }));
+      setSelectedImportContaId(lot.conta_bancaria_id);
+      setImportMode('ambos');
+      setImportLot(draft);
+      setImportPreview(preview);
+      setImportPreviewTab(preview.pendingReviews?.length ? 'pendencias' : 'entradas');
+      setImportReviewDecisions(restoredDecisions);
+      setCsvContentText('');
+      setCsvHeaders(headers);
+      setCsvPreviewRows(preview.firstRows);
+      setColumnMapping({
+        data: headers.find(header => /dat/i.test(header)) || '',
+        valor: headers.find(header => /val/i.test(header)) || '',
+        descricao: headers.find(header => /desc/i.test(header)) || '',
+        documento: headers.find(header => /doc/i.test(header)) || '',
+      });
+      setImportError('');
+      setModalOpen('isImportarCSVOpen', true);
+    } catch (error) {
+      setOperationNotice(error instanceof Error ? error.message : 'Não foi possível retomar a validação deste lote.');
+    }
+  };
+
   const handleApproveTechnicalLot = async (lot: ImportLotRecord, justification: string) => {
     const draft = getImportDraftFromLot(lot);
     const metadata = typeof lot.metadata === 'object' && lot.metadata !== null ? lot.metadata as Record<string, unknown> : {};
@@ -574,8 +625,12 @@ export default function Conciliacao() {
     }
   };
 
-  const handleSubmitImportReview = async () => {
+  const handleSubmitImportReview = async (operationalJustification?: string) => {
     if (!importLot || !importPreview) return;
+    if (operationalJustification?.trim() && role !== 'master' && role !== 'gerente') {
+      setImportError('Somente Master/Gerente pode aprovar divergências com justificativa operacional.');
+      return;
+    }
     if (isPreparingImport || isConfirmingImport || isSubmittingImportReview) {
       setImportError('Aguarde a operação atual terminar antes de enviar o lote para conciliação.');
       return;
@@ -586,8 +641,13 @@ export default function Conciliacao() {
       return;
     }
     const criticalErrors = importPreview.consistency.criticalErrors.filter(issue => issue.code !== 'pending_review');
-    if (criticalErrors.length) {
-      setImportError(`A confirmação foi bloqueada: ${criticalErrors.map(issue => issue.message).join(' ')}`);
+    const overridableHeaderCodes = new Set(['entries_total_mismatch', 'exits_total_mismatch', 'balance_mismatch', 'count_mismatch']);
+    const hasOperationalOverride = Boolean(operationalJustification?.trim());
+    const blockingCriticalErrors = hasOperationalOverride
+      ? criticalErrors.filter(issue => !overridableHeaderCodes.has(issue.code))
+      : criticalErrors;
+    if (blockingCriticalErrors.length) {
+      setImportError(`A confirmação foi bloqueada: ${blockingCriticalErrors.map(issue => issue.message).join(' ')}`);
       return;
     }
     const missingDecision = pendingReviews.findIndex((pending, index) => {
@@ -639,11 +699,15 @@ export default function Conciliacao() {
         reviewState: 'validated',
         reviewReasons: ['conciliavel'],
         reviewDecisions: pendingReviews.map((_, index) => importReviewDecisions[index]),
+        ...(hasOperationalOverride ? { justificativaSobrescrita: operationalJustification!.trim() } : {}),
         reprocessComparison: importPreview.reprocessComparison,
       };
       const consistency = validateImportConsistency(transactions, metadata);
-      if (consistency.criticalErrors.length > 0) {
-        setImportError(`A confirmação foi bloqueada: ${consistency.criticalErrors.map(issue => issue.message).join(' ')}`);
+      const blockingConsistencyErrors = hasOperationalOverride
+        ? consistency.criticalErrors.filter(issue => !overridableHeaderCodes.has(issue.code))
+        : consistency.criticalErrors;
+      if (blockingConsistencyErrors.length > 0) {
+        setImportError(`A confirmação foi bloqueada: ${blockingConsistencyErrors.map(issue => issue.message).join(' ')}`);
         return;
       }
       const confirmationMetadata: ImportConfirmationMetadata = { ...metadata, consistency };
@@ -671,6 +735,7 @@ export default function Conciliacao() {
       }
       const overridableHeaderCodes = new Set(['entries_total_mismatch', 'exits_total_mismatch', 'balance_mismatch', 'count_mismatch']);
       const hasOperationalOverride = Boolean(operationalJustification?.trim());
+      if (hasOperationalOverride && role !== 'master' && role !== 'gerente') throw new Error('Somente Master/Gerente pode aprovar divergências com justificativa operacional.');
       if (importPreview.consistency.criticalErrors.length && (!hasOperationalOverride || importPreview.consistency.criticalErrors.some(issue => !overridableHeaderCodes.has(issue.code)))) throw new Error(`A confirmação foi bloqueada: ${importPreview.consistency.criticalErrors.map(issue => issue.message).join(' ')}`);
       if (importPreview.fileType === 'csv' || importPreview.fileType === 'xlsx') {
         let rows: Array<Record<string, string>>;
@@ -1136,6 +1201,7 @@ export default function Conciliacao() {
           selectedContaId={selectedContaId}
           canReviewTechnical={role === 'master' || role === 'gerente'}
           onOpenTechnicalReview={setTechnicalReviewLot}
+          onResumeValidation={handleResumeValidationLot}
         />
       )}
       {technicalReviewLot && <RevisaoTecnicaLoteModal lot={technicalReviewLot} onClose={() => setTechnicalReviewLot(null)} onReprocessLot={handleReprocessLot} onApproveLot={handleApproveTechnicalLot} onDiscardLot={handleDiscardTechnicalLot} isReprocessingLot={isReprocessingImport} />}
@@ -1500,7 +1566,9 @@ export default function Conciliacao() {
             handleImportCancel={handleImportCancel}
             onSubmitCriticalErrorsForReview={handleSubmitCriticalErrorsForReview}
             handleImportCSVSubmit={handleImportCSVSubmit}
-            onApproveWithOperationalJustification={justification => handleImportCSVSubmit(undefined, justification)}
+            onApproveWithOperationalJustification={justification => importPreview?.pendingReviews?.length
+              ? handleSubmitImportReview(justification)
+              : handleImportCSVSubmit(undefined, justification)}
             reviewDecisions={importReviewDecisions}
             onEditPendingJustification={handleEditPendingJustification}
             onUpdatePendingReview={handleUpdatePendingReview}

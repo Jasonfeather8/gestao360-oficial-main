@@ -107,11 +107,20 @@ export default function ImportarExtratoModal({
   const hasCriticalErrors = Boolean(importPreview?.consistency.criticalErrors.some(issue => issue.code !== 'pending_review'));
   const overridableHeaderCodes = ['entries_total_mismatch', 'exits_total_mismatch', 'balance_mismatch', 'count_mismatch'];
   const hasHeaderDivergence = Boolean(importPreview?.consistency.criticalErrors.some(issue => overridableHeaderCodes.includes(issue.code)));
+  const allPendingApproved = pendingReviews.length > 0 && pendingReviews.every((pending, index) => {
+    const decision = reviewDecisions[index];
+    return decision?.categoria === 'conciliavel' && decision.decisao === 'aprovar' && Boolean(decision.justificativa.trim())
+      && isValidReviewDate(pending.data_transacao ?? pending.data_original)
+      && Number.isFinite(pending.valor)
+      && (pending.tipo_movimento === 'credito' || pending.tipo_movimento === 'debito')
+      && Boolean(pending.descricao?.trim() || pending.trecho.trim())
+      && Number.isFinite(pending.confianca_extracao);
+  });
   const canApproveWithJustification = Boolean(importPreview && importLot?.status === 'em_validacao'
-    && !importPreview.pendingReviews?.length
+    && (!pendingReviews.length || allPendingApproved)
     && hasHeaderDivergence
-    && importPreview.consistency.criticalErrors.every(issue => overridableHeaderCodes.includes(issue.code))
-    && importPreview.transactions.length > 0);
+    && importPreview.consistency.criticalErrors.every(issue => overridableHeaderCodes.includes(issue.code) || issue.code === 'pending_review')
+    && (importPreview.transactions.length > 0 || allPendingApproved));
   const canConfirmImport = Boolean(importPreview && importLot?.status === 'em_validacao'
     && importPreview.consistency.criticalErrors.length === 0
     && Number.isInteger(importPreview.pages) && importPreview.pages! >= 1 && importPreview.pages! <= 15
@@ -135,15 +144,6 @@ export default function ImportarExtratoModal({
       && Number.isFinite(transaction.confianca_extracao) && transaction.confianca_extracao! >= 0.85 && transaction.confianca_extracao! <= 1
       && transaction.estado_revisao === 'valida')
     && ((importPreview.fileType !== 'csv' && importPreview.fileType !== 'xlsx') || Boolean(columnMapping.data && columnMapping.valor && columnMapping.descricao)));
-  const allPendingApproved = pendingReviews.length > 0 && pendingReviews.every((pending, index) => {
-    const decision = reviewDecisions[index];
-    return decision?.categoria === 'conciliavel' && decision.decisao === 'aprovar' && Boolean(decision.justificativa.trim())
-      && isValidReviewDate(pending.data_transacao ?? pending.data_original)
-      && Number.isFinite(pending.valor)
-      && (pending.tipo_movimento === 'credito' || pending.tipo_movimento === 'debito')
-      && Boolean(pending.descricao?.trim() || pending.trecho.trim())
-      && Number.isFinite(pending.confianca_extracao);
-  });
   const isBusy = isPreparingImport || isConfirmingImport || isSubmittingImportReview;
   const requestImportCancel = () => {
     if (isBusy) return;
@@ -159,12 +159,11 @@ export default function ImportarExtratoModal({
     && reviewJustifications[selectedPendingIndex]?.trim());
   const confirmSelectedPending = () => {
     if (!selectedPending) return;
-    const nextPendingIndex = Array.from({ length: pendingReviews.length }, (_, offset) => (selectedPendingIndex + offset + 1) % pendingReviews.length)
-      .find(index => index !== selectedPendingIndex && !reviewDecisions[index]);
+    const nextPendingIndex = Array.from({ length: pendingReviews.length - 1 }, (_, offset) => (selectedPendingIndex + offset + 1) % pendingReviews.length)
+      .find(index => !reviewDecisions[index])
+      ?? (pendingReviews.length > 1 ? (selectedPendingIndex + 1) % pendingReviews.length : selectedPendingIndex);
     onConfirmPendingReview(selectedPendingIndex, reviewJustifications[selectedPendingIndex] || '');
-    if (nextPendingIndex !== undefined) {
-      setSelectedPendingIndex(nextPendingIndex);
-    }
+    setSelectedPendingIndex(nextPendingIndex);
   };
 
   return (

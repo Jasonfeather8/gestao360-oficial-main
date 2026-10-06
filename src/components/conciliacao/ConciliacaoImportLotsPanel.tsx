@@ -8,6 +8,7 @@ type ConciliacaoImportLotsPanelProps = {
   selectedContaId: string;
   canReviewTechnical: boolean;
   onOpenTechnicalReview: (lot: ImportLotRecord) => void;
+  onResumeValidation: (lot: ImportLotRecord) => void;
 };
 
 const asRecord = (value: unknown): Record<string, unknown> | null =>
@@ -62,7 +63,7 @@ const statusDetails: Record<ImportLotRecord['status'], { label: string; classes:
   confirmado: { label: 'Confirmado', classes: 'bg-emerald-100 text-emerald-800', next: 'Nenhuma ação pendente para este lote' },
 };
 
-export default function ConciliacaoImportLotsPanel({ lots, contas, selectedContaId, canReviewTechnical, onOpenTechnicalReview }: ConciliacaoImportLotsPanelProps) {
+export default function ConciliacaoImportLotsPanel({ lots, contas, selectedContaId, canReviewTechnical, onOpenTechnicalReview, onResumeValidation }: ConciliacaoImportLotsPanelProps) {
   const selectedAccountName = contas.find(account => account.id === selectedContaId)?.nome || 'Conta não identificada';
 
   return (
@@ -156,6 +157,12 @@ export default function ConciliacaoImportLotsPanel({ lots, contas, selectedConta
                     <dd className="mt-1 text-[10px] font-bold text-neutral-700">{status.next}</dd>
                   </div>
                 </dl>
+
+                {lot.status === 'em_validacao' && canReviewTechnical && (
+                  <button type="button" onClick={() => onResumeValidation(lot)} className="mt-3 inline-flex items-center gap-2 rounded-xl bg-blue-700 px-4 py-2.5 text-[9px] font-black uppercase tracking-widest text-white shadow-sm hover:bg-blue-800">
+                    <Clock3 className="h-4 w-4" /> Retomar validação
+                  </button>
+                )}
 
                 {lot.status === 'em_revisao' && (
                   <div className="mt-3 space-y-3">
