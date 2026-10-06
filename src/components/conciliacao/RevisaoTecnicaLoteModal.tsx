@@ -8,6 +8,8 @@ type Props = {
   lot: ImportLotRecord;
   onClose: () => void;
   onReprocessLot: (lot: ImportLotRecord) => Promise<void>;
+  onApproveLot: (lot: ImportLotRecord, justification: string) => Promise<void>;
+  onDiscardLot: (lot: ImportLotRecord) => Promise<void>;
   isReprocessingLot: boolean;
 };
 
@@ -33,11 +35,13 @@ const actionLabels: Record<TechnicalImportReviewAction, string> = {
   registrar_pagina_ilegivel: 'Registrar página ilegível',
 };
 
-export default function RevisaoTecnicaLoteModal({ lot, onClose, onReprocessLot, isReprocessingLot }: Props) {
+export default function RevisaoTecnicaLoteModal({ lot, onClose, onReprocessLot, onApproveLot, onDiscardLot, isReprocessingLot }: Props) {
   const { role } = useAuth();
   const { registrarDecisaoTecnica, isRegistrandoDecisaoTecnica } = useRegistrarRevisaoTecnicaImportacao();
   const [selectedAction, setSelectedAction] = useState<TechnicalImportReviewDecision | null>(null);
   const [justification, setJustification] = useState('');
+  const [finalJustification, setFinalJustification] = useState('');
+  const [isFinalizing, setIsFinalizing] = useState(false);
   const [manualPage, setManualPage] = useState('');
   const [viewPage, setViewPage] = useState<number | null>(null);
   const [localDecisions, setLocalDecisions] = useState<TechnicalImportReviewDecision[]>([]);
@@ -127,6 +131,33 @@ export default function RevisaoTecnicaLoteModal({ lot, onClose, onReprocessLot, 
     }
   };
 
+  const approveLot = async () => {
+    const reason = finalJustification.trim();
+    if (!reason || isFinalizing) return;
+    setIsFinalizing(true);
+    try {
+      await onApproveLot(lot, reason);
+      onClose();
+    } catch (error) {
+      setNotice({ type: 'error', message: error instanceof Error ? error.message : 'Não foi possível aprovar o lote para importação.' });
+    } finally {
+      setIsFinalizing(false);
+    }
+  };
+
+  const discardLot = async () => {
+    if (isFinalizing || !window.confirm('Descartar definitivamente este lote? Nenhuma transação será importada.')) return;
+    setIsFinalizing(true);
+    try {
+      await onDiscardLot(lot);
+      onClose();
+    } catch (error) {
+      setNotice({ type: 'error', message: error instanceof Error ? error.message : 'Não foi possível descartar o lote.' });
+    } finally {
+      setIsFinalizing(false);
+    }
+  };
+
   const actionButton = (acao: TechnicalImportReviewAction, target?: Pick<TechnicalImportReviewDecision, 'pagina' | 'transactionIndex' | 'hash_transacao'>) => (
     <button type="button" onClick={() => beginAction(acao, target)} className="rounded-lg border border-amber-200 bg-white px-2.5 py-1.5 text-[9px] font-black uppercase tracking-wide text-amber-900 hover:bg-amber-50">
       {actionLabels[acao]}
@@ -140,7 +171,7 @@ export default function RevisaoTecnicaLoteModal({ lot, onClose, onReprocessLot, 
           <div>
             <p className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-amber-700"><FileSearch className="h-4 w-4" /> Revisão técnica separada</p>
             <h2 id="technical-review-title" className="mt-2 text-lg font-black text-neutral-900">{lot.arquivo_nome || 'Lote de extrato'}</h2>
-            <p className="mt-1 text-[10px] font-bold text-neutral-500">Metadata técnica do lote • Não é aprovação Master nem altera dados financeiros.</p>
+            <p className="mt-1 text-[10px] font-bold text-neutral-500">Revisão técnica auditável • A aprovação final preserva as transações e exige justificativa operacional.</p>
           </div>
           <div className="flex items-center gap-2">
             {role === 'master' || role === 'gerente' ? <button type="button" onClick={() => void onReprocessLot(lot)} disabled={isReprocessingLot} className="inline-flex items-center gap-2 rounded-xl bg-amber-700 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-white disabled:cursor-not-allowed disabled:opacity-50">{isReprocessingLot ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} Reprocessar lote</button> : null}
@@ -186,7 +217,7 @@ export default function RevisaoTecnicaLoteModal({ lot, onClose, onReprocessLot, 
             <p className={`mt-3 rounded-xl px-3 py-2 text-[10px] font-black ${isBalanceDivergent || hasCriticalErrors ? 'bg-red-100 text-red-800' : balanceDifference === null ? 'bg-amber-100 text-amber-900' : 'bg-emerald-100 text-emerald-800'}`}>
               {isBalanceDivergent ? `Divergência calculada: ${currency(balanceDifference! / 100)}.` : balanceDifference === null ? 'Fórmula incompleta: faltam saldos informados para concluir a comparação.' : 'Fórmula do saldo sem divergência acima de 1 centavo.'}
               {hasCriticalErrors ? ` ${criticalErrors.length} erro(s) crítico(s) permanecem.` : ''}
-              {(isBalanceDivergent || hasCriticalErrors || balanceDifference === null) ? ' A confirmação permanece bloqueada enquanto a fórmula não fechar e/ou os erros críticos não forem resolvidos no fluxo de validação.' : ' A confirmação permanece bloqueada nesta revisão técnica; somente o fluxo de validação existente pode liberar o lote.'}
+              {(isBalanceDivergent || hasCriticalErrors || balanceDifference === null) ? ' Divergências apenas de cabeçalho podem receber aprovação final com justificativa operacional; outros erros críticos continuam bloqueando a importação.' : ' A decisão final de importação ou descarte deve ser registrada por Master/Gerente nesta revisão.'}
             </p>
             {criticalErrors.length > 0 && <ul className="mt-2 list-inside list-disc text-[10px] text-red-800">{criticalErrors.map((issue, index) => <li key={`${textValue(issue.code)}-${index}`}>{textValue(issue.message) || textValue(issue.code) || 'Erro crítico sem detalhe'}</li>)}</ul>}
           </section>
@@ -264,6 +295,17 @@ export default function RevisaoTecnicaLoteModal({ lot, onClose, onReprocessLot, 
             <h3 className="text-[10px] font-black uppercase tracking-widest text-neutral-900">Decisões técnicas já registradas</h3>
             {decisions.length ? <ul className="mt-2 space-y-2">{decisions.map((decision, index) => <li key={`${decision.registrado_em ?? index}-${index}`} className="rounded-lg bg-neutral-50 p-2 text-[9px] text-neutral-700"><strong>{actionLabels[decision.acao] ?? decision.acao}</strong>{decision.pagina ? ` · Página ${decision.pagina}` : ''}{decision.transactionIndex !== undefined ? ` · Transação ${decision.transactionIndex + 1}` : ''} · {decision.justificativa}{decision.registrado_em ? ` · ${new Date(decision.registrado_em).toLocaleString('pt-BR')}` : ''}</li>)}</ul> : <p className="mt-2 text-[10px] text-neutral-500">Nenhuma decisão técnica registrada.</p>}
           </section>
+
+          {lot.status === 'em_revisao' && <section className="mt-4 rounded-2xl border-2 border-indigo-200 bg-indigo-50 p-4">
+            <h3 className="text-[10px] font-black uppercase tracking-widest text-indigo-950">Decisão final do lote</h3>
+            <p className="mt-1 text-[10px] text-indigo-900">A aprovação usa as transações preservadas e exige justificativa operacional. O descarte cancela definitivamente este lote.</p>
+            <label className="mt-3 block text-[9px] font-black uppercase tracking-widest text-neutral-600">Justificativa para aprovação</label>
+            <textarea value={finalJustification} onChange={event => setFinalJustification(event.target.value)} rows={3} maxLength={2000} required disabled={isFinalizing} placeholder="Justifique a aprovação final do lote..." className="mt-1 w-full resize-y rounded-xl border border-indigo-200 bg-white p-3 text-xs text-neutral-800 outline-none focus:border-indigo-500 disabled:opacity-60" />
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button type="button" onClick={() => void approveLot()} disabled={!finalJustification.trim() || isFinalizing} className="inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-[9px] font-black uppercase tracking-widest text-white disabled:cursor-not-allowed disabled:opacity-50"><CheckCircle2 className="h-3.5 w-3.5" />Aprovar lote para importação</button>
+              <button type="button" onClick={() => void discardLot()} disabled={isFinalizing} className="inline-flex items-center gap-2 rounded-xl bg-red-700 px-4 py-2.5 text-[9px] font-black uppercase tracking-widest text-white disabled:cursor-not-allowed disabled:opacity-50"><X className="h-3.5 w-3.5" />Descartar lote definitivamente</button>
+            </div>
+          </section>}
 
           {selectedAction && <section className="sticky bottom-0 mt-4 rounded-2xl border-2 border-amber-200 bg-amber-50 p-4 shadow-lg">
             <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-[10px] font-black uppercase tracking-widest text-amber-950">{actionLabels[selectedAction.acao]}{selectedAction.pagina ? ` · Página ${selectedAction.pagina}` : ''}{selectedAction.transactionIndex !== undefined ? ` · Transação ${selectedAction.transactionIndex + 1}` : ''}</h3><button type="button" onClick={() => setSelectedAction(null)} className="text-[9px] font-black uppercase text-neutral-500">Cancelar</button></div>

@@ -4,12 +4,15 @@ import type { ContaBancaria } from '../../types';
 
 type DirectionFilter = 'todos' | 'entrada' | 'saida';
 type ReviewFilter = 'todos' | 'pendencias';
+export type StatusConciliacaoFilter = 'todos' | 'pendente' | 'conciliado' | 'divergente';
 
 interface ConciliacaoHeaderProps {
   directionFilter: DirectionFilter;
   setDirectionFilter: Dispatch<SetStateAction<DirectionFilter>>;
   reviewFilter: ReviewFilter;
   setReviewFilter: Dispatch<SetStateAction<ReviewFilter>>;
+  statusFilter: StatusConciliacaoFilter;
+  setStatusFilter: Dispatch<SetStateAction<StatusConciliacaoFilter>>;
   contas: ContaBancaria[];
   selectedContaId: string;
   setSelectedContaId: Dispatch<SetStateAction<string>>;
@@ -24,6 +27,8 @@ export default function ConciliacaoHeader({
   setDirectionFilter,
   reviewFilter,
   setReviewFilter,
+  statusFilter,
+  setStatusFilter,
   contas,
   selectedContaId,
   setSelectedContaId,
@@ -69,6 +74,25 @@ export default function ConciliacaoHeader({
           >
             <AlertTriangle className="w-3 h-3" /> Pendências
           </button>
+        </div>
+
+        <div className="flex flex-wrap bg-white border-2 border-neutral-100 rounded-2xl p-1.5 shadow-sm" aria-label="Filtrar por status da conciliação">
+          {([
+            ['todos', 'Todos'],
+            ['pendente', 'Pendentes'],
+            ['conciliado', 'Conciliados'],
+            ['divergente', 'Divergentes'],
+          ] as const).map(([status, label]) => (
+            <button
+              key={status}
+              type="button"
+              onClick={() => setStatusFilter(status)}
+              aria-pressed={statusFilter === status}
+              className={`px-3 h-9 rounded-xl text-[10px] font-black uppercase transition-all ${statusFilter === status ? 'bg-primary text-white shadow-lg' : 'text-neutral-400 hover:text-neutral-900'}`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
 
         <div className="flex items-center gap-3 h-12 px-4 bg-white border-2 border-neutral-100 rounded-2xl shadow-sm">

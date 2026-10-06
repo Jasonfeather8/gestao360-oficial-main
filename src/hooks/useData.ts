@@ -456,6 +456,10 @@ export function useConciliacao() {
     mutationFn: conciliacoesService.cleanupImport,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['conciliationImportLots'] }),
   });
+  const cancelImportReviewMutation = useMutation({
+    mutationFn: extratoImportacaoService.cancelImportReviewLot,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['conciliationImportLots'] }),
+  });
 
   const linkMutation = useMutation({
     mutationFn: conciliacoesService.linkConciliacao,
@@ -521,6 +525,7 @@ export function useConciliacao() {
     confirmImport: confirmImportMutation.mutateAsync,
     submitImportForReview: submitImportForReviewMutation.mutateAsync,
     cancelImport: cancelImportMutation.mutateAsync,
+    cancelImportReviewLot: cancelImportReviewMutation.mutateAsync,
     isPreparingImport: prepareImportMutation.isPending,
     isReprocessingImport: reprocessImportMutation.isPending,
     isConfirmingImport: confirmImportMutation.isPending,

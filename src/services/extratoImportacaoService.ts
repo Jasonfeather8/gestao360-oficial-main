@@ -534,7 +534,7 @@ export const extratoImportacaoService = {
   getConciliationLots: async (accountId: string): Promise<ImportLotRecord[]> => {
     const { data, error } = await supabase
       .from('extratos_bancarios')
-      .select('id, conta_bancaria_id, arquivo_nome, data_inicio, data_fim, total_transacoes, metadata, status, importado_por, tentativa_numero, lote_origem_id, reprocessado_por, reprocessado_em, created_at')
+      .select('id, conta_bancaria_id, arquivo_nome, arquivo_tamanho, arquivo_mime_type, arquivo_hash, storage_path, formato_arquivo, origem_extracao, data_inicio, data_fim, total_transacoes, metadata, status, importado_por, tentativa_numero, lote_origem_id, reprocessado_por, reprocessado_em, created_at')
       .eq('conta_bancaria_id', accountId)
       .in('status', ['em_validacao', 'em_revisao', 'erro', 'cancelado', 'confirmado'])
       .order('created_at', { ascending: false });
@@ -829,36 +829,40 @@ export const extratoImportacaoService = {
 
   confirmImport: async (lot: ImportLotDraft, transactions: ImportTransaction[], metadata: ImportConfirmationMetadata = {}) => {
     if (!lot.id || !lot.contaBancariaId || !lot.userId || !lot.fileName || !lot.mimeType || !lot.storagePath) throw friendlyError('O contrato do lote está incompleto.');
-    if (lot.status !== 'em_validacao') throw friendlyError('Somente lotes em validação podem ser confirmados.');
+    if (lot.status !== 'em_validacao' && lot.status !== 'em_revisao') throw friendlyError('Somente lotes em validação ou revisão podem ser confirmados.');
+    if (metadata.justificativaSobrescrita !== undefined && !metadata.justificativaSobrescrita.trim()) throw friendlyError('A justificativa para sobrescrever divergências é obrigatória.');
     if (!lot.formatoArquivo || !lot.origemExtracao) throw friendlyError('O lote precisa informar formato e origem da extração.');
     if (transactions.length === 0) throw friendlyError('O lote precisa conter ao menos uma transação.');
     if (transactions.some(transaction => !Number.isFinite(transaction.confianca_extracao) || transaction.confianca_extracao < 0.85 || transaction.confianca_extracao > 1)) throw friendlyError('Todas as transações precisam ter confiança de extração mínima de 0,85.');
-    const { data: revalidatedData, error: revalidationError } = await supabase.rpc('revalidar_preview_extrato', {
-      p_lote_id: lot.id,
-      p_transacoes: transactions,
-    });
-    if (revalidationError) throw revalidationError;
-    if (!Array.isArray(revalidatedData) || revalidatedData.length !== transactions.length || revalidatedData.some(item => !item || typeof item !== 'object')) {
-      throw friendlyError('A revalidação do preview retornou um contrato inválido.');
+    if (lot.status === 'em_validacao') {
+      const { data: revalidatedData, error: revalidationError } = await supabase.rpc('revalidar_preview_extrato', {
+        p_lote_id: lot.id,
+        p_transacoes: transactions,
+      });
+      if (revalidationError) throw revalidationError;
+      if (!Array.isArray(revalidatedData) || revalidatedData.length !== transactions.length || revalidatedData.some(item => !item || typeof item !== 'object')) {
+        throw friendlyError('A revalidação do preview retornou um contrato inválido.');
+      }
+      transactions = (revalidatedData as Array<Partial<ImportTransaction>>).map((revalidated, index) => {
+        const original = transactions[index];
+        return {
+          ...original,
+          ...revalidated,
+          arquivo_nome: original.arquivo_nome,
+          arquivo_hash: original.arquivo_hash,
+          extrato_lote_id: original.extrato_lote_id,
+          formato_arquivo: original.formato_arquivo,
+          origem_extracao: original.origem_extracao,
+          origem_arquivo: original.origem_arquivo,
+        };
+      });
     }
-    transactions = (revalidatedData as Array<Partial<ImportTransaction>>).map((revalidated, index) => {
-      const original = transactions[index];
-      return {
-        ...original,
-        ...revalidated,
-        arquivo_nome: original.arquivo_nome,
-        arquivo_hash: original.arquivo_hash,
-        extrato_lote_id: original.extrato_lote_id,
-        formato_arquivo: original.formato_arquivo,
-        origem_extracao: original.origem_extracao,
-        origem_arquivo: original.origem_arquivo,
-      };
-    });
     const effectiveMetadata: ImportConfirmationMetadata = {
       ...metadata,
       pages: metadata.pages ?? (lot.formatoArquivo === 'pdf' ? undefined : 1),
       extractedCount: metadata.extractedCount ?? transactions.length,
       sourceOrigin: metadata.sourceOrigin ?? lot.origemExtracao,
+      ...(metadata.justificativaSobrescrita ? { justificativaSobrescrita: metadata.justificativaSobrescrita.trim() } : {}),
     };
     if (effectiveMetadata.sourceOrigin !== lot.origemExtracao) throw friendlyError('A origem da extração não corresponde ao lote.');
     if (effectiveMetadata.extractedCount !== transactions.length) throw friendlyError('A quantidade de registros extraídos não confere com o lote.');
@@ -866,8 +870,12 @@ export const extratoImportacaoService = {
     if (transactions.some(transaction => transaction.estado_revisao !== 'valida')) throw friendlyError('Todas as transações precisam estar no estado valida.');
     if (transactions.some(transaction => !Number.isFinite(transaction.confianca_extracao) || transaction.confianca_extracao < 0.85)) throw friendlyError('Todas as transações precisam ter confiança de extração mínima de 0,85.');
     const consistency = validateImportConsistency(transactions, effectiveMetadata);
-    if (consistency.criticalErrors.length > 0) throw friendlyError(`A confirmação foi bloqueada: ${consistency.criticalErrors.map(issue => issue.message).join(' ')}`);
-    if (consistency.extractedCount !== transactions.length || consistency.criticalErrors.length !== 0) throw friendlyError('A consistência final do lote é inválida.');
+    const overridableHeaderIssues = new Set(['entries_total_mismatch', 'exits_total_mismatch', 'balance_mismatch', 'count_mismatch']);
+    const blockingErrors = effectiveMetadata.justificativaSobrescrita
+      ? consistency.criticalErrors.filter(issue => !overridableHeaderIssues.has(issue.code))
+      : consistency.criticalErrors;
+    if (blockingErrors.length > 0) throw friendlyError(`A confirmação foi bloqueada: ${blockingErrors.map(issue => issue.message).join(' ')}`);
+    if (consistency.extractedCount !== transactions.length) throw friendlyError('A consistência final do lote é inválida.');
     if (lot.fileSize <= 0 || lot.fileSize > MAX_IMPORT_SIZE || !/^[a-f0-9]{64}$/.test(lot.fileHash)) throw friendlyError('Os metadados do arquivo são inválidos.');
     const storageSegments = lot.storagePath.split('/');
     if (storageSegments[0] !== lot.userId || storageSegments[1] !== lot.id || storageSegments.length !== 3) throw friendlyError('O caminho do arquivo não pertence ao lote.');
@@ -925,10 +933,15 @@ export const extratoImportacaoService = {
     });
     if (error) {
       const { data: persistedLot } = await supabase.from('extratos_bancarios').select('status').eq('id', lot.id).maybeSingle();
-      if (!persistedLot || persistedLot.status !== 'confirmado') await extratoImportacaoService.cleanupImport(lot);
+      if (lot.status !== 'em_revisao' && (!persistedLot || persistedLot.status !== 'confirmado')) await extratoImportacaoService.cleanupImport(lot);
       throw error;
     }
     return data;
+  },
+
+  cancelImportReviewLot: async (lotId: string): Promise<void> => {
+    const { error } = await supabase.rpc('cancelar_importacao_extrato', { p_lote_id: lotId });
+    if (error) throw error;
   },
 
   cleanupImport: async (lot: ImportLotDraft): Promise<void> => {

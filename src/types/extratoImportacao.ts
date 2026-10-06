@@ -205,6 +205,12 @@ export interface ImportLotRecord {
   id: string;
   conta_bancaria_id: string;
   arquivo_nome: string;
+  arquivo_tamanho?: number;
+  arquivo_mime_type?: string;
+  arquivo_hash?: string;
+  storage_path?: string;
+  formato_arquivo?: ImportFileFormat;
+  origem_extracao?: ImportSourceOrigin;
   data_inicio: string | null;
   data_fim: string | null;
   total_transacoes: number;
@@ -259,6 +265,7 @@ export interface ImportConfirmationMetadata {
   reviewState?: ImportBatchReviewState;
   reviewReasons?: ImportReviewCategory[];
   reviewDecisions?: ImportReviewDecisionItem[];
+  justificativaSobrescrita?: string;
   reprocessComparison?: ImportPreviewComparison;
 }
 

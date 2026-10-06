@@ -54,6 +54,7 @@ interface ImportarExtratoModalProps {
   handleImportCancel: () => Promise<boolean>;
   onSubmitCriticalErrorsForReview: () => Promise<void>;
   handleImportCSVSubmit: (event: React.FormEvent) => Promise<void>;
+  onApproveWithOperationalJustification: (justification: string) => Promise<void>;
   reviewDecisions: Record<number, ImportReviewDecisionItem>;
   onEditPendingJustification: (index: number) => void;
   onUpdatePendingReview?: (index: number, fields: Partial<ImportReviewItem>) => void;
@@ -87,6 +88,7 @@ export default function ImportarExtratoModal({
   handleImportCancel,
   onSubmitCriticalErrorsForReview,
   handleImportCSVSubmit,
+  onApproveWithOperationalJustification,
   reviewDecisions,
   onEditPendingJustification,
   onUpdatePendingReview,
@@ -99,9 +101,17 @@ export default function ImportarExtratoModal({
 }: ImportarExtratoModalProps) {
   const [selectedPendingIndex, setSelectedPendingIndex] = useState(0);
   const [reviewJustifications, setReviewJustifications] = useState<Record<number, string>>({});
+  const [operationalJustification, setOperationalJustification] = useState('');
   const pendingReviews = importPreview?.pendingReviews || [];
   const selectedPending = pendingReviews[selectedPendingIndex];
   const hasCriticalErrors = Boolean(importPreview?.consistency.criticalErrors.some(issue => issue.code !== 'pending_review'));
+  const overridableHeaderCodes = ['entries_total_mismatch', 'exits_total_mismatch', 'balance_mismatch', 'count_mismatch'];
+  const hasHeaderDivergence = Boolean(importPreview?.consistency.criticalErrors.some(issue => overridableHeaderCodes.includes(issue.code)));
+  const canApproveWithJustification = Boolean(importPreview && importLot?.status === 'em_validacao'
+    && !importPreview.pendingReviews?.length
+    && hasHeaderDivergence
+    && importPreview.consistency.criticalErrors.every(issue => overridableHeaderCodes.includes(issue.code))
+    && importPreview.transactions.length > 0);
   const canConfirmImport = Boolean(importPreview && importLot?.status === 'em_validacao'
     && importPreview.consistency.criticalErrors.length === 0
     && Number.isInteger(importPreview.pages) && importPreview.pages! >= 1 && importPreview.pages! <= 15
@@ -245,6 +255,10 @@ export default function ImportarExtratoModal({
                   <div className="border-2 border-red-200 bg-red-50 rounded-2xl p-4 space-y-2">
                     <p className="text-[10px] font-black uppercase tracking-widest text-red-800">Confirmação bloqueada: {importPreview.consistency.criticalErrors.length} erro(s) crítico(s)</p>
                     {importPreview.consistency.criticalErrors.map(issue => <p key={`${issue.code}-${issue.transactionIndex ?? 'lote'}`} className="text-[9px] font-bold text-red-900 uppercase">{issue.message}</p>)}
+                    {hasHeaderDivergence && !importPreview.pendingReviews?.length && importPreview.consistency.criticalErrors.every(issue => overridableHeaderCodes.includes(issue.code)) && <label className="block space-y-2 pt-2">
+                      <span className="text-[9px] font-black uppercase tracking-widest text-red-900">Justificativa operacional obrigatória para aprovação excepcional</span>
+                      <textarea value={operationalJustification} onChange={event => setOperationalJustification(event.target.value)} rows={3} maxLength={2000} required disabled={isBusy} placeholder="Explique por que as divergências do cabeçalho não impedem a importação..." className="w-full rounded-xl border border-red-200 bg-white p-3 text-xs text-neutral-800 outline-none focus:border-red-500 disabled:opacity-60" />
+                    </label>}
                   </div>
                 )}
                 {importPreview.consistency.alerts.length > 0 && (
@@ -403,6 +417,9 @@ export default function ImportarExtratoModal({
               <Button type="button" disabled={isBusy} onClick={() => void onSubmitCriticalErrorsForReview()}>
                 {isSubmittingImportReview ? 'Enviando...' : 'Enviar para revisão técnica'}
               </Button>
+              {canApproveWithJustification && <Button type="button" disabled={isBusy || !operationalJustification.trim()} onClick={() => void onApproveWithOperationalJustification(operationalJustification.trim())}>
+                {isConfirmingImport ? 'Confirmando...' : 'Aprovar com justificativa operacional'}
+              </Button>}
               <button type="button" disabled={isBusy} onClick={() => fileInputRef.current?.click()} className="inline-flex items-center gap-2 rounded-xl bg-amber-100 px-4 py-3 text-[9px] font-black uppercase text-amber-900 disabled:opacity-40"><RotateCcw className="h-4 w-4" />Reprocessar/substituir arquivo</button>
               <button type="button" disabled={isBusy} onClick={requestImportCancel} className="px-4 py-3 text-[9px] font-black uppercase text-neutral-500 tracking-widest hover:text-neutral-900 transition-colors disabled:opacity-40">Cancelar lote</button>
             </>

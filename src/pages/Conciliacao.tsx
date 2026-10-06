@@ -27,7 +27,7 @@ import {
   ShieldCheck
 } from 'lucide-react';
 import { useConciliacao, useConciliacaoImportLots, useContas, useLancamentos, useEntidades, useTransferencias } from '../hooks/useData';
-import ConciliacaoHeader from '../components/conciliacao/ConciliacaoHeader';
+import ConciliacaoHeader, { type StatusConciliacaoFilter } from '../components/conciliacao/ConciliacaoHeader';
 import ConciliacaoCompetenceSummary from '../components/conciliacao/ConciliacaoCompetenceSummary';
 import ConciliacaoImportLotsPanel from '../components/conciliacao/ConciliacaoImportLotsPanel';
 import RevisaoTecnicaLoteModal from '../components/conciliacao/RevisaoTecnicaLoteModal';
@@ -36,7 +36,7 @@ import ConciliacaoPendingTransfers from '../components/conciliacao/ConciliacaoPe
 import { useAuth } from '../hooks/useAuth';
 import { useUIStore } from '../store/uiStore';
 import { LancamentoFinanceiro, TransacaoBanco, TransferenciaBancaria, TransferenciaDestinoSugestao } from '../types';
-import { ImportConfirmationMetadata, ImportLotDraft, ImportLotRecord, ImportMode, ImportPreview, ImportReviewDecisionItem, ImportReviewItem } from '../types/extratoImportacao';
+import { ImportConfirmationMetadata, ImportLotDraft, ImportLotRecord, ImportMode, ImportPreview, ImportReviewDecisionItem, ImportReviewItem, ImportTransaction } from '../types/extratoImportacao';
 import { attachImportLotMetadata, buildCsvTransactions, convertApprovedReviewsToTransactions, parseCsv, validateImportConsistency } from '../services/conciliacoesService';
 import Button from '../components/Button';
 import ImportarExtratoModal from '../components/conciliacao/ImportarExtratoModal';
@@ -80,6 +80,7 @@ export default function Conciliacao() {
     reprocessImport,
     confirmImport,
     submitImportForReview,
+    cancelImportReviewLot,
     fecharPeriodo,
     decidirFechamento,
     cancelImport,
@@ -129,6 +130,7 @@ export default function Conciliacao() {
   const [selectedLancamentoIds, setSelectedLancamentoIds] = useState<string[]>([]);
   const [directionFilter, setDirectionFilter] = useState<'todos' | 'entrada' | 'saida'>('todos');
   const [reviewFilter, setReviewFilter] = useState<'todos' | 'pendencias'>('todos');
+  const [statusFilter, setStatusFilter] = useState<StatusConciliacaoFilter>('todos');
   const [technicalReviewLot, setTechnicalReviewLot] = useState<ImportLotRecord | null>(null);
   const [operationNotice, setOperationNotice] = useState<string | null>(null);
   const [completionCandidate, setCompletionCandidate] = useState<{ id: number; requestedAt: number; contaId: string; mes: string } | null>(null);
@@ -258,6 +260,65 @@ export default function Conciliacao() {
       },
     });
     setImportLot(current => current?.id === importLot.id ? { ...current, status: 'em_revisao' } : current);
+  };
+
+  const getImportDraftFromLot = (lot: ImportLotRecord): ImportLotDraft => {
+    if (!lot.arquivo_tamanho || !lot.arquivo_mime_type || !lot.arquivo_hash || !lot.storage_path || !lot.formato_arquivo || !lot.origem_extracao) {
+      throw new Error('Os metadados completos do arquivo deste lote não estão disponíveis.');
+    }
+    return {
+      id: lot.id,
+      contaBancariaId: lot.conta_bancaria_id,
+      userId: lot.importado_por,
+      fileName: lot.arquivo_nome,
+      fileSize: lot.arquivo_tamanho,
+      mimeType: lot.arquivo_mime_type,
+      fileHash: lot.arquivo_hash,
+      storagePath: lot.storage_path,
+      formatoArquivo: lot.formato_arquivo,
+      origemExtracao: lot.origem_extracao,
+      status: lot.status,
+      tentativaNumero: lot.tentativa_numero,
+      loteOrigemId: lot.lote_origem_id,
+      reprocessadoPor: lot.reprocessado_por,
+      reprocessadoEm: lot.reprocessado_em,
+    };
+  };
+
+  const handleApproveTechnicalLot = async (lot: ImportLotRecord, justification: string) => {
+    const draft = getImportDraftFromLot(lot);
+    const metadata = typeof lot.metadata === 'object' && lot.metadata !== null ? lot.metadata as Record<string, unknown> : {};
+    const preview = typeof metadata.preview === 'object' && metadata.preview !== null ? metadata.preview as Record<string, unknown> : {};
+    const storedTransactions = Array.isArray(preview.transactions)
+      ? preview.transactions as ImportTransaction[]
+      : Array.isArray(metadata.rawTransactions) ? metadata.rawTransactions as ImportTransaction[] : [];
+    const transactions = attachImportLotMetadata(storedTransactions, draft);
+    if (transactions.length === 0) throw new Error('O lote não possui transações preservadas para aprovação.');
+    const confirmationMetadata: ImportConfirmationMetadata = {
+      pages: typeof preview.pages === 'number' ? preview.pages : undefined,
+      periodStart: typeof preview.periodStart === 'string' ? preview.periodStart : undefined,
+      periodEnd: typeof preview.periodEnd === 'string' ? preview.periodEnd : undefined,
+      openingBalance: typeof preview.openingBalance === 'number' ? preview.openingBalance : undefined,
+      closingBalance: typeof preview.closingBalance === 'number' ? preview.closingBalance : undefined,
+      bankIdentified: typeof preview.bankIdentified === 'string' ? preview.bankIdentified : undefined,
+      totalEntries: typeof preview.totalEntries === 'number' ? preview.totalEntries : undefined,
+      totalExits: typeof preview.totalExits === 'number' ? preview.totalExits : undefined,
+      parserTotals: preview.parserTotals as ImportConfirmationMetadata['parserTotals'],
+      parserMetadata: preview.parserMetadata as ImportConfirmationMetadata['parserMetadata'],
+      reportedTransactionCount: typeof preview.reportedTransactionCount === 'number' ? preview.reportedTransactionCount : undefined,
+      extractedCount: transactions.length,
+      ocrCount: transactions.filter(transaction => transaction.origem_extracao === 'ocr').length,
+      consistency: preview.consistency as ImportConfirmationMetadata['consistency'],
+      sourceOrigin: (typeof preview.sourceOrigin === 'string' ? preview.sourceOrigin : draft.origemExtracao) as ImportConfirmationMetadata['sourceOrigin'],
+      pendingReviewCount: 0,
+      reviewState: 'validated',
+      justificativaSobrescrita: justification.trim(),
+    };
+    await confirmImport({ lot: draft, transactions, metadata: confirmationMetadata });
+  };
+
+  const handleDiscardTechnicalLot = async (lot: ImportLotRecord) => {
+    await cancelImportReviewLot(lot.id);
   };
 
   const handleReprocessLot = async (lot: ImportLotRecord) => {
@@ -595,8 +656,8 @@ export default function Conciliacao() {
     }
   };
 
-  const handleImportCSVSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleImportCSVSubmit = async (e?: React.FormEvent, operationalJustification?: string) => {
+    e?.preventDefault();
     if (!importLot || !importPreview) return;
     const traceId = importTraceIdRef.current || crypto.randomUUID();
     importTraceIdRef.current = traceId;
@@ -608,7 +669,9 @@ export default function Conciliacao() {
         diagnosticLogger.warn(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: confirmação bloqueada por pendências de revisão`, { pendencias: importPreview.pendingReviews.length });
         throw new Error('Existem itens pendentes de revisão. Nenhum item ambíguo pode ser confirmado silenciosamente.');
       }
-      if (importPreview.consistency.criticalErrors.length) throw new Error(`A confirmação foi bloqueada: ${importPreview.consistency.criticalErrors.map(issue => issue.message).join(' ')}`);
+      const overridableHeaderCodes = new Set(['entries_total_mismatch', 'exits_total_mismatch', 'balance_mismatch', 'count_mismatch']);
+      const hasOperationalOverride = Boolean(operationalJustification?.trim());
+      if (importPreview.consistency.criticalErrors.length && (!hasOperationalOverride || importPreview.consistency.criticalErrors.some(issue => !overridableHeaderCodes.has(issue.code)))) throw new Error(`A confirmação foi bloqueada: ${importPreview.consistency.criticalErrors.map(issue => issue.message).join(' ')}`);
       if (importPreview.fileType === 'csv' || importPreview.fileType === 'xlsx') {
         let rows: Array<Record<string, string>>;
         currentStage = `parsing ${importPreview.fileType.toUpperCase()}`;
@@ -651,6 +714,7 @@ export default function Conciliacao() {
         alerts: importPreview.parserMetadata?.alerts,
         pendingReviewCount: importPreview.pendingReviews?.length || 0,
         reviewState: importPreview.pendingReviews?.length ? 'has_pending_reviews' : 'validated',
+        ...(hasOperationalOverride ? { justificativaSobrescrita: operationalJustification!.trim() } : {}),
         reprocessComparison: importPreview.reprocessComparison,
       };
       diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: metadata de confirmação montada`, {
@@ -665,8 +729,11 @@ export default function Conciliacao() {
       currentStage = 'validação de consistência';
       diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: validateImportConsistency iniciado`, { transacoes: transactions.length });
       const currentConsistency = validateImportConsistency(transactions, confirmationMetadata);
-      diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: validateImportConsistency concluído`, { resultado: currentConsistency.criticalErrors.length ? 'bloqueado' : 'válido', errosCriticos: currentConsistency.criticalErrors.length });
-      if (currentConsistency.criticalErrors.length > 0) throw new Error(`A confirmação foi bloqueada: ${currentConsistency.criticalErrors.map(issue => issue.message).join(' ')}`);
+      const blockingConsistencyErrors = hasOperationalOverride
+        ? currentConsistency.criticalErrors.filter(issue => !overridableHeaderCodes.has(issue.code))
+        : currentConsistency.criticalErrors;
+      diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: validateImportConsistency concluído`, { resultado: blockingConsistencyErrors.length ? 'bloqueado' : 'válido', errosCriticos: currentConsistency.criticalErrors.length });
+      if (blockingConsistencyErrors.length > 0) throw new Error(`A confirmação foi bloqueada: ${blockingConsistencyErrors.map(issue => issue.message).join(' ')}`);
       currentStage = 'confirmação da importação';
       diagnosticLogger.info(IMPORT_LOG_SCOPE, `Tentativa ${traceId}: confirmImport iniciado`, { transacoes: transactions.length, contaId: importLot.contaBancariaId });
       await confirmImport({ lot: importLot, transactions, metadata: confirmationMetadata });
@@ -687,6 +754,28 @@ export default function Conciliacao() {
     setSelectedTransacaoForConciliationId(null);
     setSelectedLancamentoIds([]);
     setCurrentConciliationDifferenceValue(0);
+  };
+
+  const handleQuickConciliation = async (transaction: TransacaoBanco, lancamento: LancamentoFinanceiro) => {
+    const referenceDate = lancamento.data_competencia || lancamento.data_vencimento;
+    if (
+      isLinking ||
+      selectedTransacaoForConciliationId !== transaction.id ||
+      getTransactionCents(transaction) !== getLancamentoAdjustedCents(lancamento) ||
+      referenceDate !== transaction.data_transacao
+    ) return;
+    try {
+      await linkConciliacao({ transacaoBancoId: transaction.id, lancamentoIds: [lancamento.id] });
+      sinalizarConciliacaoOperacao({
+        tipo: 'conciliacao',
+        contaId: transaction.conta_bancaria_id,
+        mes: transaction.data_transacao.slice(0, 7),
+        quantidade: 1,
+      });
+      clearConciliationSelection();
+    } catch (error) {
+      alert(`Erro: ${error instanceof Error ? error.message : 'Não foi possível concluir a conciliação rápida.'}`);
+    }
   };
 
   const executeConciliationLink = async () => {
@@ -807,8 +896,13 @@ export default function Conciliacao() {
   const bankStatements = useMemo(() => periodTransactions.filter(tx => {
     const matchDirection = directionFilter === 'todos' ? true : directionFilter === 'entrada' ? tx.valor > 0 : tx.valor < 0;
     const matchReview = reviewFilter === 'todos' || hasReviewAlert(tx);
-    return matchDirection && matchReview;
-  }), [periodTransactions, directionFilter, reviewFilter]);
+    const identified = isTransactionIdentified(tx);
+    const matchStatus = statusFilter === 'todos'
+      || (statusFilter === 'pendente' && !identified)
+      || (statusFilter === 'conciliado' && identified)
+      || (statusFilter === 'divergente' && (hasReviewAlert(tx) || diferencas.some(d => d.conciliacao_id === tx.conciliation?.id)));
+    return matchDirection && matchReview && matchStatus;
+  }), [periodTransactions, directionFilter, reviewFilter, statusFilter, transferencias, diferencas]);
 
   const periodProgress = useMemo(() => {
     const identified = periodTransactions.filter(isTransactionIdentified);
@@ -950,6 +1044,7 @@ export default function Conciliacao() {
     return matches;
   }, [selectedTransacaoForConciliationId, normalizedTransacoes, eligibleLaunches]);
   const smartMatches = useMemo(() => Array.from(smartMatchTypes.keys()), [smartMatchTypes]);
+  const exactSmartMatch = availableLaunches.find(lancamento => smartMatchTypes.get(lancamento.id) === 'valor_data') || null;
 
   const selectedTxForWorkspace = useMemo(() => normalizedTransacoes.find(t => t.id === selectedTransacaoForConciliationId) || null, [selectedTransacaoForConciliationId, normalizedTransacoes]);
   const originTransferSuggestions = useMemo(() => {
@@ -1007,6 +1102,8 @@ export default function Conciliacao() {
         setDirectionFilter={setDirectionFilter}
         reviewFilter={reviewFilter}
         setReviewFilter={setReviewFilter}
+        statusFilter={statusFilter}
+        setStatusFilter={setStatusFilter}
         contas={contas}
         selectedContaId={selectedContaId}
         setSelectedContaId={setSelectedContaId}
@@ -1041,7 +1138,7 @@ export default function Conciliacao() {
           onOpenTechnicalReview={setTechnicalReviewLot}
         />
       )}
-      {technicalReviewLot && <RevisaoTecnicaLoteModal lot={technicalReviewLot} onClose={() => setTechnicalReviewLot(null)} onReprocessLot={handleReprocessLot} isReprocessingLot={isReprocessingImport} />}
+      {technicalReviewLot && <RevisaoTecnicaLoteModal lot={technicalReviewLot} onClose={() => setTechnicalReviewLot(null)} onReprocessLot={handleReprocessLot} onApproveLot={handleApproveTechnicalLot} onDiscardLot={handleDiscardTechnicalLot} isReprocessingLot={isReprocessingImport} />}
 
       <ConciliacaoClosingPanel
         selectedMonth={selectedMonth}
@@ -1179,6 +1276,22 @@ export default function Conciliacao() {
                     )
                   ) : selectedTransacaoForConciliationId === tx.id ? (
                     <div className="flex flex-col items-end gap-2">
+                      {exactSmartMatch && (
+                        <div className="w-full max-w-[360px] rounded-xl border-2 border-emerald-300 bg-emerald-50 p-3 text-emerald-900 shadow-sm">
+                          <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest">
+                            <Zap className="w-3.5 h-3.5 fill-current" /> Sugestão exata por valor e data
+                          </div>
+                          <p className="mt-1 text-[9px] font-bold uppercase">{entidades.find(e => e.id === exactSmartMatch.entidade_id)?.nome_razao_social || 'Lançamento do ERP'} • {valueFormatter(exactSmartMatch.valor_previsto)}</p>
+                          <button
+                            type="button"
+                            disabled={isLinking}
+                            onClick={(event) => { event.stopPropagation(); void handleQuickConciliation(tx, exactSmartMatch); }}
+                            className="mt-2 h-8 rounded-lg bg-emerald-600 px-3 text-[9px] font-black uppercase tracking-widest text-white transition-colors hover:bg-emerald-700 disabled:opacity-50"
+                          >
+                            Conciliar rápido
+                          </button>
+                        </div>
+                      )}
                       {(suggestionsForTx.length > 0 || (isLoadingTransferSuggestions && tx.valor > 0)) && (
                         <div className="flex flex-col items-end gap-2">
                           <div className={`flex items-center gap-1 text-[8px] font-black uppercase tracking-widest ${suggestionsForTx.length > 1 ? 'text-sky-700' : 'text-emerald-600'}`}>
@@ -1285,6 +1398,7 @@ export default function Conciliacao() {
               </div>
             ) : availableLaunches.map(l => {
               const isSmartMatch = smartMatches.includes(l.id);
+              const isExactSmartMatch = smartMatchTypes.get(l.id) === 'valor_data';
               return (
                 <motion.div
                   layout
@@ -1327,6 +1441,16 @@ export default function Conciliacao() {
                     <div className="text-sm font-black font-mono text-neutral-900">
                       {valueFormatter(l.valor_previsto)}
                     </div>
+                    {isExactSmartMatch && selectedTxForWorkspace && (
+                      <button
+                        type="button"
+                        disabled={isLinking}
+                        onClick={() => { void handleQuickConciliation(selectedTxForWorkspace, l); }}
+                        className="rounded-xl bg-emerald-600 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-white shadow-sm transition-colors hover:bg-emerald-700 disabled:opacity-50"
+                      >
+                        Conciliar rápido
+                      </button>
+                    )}
                     <label className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
                       !selectedTransacaoForConciliationId
                         ? 'bg-neutral-100 text-neutral-300 cursor-not-allowed'
@@ -1376,6 +1500,7 @@ export default function Conciliacao() {
             handleImportCancel={handleImportCancel}
             onSubmitCriticalErrorsForReview={handleSubmitCriticalErrorsForReview}
             handleImportCSVSubmit={handleImportCSVSubmit}
+            onApproveWithOperationalJustification={justification => handleImportCSVSubmit(undefined, justification)}
             reviewDecisions={importReviewDecisions}
             onEditPendingJustification={handleEditPendingJustification}
             onUpdatePendingReview={handleUpdatePendingReview}
