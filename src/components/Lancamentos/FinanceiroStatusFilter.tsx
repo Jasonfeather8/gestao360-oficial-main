@@ -72,7 +72,7 @@ export default function FinanceiroStatusFilter({ value, onChange, filters }: Fin
   const options = [
     { id: 'all', label: 'Todos' },
     { id: 'confirmado_master', label: 'Confirmado', total: totals.confirmado_master, isLoading: confirmedQuery.isLoading },
-    { id: 'quitação_pendente', label: 'Pendente Master', total: totals.quitação_pendente, isLoading: pendingQuery.isLoading },
+    { id: 'quitação_pendente', label: 'Pend. Gestor', total: totals.quitação_pendente, isLoading: pendingQuery.isLoading },
     { id: 'bpi', label: 'BPI (Inatividade)', total: totals.bpi, isLoading: bpiQuery.isLoading }
   ];
 
@@ -108,8 +108,6 @@ export default function FinanceiroStatusFilter({ value, onChange, filters }: Fin
               <button
                 key={option.id}
                 type="button"
-                title={option.id === 'quitação_pendente' ? 'Pendente de confirmação do Master' : undefined}
-                aria-label={option.id === 'quitação_pendente' ? 'Pendente de confirmação do Master' : undefined}
                 onClick={() => toggleStatus(option.id)}
                 className={`min-h-[39px] px-3 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest border-2 transition-all text-left flex items-center justify-between gap-3 ${
                   value.includes(option.id)

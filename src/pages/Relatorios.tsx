@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import {
-  TrendingUp,
+import { 
+  TrendingUp, 
   TrendingDown, 
   Download, 
   AlertCircle,
@@ -20,49 +19,38 @@ import {
   MoreHorizontal,
   Info
 } from 'lucide-react';
-import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  BarChart,
+import { 
+  AreaChart, 
+  Area, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  ResponsiveContainer, 
+  PieChart, 
+  Pie, 
+  Cell, 
+  BarChart, 
   Bar,
   Legend
 } from 'recharts';
 import { format, subDays, startOfMonth, endOfMonth, isWithinInterval, parseISO, eachDayOfInterval, isAfter, isBefore } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { useLancamentos, useEntidades, useCategorias, useCentrosCusto, useConsolidatedFinancialSummary } from '../hooks/useData';
+import { useLancamentos, useEntidades, useCategorias, useCentrosCusto } from '../hooks/useData';
 import { motion } from 'motion/react';
-import { isFinancialReportItem } from '../utils/financialItems';
 
 const COLORS = ['#795900', '#2E7D32', '#D32F2F', '#FFA000', '#1976D2', '#9C27B0', '#00BCD4', '#607D8B'];
 
-const csvCell = (value: string | number) => {
-  const text = String(value);
-  const safeText = /^[=+\-@]/.test(text) ? `'${text}` : text;
-  return `"${safeText.replace(/"/g, '""')}"`;
-};
-
 export default function Relatorios() {
-  const navigate = useNavigate();
   const { data: lancamentos = [], isLoading: loadingLançamentos } = useLancamentos();
   const { data: entidades = [] } = useEntidades();
   const { data: categorias = [] } = useCategorias();
   const { data: centros = [] } = useCentrosCusto();
-  const { data: consolidatedSummary } = useConsolidatedFinancialSummary();
 
   // Export CSV logic
   const handleExportCSV = () => {
     const periodItems = lancamentos.filter(l =>
-      isFinancialReportItem(l) &&
       l.status_pagamento === 'pago' &&
-      l.status_aprovacao === 'confirmado_master' &&
       l.data_vencimento >= dateRange.start &&
       l.data_vencimento <= dateRange.end &&
       (selectedCostCenter === 'all' || l.centro_custo_id === selectedCostCenter)
@@ -72,15 +60,7 @@ export default function Relatorios() {
     const csvContent = periodItems.map(l => {
       const ent = entidades.find(e => e.id === l.entidade_id)?.nome_razao_social || 'N/A';
       const cat = categorias.find(c => c.id === l.categoria_id)?.nome || 'N/A';
-      return [
-        csvCell(l.id),
-        csvCell(l.tipo),
-        csvCell(l.data_vencimento),
-        csvCell(ent),
-        csvCell(cat),
-        l.valor_previsto,
-        csvCell(l.status_pagamento),
-      ].join(',');
+      return `"${l.id}","${l.tipo}","${l.data_vencimento}","${ent}","${cat}",${l.valor_previsto},"${l.status_pagamento}"`;
     }).join('\n');
 
     const blob = new Blob([headers + csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -91,7 +71,6 @@ export default function Relatorios() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    URL.revokeObjectURL(url);
   };
 
   // Filters
@@ -112,17 +91,16 @@ export default function Relatorios() {
 
   // 1. KPI DATA CALCULATION
   const kpis = useMemo(() => {
-    const periodItems = lancamentos.filter(l =>
-      isFinancialReportItem(l) &&
-      l.data_vencimento >= dateRange.start &&
+    const periodItems = lancamentos.filter(l => 
+      l.data_vencimento >= dateRange.start && 
       l.data_vencimento <= dateRange.end &&
       (selectedCostCenter === 'all' || l.centro_custo_id === selectedCostCenter)
     );
 
-    const realizedIn = periodItems.filter(l => l.tipo === 'entrada' && l.status_pagamento === 'pago' && l.status_aprovacao === 'confirmado_master').reduce((acc, curr) => acc + (curr.valor_recebido ?? curr.valor_previsto), 0);
-    const realizedOut = periodItems.filter(l => l.tipo === 'saida' && l.status_pagamento === 'pago' && l.status_aprovacao === 'confirmado_master').reduce((acc, curr) => acc + (curr.valor_recebido ?? curr.valor_previsto), 0);
-    const expectedIn = periodItems.filter(l => l.tipo === 'entrada' && (l.status_pagamento === 'aberto' || l.status_pagamento === 'quitação_pendente')).reduce((acc, curr) => acc + curr.valor_previsto, 0);
-    const expectedOut = periodItems.filter(l => l.tipo === 'saida' && (l.status_pagamento === 'aberto' || l.status_pagamento === 'quitação_pendente')).reduce((acc, curr) => acc + curr.valor_previsto, 0);
+    const realizedIn = periodItems.filter(l => l.tipo === 'entrada' && l.status_pagamento === 'pago').reduce((acc, curr) => acc + curr.valor_previsto, 0);
+    const realizedOut = periodItems.filter(l => l.tipo === 'saida' && l.status_pagamento === 'pago').reduce((acc, curr) => acc + curr.valor_previsto, 0);
+    const expectedIn = periodItems.filter(l => l.tipo === 'entrada' && l.status_pagamento === 'aberto').reduce((acc, curr) => acc + curr.valor_previsto, 0);
+    const expectedOut = periodItems.filter(l => l.tipo === 'saida' && l.status_pagamento === 'aberto').reduce((acc, curr) => acc + curr.valor_previsto, 0);
 
     const totalRevenue = realizedIn + expectedIn;
     const netProfit = realizedIn - realizedOut;
@@ -158,16 +136,15 @@ export default function Relatorios() {
 
     return days.map(day => {
       const dateStr = format(day, 'yyyy-MM-dd');
-      const dayItems = lancamentos.filter(l =>
-        isFinancialReportItem(l) &&
+      const dayItems = lancamentos.filter(l => 
         l.data_vencimento === dateStr &&
         (selectedCostCenter === 'all' || l.centro_custo_id === selectedCostCenter)
       );
 
-      const realized = dayItems.filter(l => l.status_pagamento === 'pago' && l.status_aprovacao === 'confirmado_master')
-        .reduce((acc, curr) => acc + (curr.tipo === 'entrada' ? (curr.valor_recebido ?? curr.valor_previsto) : -(curr.valor_recebido ?? curr.valor_previsto)), 0);
+      const realized = dayItems.filter(l => l.status_pagamento === 'pago')
+        .reduce((acc, curr) => acc + (curr.tipo === 'entrada' ? curr.valor_previsto : -curr.valor_previsto), 0);
       
-      const expected = dayItems.filter(l => l.status_pagamento === 'aberto' || l.status_pagamento === 'quitação_pendente')
+      const expected = dayItems.filter(l => l.status_pagamento === 'aberto')
         .reduce((acc, curr) => acc + (curr.tipo === 'entrada' ? curr.valor_previsto : -curr.valor_previsto), 0);
 
       return {
@@ -180,10 +157,9 @@ export default function Relatorios() {
 
   // 3. EXPENSES BY CATEGORY
   const categoryData = useMemo(() => {
-    const outflows = lancamentos.filter(l =>
-      isFinancialReportItem(l) &&
-      l.tipo === 'saida' &&
-      l.data_vencimento >= dateRange.start &&
+    const outflows = lancamentos.filter(l => 
+      l.tipo === 'saida' && 
+      l.data_vencimento >= dateRange.start && 
       l.data_vencimento <= dateRange.end &&
       (selectedCostCenter === 'all' || l.centro_custo_id === selectedCostCenter)
     );
@@ -202,10 +178,9 @@ export default function Relatorios() {
 
   // 4. REVENUE BY CLIENT (Top 5)
   const clientData = useMemo(() => {
-    const inflows = lancamentos.filter(l =>
-      isFinancialReportItem(l) &&
-      l.tipo === 'entrada' &&
-      l.data_vencimento >= dateRange.start &&
+    const inflows = lancamentos.filter(l => 
+      l.tipo === 'entrada' && 
+      l.data_vencimento >= dateRange.start && 
       l.data_vencimento <= dateRange.end &&
       (selectedCostCenter === 'all' || l.centro_custo_id === selectedCostCenter)
     );
@@ -268,42 +243,9 @@ export default function Relatorios() {
           >
             <Download className="w-5 h-5" />
           </button>
-          <button
-            type="button"
-            onClick={() => navigate('/implantacao')}
-            className="text-[9px] font-black uppercase tracking-widest text-secondary hover:text-primary transition-colors"
-          >
-            Validação da implantação
-          </button>
 
         </div>
       </header>
-
-      <section className="bg-surface border border-surface-border rounded-3xl p-5 shadow-sm">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-sm font-black text-on-surface uppercase tracking-tight">Resumo consolidado</h2>
-            <p className="text-[9px] font-bold text-secondary uppercase tracking-widest">Bancos e físico do Cofre em métricas distintas</p>
-          </div>
-          <Info className="w-4 h-4 text-secondary" />
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          {[
-            ['Bancos confirmados', consolidatedSummary?.bank_confirmed],
-            ['Bancos operacionais', consolidatedSummary?.bank_operational],
-            ['Cofre aprovado', consolidatedSummary?.cash_approved],
-            ['Cofre operacional', consolidatedSummary?.cash_operational],
-            ['Total confirmado', consolidatedSummary?.consolidated_confirmed],
-            ['Total operacional', consolidatedSummary?.consolidated_operational],
-          ].map(([label, value]) => (
-            <div key={String(label)} className="rounded-xl bg-surface-low-low border border-surface-border/70 p-3">
-              <p className="text-[9px] font-black uppercase tracking-wider text-secondary">{label}</p>
-              <p className="mt-1 text-sm font-black font-mono text-on-surface">{formatBRL(Number(value || 0))}</p>
-            </div>
-          ))}
-        </div>
-        <p className="mt-3 text-[10px] font-bold text-secondary">Pendências do Cofre: {consolidatedSummary?.pending_cash_movements || 0} movimentações · {consolidatedSummary?.pending_cash_transfers || 0} transferências · {formatBRL(Number(consolidatedSummary?.cash_pending || 0))} em aprovação · {formatBRL(Number(consolidatedSummary?.pending_cash_transfer_value || 0))} em transferências</p>
-      </section>
 
       {/* KPI Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

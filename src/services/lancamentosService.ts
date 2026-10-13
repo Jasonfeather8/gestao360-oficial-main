@@ -1,12 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { diagnosticLogger } from './diagnosticLogger';
-import { transferenciasService } from './transferenciasService';
 import { LancamentoFinanceiro } from '../types';
-import {
-  calculateFinalAmount,
-  parseFinancialInput,
-  validateAdjustment,
-} from '../utils/adjustments';
+import { calculateAdjustmentAmount } from '../utils/adjustments';
 
 export interface LancamentoFilters {
   searchTerm?: string;
@@ -31,11 +26,6 @@ export interface LancamentoFilters {
   operationalView?: boolean;
   page?: number;
   pageSize?: number;
-  conciliationWorkspace?: {
-    accountId: string;
-    periodStart: string;
-    periodEnd: string;
-  };
 }
 
 const normalizeFilterValues = (value?: string | string[]): string[] => {
@@ -55,31 +45,13 @@ const combineOrGroups = (groups: string[][]): string => {
     .join(',')})`;
 };
 
-const normalizeAdjustmentType = (type: unknown): 'valor' | 'porcentagem' => {
-  if (type === undefined || type === null || type === '') return 'valor';
-  if (type === 'valor' || type === 'porcentagem') return type;
-  throw new Error('Tipo de ajuste inválido.');
-};
+const normalizeAdjustmentType = (type: unknown): 'valor' | 'porcentagem' =>
+  type === 'porcentagem' ? 'porcentagem' : 'valor';
 
-const parseAVRValue = (value: string | number | null | undefined): number =>
-  parseFinancialInput(value, { required: true, maxFractionDigits: 2 });
-
-const validateLaunchAdjustments = (item: Record<string, any>, base: number): void => {
-  const descontoTipo = normalizeAdjustmentType(item.desconto_tipo);
-  const acrescimoTipo = normalizeAdjustmentType(item.acrescimo_tipo);
-  if (item.desconto_valor !== undefined && item.desconto_valor !== null && item.desconto_valor !== '') {
-    validateAdjustment(item.desconto_valor, descontoTipo, 'Desconto');
-  }
-  if (item.acrescimo_valor !== undefined && item.acrescimo_valor !== null && item.acrescimo_valor !== '') {
-    validateAdjustment(item.acrescimo_valor, acrescimoTipo, 'Acréscimo');
-  }
-  calculateFinalAmount({
-    original: base,
-    discount: item.desconto_valor,
-    discountType: descontoTipo,
-    increase: item.acrescimo_valor,
-    increaseType: acrescimoTipo,
-  });
+const parseAVRValue = (value: string | number | null | undefined): number => {
+  if (typeof value === 'number') return value;
+  if (value === null || value === undefined) return 0;
+  return Number(value.replace(/\./g, '').replace(',', '.')) || 0;
 };
 
 const formatAdjustmentValue = (value: unknown, type: unknown, base: number): string => {
@@ -94,8 +66,6 @@ const formatBRL = (value: number): string => value.toLocaleString('pt-BR', {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2
 });
-
-const WORKSPACE_PAGE_SIZE = 500;
 
 const getOperationalBalance = async (contaId: string): Promise<number> => {
   const { data, error } = await supabase.rpc('get_contas_saldos_reais');
@@ -196,17 +166,9 @@ export const lancamentosService = {
       return { data: [], count: 0 };
     }
 
-    const isConciliationWorkspace = Boolean(filters?.conciliationWorkspace);
     let query = supabase
       .from('lancamentos_financeiros')
-      .select(isConciliationWorkspace ? '*' : '*, entidades_negocio!inner(nome_razao_social)', { count: 'exact' })
-      .is('transferencia_cofre_lado', null);
-
-    if (isConciliationWorkspace && filters?.conciliationWorkspace) {
-      query = query
-        .eq('conta_bancaria_id', filters.conciliationWorkspace.accountId)
-        .or(`and(data_competencia.gte.${filters.conciliationWorkspace.periodStart},data_competencia.lte.${filters.conciliationWorkspace.periodEnd}),and(data_competencia.is.null,data_vencimento.gte.${filters.conciliationWorkspace.periodStart},data_vencimento.lte.${filters.conciliationWorkspace.periodEnd})`);
-    }
+      .select('*, entidades_negocio!inner(nome_razao_social)', { count: 'exact' });
 
     if (filters?.docCode !== undefined) {
       query = query
@@ -370,36 +332,20 @@ export const lancamentosService = {
         query = query.in('id', searchLancamentoIds);
       }
 
-      // The reconciliation workspace must load the complete eligible period.
-      if (!filters.conciliationWorkspace && filters.page && filters.pageSize) {
+      // Pagination
+      if (filters.page && filters.pageSize) {
         const from = (filters.page - 1) * filters.pageSize;
         const to = from + filters.pageSize - 1;
         query = query.range(from, to);
       }
-    } else if (!isConciliationWorkspace) {
+    } else {
       query = query.range(0, 49); // Default limit
     }
 
     if (signal) query = query.abortSignal(signal);
-
-    if (isConciliationWorkspace) {
-      const workspaceRows: LancamentoFinanceiro[] = [];
-      let workspaceCount = 0;
-      for (let from = 0; ; from += WORKSPACE_PAGE_SIZE) {
-        const { data, error, count } = await query.range(from, from + WORKSPACE_PAGE_SIZE - 1);
-        if (error) throw error;
-        const page = (data || []) as unknown as LancamentoFinanceiro[];
-        workspaceRows.push(...page);
-        workspaceCount = count || workspaceRows.length;
-        if (page.length < WORKSPACE_PAGE_SIZE) {
-          return { data: workspaceRows, count: workspaceCount };
-        }
-      }
-    }
-
     const { data, error, count } = await query;
     if (error) throw error;
-    return { data: data as unknown as LancamentoFinanceiro[], count: count || 0 };
+    return { data: data as LancamentoFinanceiro[], count: count || 0 };
   },
 
   getById: async (id: string): Promise<LancamentoFinanceiro> => {
@@ -424,18 +370,6 @@ export const lancamentosService = {
     return (data || []) as LancamentoFinanceiro[];
   },
 
-  criarAPartirDeTransacao: async (transacaoBancoId: string, dadosComerciais: Record<string, unknown>): Promise<LancamentoFinanceiro> => {
-    if (!transacaoBancoId) throw new Error('Transação bancária é obrigatória.');
-    const valorPrevisto = parseFinancialInput(dadosComerciais.valor_previsto as number | string | null | undefined, { required: true, maxFractionDigits: 2 });
-    validateLaunchAdjustments(dadosComerciais, valorPrevisto);
-    const { data, error } = await supabase.rpc('criar_lancamento_a_partir_transacao_atomico', {
-      p_transacao_id: transacaoBancoId,
-      p_dados_comerciais: dadosComerciais,
-    });
-    if (error) throw error;
-    return data as LancamentoFinanceiro;
-  },
-
   create: async (item: any, recorrencia?: any): Promise<LancamentoFinanceiro> => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Usuário não autenticado');
@@ -448,36 +382,28 @@ export const lancamentosService = {
       .single();
 
     const isMaster = profile?.role === 'master';
-    const valorPrevisto = parseFinancialInput(item.valor_previsto, { required: true, maxFractionDigits: 2 });
-    validateLaunchAdjustments(item, valorPrevisto);
-    const saldoDisponivel = calculateFinalAmount({
-      original: valorPrevisto,
-      discount: item.desconto_valor,
-      discountType: normalizeAdjustmentType(item.desconto_tipo),
-      increase: item.acrescimo_valor,
-      increaseType: normalizeAdjustmentType(item.acrescimo_tipo),
-    });
-    const valorRecebido = parseFinancialInput(item.valor_recebido, { maxFractionDigits: 2 });
+    const valorPrevisto = Number(item.valor_previsto) || 0;
+    const desconto = calculateAdjustmentAmount(item.desconto_valor, item.desconto_tipo, valorPrevisto);
+    const acrescimo = calculateAdjustmentAmount(item.acrescimo_valor, item.acrescimo_tipo, valorPrevisto);
+    const saldoDisponivel = Math.max(0, valorPrevisto - desconto + acrescimo);
+    const valorRecebido = Number(item.valor_recebido) || 0;
     const hasReceivedPayment = item.ja_recebido === true || item.status_pagamento === 'pago' || item.status_pagamento === 'pago_parcial' || item.valor_recebido !== undefined;
 
-    if (hasReceivedPayment && valorRecebido > saldoDisponivel) {
+    if (hasReceivedPayment && (valorRecebido < 0 || valorRecebido > saldoDisponivel + 0.005)) {
       throw new Error('O valor recebido não pode ser maior que o saldo disponível do lançamento.');
     }
-    if (item.ja_recebido !== true) {
-      await assertOperationalBalance({
-        tipo: item.tipo,
-        tipoBaixa: item.tipo_baixa,
-        contaId: item.conta_bancaria_id,
-        amount: valorRecebido
-      });
-    }
+    await assertOperationalBalance({
+      tipo: item.tipo,
+      tipoBaixa: item.tipo_baixa,
+      contaId: item.conta_bancaria_id,
+      amount: valorRecebido
+    });
 
     const lancamentoData = {
       ...item,
       user_id: user.id,
       usuario_criador_id: user.id,
-      // A sinalização de previsão nunca é uma baixa financeira.
-      status_pagamento: 'aberto',
+      // Se não for master, garante que não entra como confirmado
       status_aprovacao: isMaster ? (item.status_aprovacao || 'confirmado_master') : 'digital'
     };
 
@@ -508,17 +434,13 @@ export const lancamentosService = {
         (total: number, parcela: any) => total + (Number(parcela.valor_previsto) || 0),
         0
       );
-      const parcelaSinalizada = item.ja_recebido === true;
+      const recorrenciaRecebida = item.ja_recebido === true || item.status_pagamento === 'pago' || item.status_pagamento === 'pago_parcial';
       const parcelas = recorrencia.parcelas.map((p: any, index: number) => ({
         ...lancamentoData,
-        status_pagamento: 'aberto',
-        ...(parcelaSinalizada && index === 0 ? {
-          ja_recebido: true,
-          valor_recebido: valorRecebido,
-          data_pagamento: item.data_pagamento || null
-        } : {
-          ja_recebido: false,
+        ...(recorrenciaRecebida && index === 0 ? {} : {
+          status_pagamento: 'aberto',
           valor_recebido: 0,
+          ja_recebido: false,
           data_pagamento: null
         }),
         data_vencimento: index === 0 ? item.data_vencimento : p.data_vencimento,
@@ -561,37 +483,20 @@ export const lancamentosService = {
 
     const { data: current } = await supabase
       .from('lancamentos_financeiros')
-      .select('recorrencia_id, tipo, conta_bancaria_id, valor_previsto, desconto_valor, desconto_tipo, acrescimo_valor, acrescimo_tipo, valor_recebido, status_pagamento, status_aprovacao, ja_recebido, data_pagamento, tipo_baixa, observacoes')
+      .select('recorrencia_id, tipo, conta_bancaria_id, valor_previsto, desconto_valor, desconto_tipo, acrescimo_valor, acrescimo_tipo, valor_recebido, status_pagamento, tipo_baixa, observacoes')
       .eq('id', id)
       .single();
 
-    const currentHasConfirmedPayment = current?.status_aprovacao === 'confirmado_master' &&
-      (current.status_pagamento === 'pago' || current.status_pagamento === 'pago_parcial');
-    if (
-      (safeData.status_pagamento === 'pago' || safeData.status_pagamento === 'pago_parcial') &&
-      !currentHasConfirmedPayment
-    ) {
-      throw new Error('A baixa definitiva deve ocorrer pela conciliação ou aprovação autorizada.');
-    }
-    if ((safeData.ja_recebido === true || current?.ja_recebido === true) && !currentHasConfirmedPayment) {
-      safeData.status_pagamento = 'aberto';
-    }
-
     const isAVRUpdate = safeData.tipo_baixa === 'avr' || current?.tipo_baixa === 'avr';
-    const valorPrevisto = parseFinancialInput(safeData.valor_previsto ?? current?.valor_previsto, { required: true, maxFractionDigits: 2 });
+    const valorPrevisto = Number(safeData.valor_previsto ?? current?.valor_previsto) || 0;
     const descontoValor = safeData.desconto_valor ?? current?.desconto_valor;
     const acrescimoValor = safeData.acrescimo_valor ?? current?.acrescimo_valor;
-    const descontoTipo = normalizeAdjustmentType(safeData.desconto_tipo ?? current?.desconto_tipo);
-    const acrescimoTipo = normalizeAdjustmentType(safeData.acrescimo_tipo ?? current?.acrescimo_tipo);
-    validateLaunchAdjustments({ desconto_valor: descontoValor, desconto_tipo: descontoTipo, acrescimo_valor: acrescimoValor, acrescimo_tipo: acrescimoTipo }, valorPrevisto);
-    const saldoDisponivel = calculateFinalAmount({
-      original: valorPrevisto,
-      discount: descontoValor,
-      discountType: descontoTipo,
-      increase: acrescimoValor,
-      increaseType: acrescimoTipo,
-    });
-    const valorRecebido = parseFinancialInput(safeData.valor_recebido ?? current?.valor_recebido, { maxFractionDigits: 2 });
+    const descontoTipo = safeData.desconto_tipo ?? current?.desconto_tipo;
+    const acrescimoTipo = safeData.acrescimo_tipo ?? current?.acrescimo_tipo;
+    const desconto = calculateAdjustmentAmount(descontoValor, descontoTipo, valorPrevisto);
+    const acrescimo = calculateAdjustmentAmount(acrescimoValor, acrescimoTipo, valorPrevisto);
+    const saldoDisponivel = Math.max(0, valorPrevisto - desconto + acrescimo);
+    const valorRecebido = Number(safeData.valor_recebido ?? current?.valor_recebido) || 0;
     const persistedDescontoTipo = normalizeAdjustmentType(current?.desconto_tipo);
     const persistedAcrescimoTipo = normalizeAdjustmentType(current?.acrescimo_tipo);
     const nextDescontoTipo = normalizeAdjustmentType(safeData.desconto_tipo ?? current?.desconto_tipo);
@@ -636,15 +541,13 @@ export const lancamentosService = {
     const saldoAtualDoLancamento = currentIsFinancialDebit && contaBancariaEfetiva === current?.conta_bancaria_id
       ? Number(current?.valor_recebido) || 0
       : 0;
-    if (safeData.ja_recebido !== true && current?.ja_recebido !== true) {
-      await assertOperationalBalance({
-        tipo: safeData.tipo ?? current?.tipo,
-        tipoBaixa: safeData.tipo_baixa ?? current?.tipo_baixa,
-        contaId: contaBancariaEfetiva,
-        amount: valorRecebido,
-        saldoAdicionado: saldoAtualDoLancamento
-      });
-    }
+    await assertOperationalBalance({
+      tipo: safeData.tipo ?? current?.tipo,
+      tipoBaixa: safeData.tipo_baixa ?? current?.tipo_baixa,
+      contaId: contaBancariaEfetiva,
+      amount: valorRecebido,
+      saldoAdicionado: saldoAtualDoLancamento
+    });
 
     if (mode === 'all' && current?.recorrencia_id) {
       const { data: updated, error } = await supabase
@@ -670,14 +573,9 @@ export const lancamentosService = {
   delete: async (id: string, mode: 'single' | 'all' = 'single'): Promise<boolean> => {
     const { data: current } = await supabase
       .from('lancamentos_financeiros')
-      .select('recorrencia_id, transferencia_id')
+      .select('recorrencia_id')
       .eq('id', id)
       .single();
-
-    if (current?.transferencia_id) {
-      await transferenciasService.estornar(current.transferencia_id);
-      return true;
-    }
 
     if (mode === 'all' && current?.recorrencia_id) {
       const { error } = await supabase
@@ -728,18 +626,10 @@ export const lancamentosService = {
     const isBPI = data.tipo_baixa === 'bpi';
     const isAVR = data.tipo_baixa === 'avr';
     const isBaixaFinanceira = !isBPI && !isAVR;
-    if (isBaixaFinanceira && current.ja_recebido === true) {
-      throw new Error('Títulos sinalizados como já pagos/recebidos só podem ser baixados pela conciliação bancária.');
-    }
     if (isAVR && (current.status_pagamento !== 'aberto' || Number(current.valor_recebido) > 0)) {
       throw new Error('Somente parcelas abertas e sem valor recebido podem ser ajustadas.');
     }
-    const valorPagoInformado = parseFinancialInput(data.valor_pago, { maxFractionDigits: 2 });
-    const valorPagoEfetivo = isBPI
-      ? 0
-      : isAVR
-        ? (valorPagoInformado > 0 ? valorPagoInformado : parseFinancialInput(current.valor_previsto, { required: true, maxFractionDigits: 2 }))
-        : valorPagoInformado;
+    const valorPagoEfetivo = (isBPI || isAVR) ? (data.valor_pago > 0 ? data.valor_pago : (isBPI ? 0 : current.valor_previsto)) : (data.valor_pago > 0 ? data.valor_pago : current.valor_previsto);
     const parcelaSelecionadaAVR = data.parcelas?.find(parcela => parcela.id === id);
     if (isAVR && current.recorrencia_id && !parcelaSelecionadaAVR) {
       throw new Error('A parcela selecionada não foi encontrada na grade AVR.');
@@ -764,26 +654,18 @@ export const lancamentosService = {
         return total + (shouldUseSelectedValue ? valorParcelaSelecionadaAVR : Number(row.valor_previsto) || 0);
       }, 0);
     }
-    const valorBase = parseFinancialInput(current.valor_previsto, { required: true, maxFractionDigits: 2 });
-    const descontoValor = parseFinancialInput(current.desconto_valor, { maxFractionDigits: 2 });
-    const acrescimoValor = parseFinancialInput(current.acrescimo_valor, { maxFractionDigits: 2 });
+    const descontoValor = Number(current.desconto_valor) || 0;
+    const acrescimoValor = Number(current.acrescimo_valor) || 0;
     const descontoTipo = normalizeAdjustmentType(current.desconto_tipo);
     const acrescimoTipo = normalizeAdjustmentType(current.acrescimo_tipo);
-    validateLaunchAdjustments({ desconto_valor: descontoValor, desconto_tipo: descontoTipo, acrescimo_valor: acrescimoValor, acrescimo_tipo: acrescimoTipo }, valorBase);
-    const taxaAplicada = parseFinancialInput(data.taxa_bancaria, { maxFractionDigits: 2 });
-    const subtotal = calculateFinalAmount({
-      original: valorBase,
-      discount: descontoValor,
-      discountType: descontoTipo,
-      increase: acrescimoValor,
-      increaseType: acrescimoTipo,
-      fee: taxaAplicada,
-    });
-    const valorRecebidoAnterior = parseFinancialInput(current.valor_recebido, { maxFractionDigits: 2 });
-    const saldoDisponivel = Math.round((subtotal - valorRecebidoAnterior) * 100) / 100;
-    if (saldoDisponivel < 0) throw new Error('O valor recebido histórico é maior que o valor final do lançamento.');
-    const totalValorRecebido = Math.round((valorRecebidoAnterior + valorPagoEfetivo) * 100) / 100;
-    if (isBaixaFinanceira && (data.valor_pago <= 0 || data.valor_pago > saldoDisponivel)) {
+    const descontoAplicado = calculateAdjustmentAmount(descontoValor, descontoTipo, current.valor_previsto);
+    const acrescimoAplicado = calculateAdjustmentAmount(acrescimoValor, acrescimoTipo, current.valor_previsto);
+    const taxaAplicada = Number(data.taxa_bancaria) || 0;
+    const subtotal = Math.max(0, current.valor_previsto - descontoAplicado + acrescimoAplicado + taxaAplicada);
+    const valorRecebidoAnterior = Number(current.valor_recebido) || 0;
+    const saldoDisponivel = Math.max(0, subtotal - valorRecebidoAnterior);
+    const totalValorRecebido = valorRecebidoAnterior + valorPagoEfetivo;
+    if (isBaixaFinanceira && (data.valor_pago < 0 || data.valor_pago > saldoDisponivel + 0.005)) {
       throw new Error('O valor pago não pode ser maior que o saldo disponível do título.');
     }
     const isPartial = isBaixaFinanceira && totalValorRecebido < subtotal - 0.005;
@@ -931,10 +813,7 @@ export const lancamentosService = {
 
    const updatePayload: any = {
      status_pagamento: isPartial && !isBPI ? (isMaster ? 'pago_parcial' : 'quitação_pendente') : finalPaymentStatus,
-     ...(isBaixaFinanceira ? {
-       status_aprovacao: isMaster ? 'confirmado_master' : 'digital',
-       ...(isMaster ? { data_aprovacao: new Date().toISOString() } : {})
-     } : {}),
+     ...(isBaixaFinanceira ? { status_aprovacao: 'digital' } : {}),
      data_pagamento: dataPagamentoVal,
      hora_pagamento: isBPI ? null : horaPagamentoVal,
      conta_bancaria_id: contaBancariaVal,
@@ -979,27 +858,6 @@ export const lancamentosService = {
 
     if (getError) throw getError;
 
-    if (current.transferencia_id) {
-      await transferenciasService.estornar(current.transferencia_id);
-      return;
-    }
-
-    if (current.ja_recebido === true && (current.status_pagamento === 'pago' || current.status_pagamento === 'pago_parcial')) {
-      const { data: conciliacao, error: conciliacaoError } = await supabase
-        .from('conciliacoes')
-        .select('id')
-        .eq('lancamento_id', id)
-        .limit(1)
-        .maybeSingle();
-      if (conciliacaoError) throw conciliacaoError;
-      if (!conciliacao) throw new Error('O título sinalizado não possui uma conciliação para estornar.');
-      const { error: unlinkError } = await supabase.rpc('desvincular_conciliacao_atomica', {
-        p_conciliacao_id: conciliacao.id,
-      });
-      if (unlinkError) throw unlinkError;
-      return;
-    }
-
     if (current.vinculo_residuo_id) {
       const { data: original } = await supabase
         .from('lancamentos_financeiros')
@@ -1028,40 +886,11 @@ export const lancamentosService = {
   },
 
   approveInBatch: async (ids: string[], targetStatus: 'digital' | 'confirmado_master' | 'reprovado'): Promise<void> => {
-    const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
-    if (uniqueIds.length === 0) throw new Error('Selecione ao menos um lançamento.');
-    if (uniqueIds.length !== ids.length) throw new Error('A lista de lançamentos contém duplicidades.');
-
     const { data: { user } } = await supabase.auth.getUser();
     const { data: profile } = await supabase.from('profiles').select('role').eq('id', user?.id).single();
 
     if (targetStatus === 'confirmado_master' && profile?.role !== 'master') {
       throw new Error('Apenas usuários Master podem confirmar saldos.');
-    }
-
-    let selectedRows: any[] = [];
-    if (targetStatus === 'confirmado_master') {
-      const { data: fetchedSelectedRows, error: selectedRowsError } = await supabase
-        .from('lancamentos_financeiros')
-        .select('id, ja_recebido, status_pagamento, vinculo_residuo_id, valor_previsto, desconto_valor, desconto_tipo, acrescimo_valor, acrescimo_tipo')
-        .in('id', uniqueIds);
-      if (selectedRowsError) throw selectedRowsError;
-      selectedRows = fetchedSelectedRows || [];
-      if (selectedRows.length !== uniqueIds.length) throw new Error('Um ou mais lançamentos não foram encontrados.');
-
-      const sinalizados = selectedRows.filter(row => row.ja_recebido === true).map(row => row.id);
-      if (sinalizados.length > 0) {
-        const { data: vinculos, error: vinculosError } = await supabase
-          .from('conciliacoes')
-          .select('lancamento_id')
-          .in('lancamento_id', sinalizados);
-        if (vinculosError) throw vinculosError;
-        const conciliados = new Set((vinculos || []).map(row => row.lancamento_id));
-        const semConciliacao = sinalizados.filter(id => !conciliados.has(id));
-        if (semConciliacao.length > 0) {
-          throw new Error('Títulos sinalizados só podem ser confirmados após uma conciliação bancária existente.');
-        }
-      }
     }
 
     const updatePayload: any = {
@@ -1079,24 +908,22 @@ export const lancamentosService = {
     }
 
     if (targetStatus === 'confirmado_master') {
-      const partialIds = new Set((selectedRows || [])
+      const { data: partialRows, error: partialRowsError } = await supabase
+        .from('lancamentos_financeiros')
+        .select('id, status_pagamento, vinculo_residuo_id')
+        .in('id', ids);
+      if (partialRowsError) throw partialRowsError;
+
+      const partialIds = new Set((partialRows || [])
         .filter(row => row.status_pagamento === 'pago_parcial' || row.vinculo_residuo_id)
         .map(row => row.id));
       const regularIds = ids.filter(id => !partialIds.has(id));
 
-      for (const regularId of regularIds) {
-        const row = (selectedRows || []).find(selectedRow => selectedRow.id === regularId);
-        const valorAjustado = calculateFinalAmount({
-          original: row?.valor_previsto,
-          discount: row?.desconto_valor,
-          discountType: row?.desconto_tipo,
-          increase: row?.acrescimo_valor,
-          increaseType: row?.acrescimo_tipo,
-        });
+      if (regularIds.length > 0) {
         const { error } = await supabase
           .from('lancamentos_financeiros')
-          .update({ ...updatePayload, valor_recebido: valorAjustado })
-          .eq('id', regularId);
+          .update(updatePayload)
+          .in('id', regularIds);
         if (error) throw error;
       }
 
@@ -1116,8 +943,12 @@ export const lancamentosService = {
     }
   },
 
-  confirmarQuitacao: async (_id: string, _isMaster: boolean = false): Promise<void> => {
-    throw new Error('A quitação deve ocorrer pelo fluxo de conciliação bancária e sua aprovação posterior.');
+  confirmarQuitacao: async (id: string, isMaster: boolean = false): Promise<void> => {
+    const { error } = await supabase
+      .from('lancamentos_financeiros')
+      .update({ status_pagamento: isMaster ? 'pago' : 'quitação_pendente' })
+      .eq('id', id);
+    if (error) throw error;
   },
 
   getAnexos: async (lancamentoId: string): Promise<any[]> => {

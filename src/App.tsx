@@ -32,13 +32,10 @@ import Recorrencias from './pages/Recorrencias';
 import CRM from './pages/CRM';
 import Cadastros from './pages/Cadastros';
 import Relatorios from './pages/Relatorios';
-import Implantacao from './pages/Implantacao';
 import Configuracoes from './pages/Configuracoes';
 import Notificacoes from './pages/Notificacoes';
 import Pagar from './pages/Pagar';
 import Receber from './pages/Receber';
-import CofreLocal from './pages/CofreLocal';
-import AprovacaoMaster from './pages/AprovacaoMaster';
 
 // Create a client for React Query caching
 const queryClient = new QueryClient({
@@ -112,7 +109,6 @@ function NotificationDropdown() {
                     <div className="flex flex-col gap-0.5">
                       <p className={`text-xs font-bold ${!n.read ? 'text-neutral-900' : 'text-neutral-500'}`}>{n.title}</p>
                       <p className="text-[11px] text-on-surface-variant line-clamp-2">{n.message}</p>
-                      {n.origem && <p className="text-[9px] font-black uppercase tracking-wide text-primary">Origem: {n.origem}</p>}
                       <div className="flex items-center gap-1 mt-1.5 text-[9px] font-bold text-secondary uppercase tracking-tight">
                         <Clock className="w-3 h-3" />
                         {new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -153,26 +149,6 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
   }
 
   return <>{children}</>;
-}
-
-function ConciliacaoRoute() {
-  const { hasRole } = useAuth();
-
-  if (!hasRole(['master', 'gerente', 'colaborador'])) {
-    return <Navigate to="/dashboard" replace />;
-  }
-
-  return <Conciliacao />;
-}
-
-function MasterApprovalRoute() {
-  const { hasRole } = useAuth();
-
-  if (!hasRole(['master'])) {
-    return <Navigate to="/dashboard" replace />;
-  }
-
-  return <AprovacaoMaster />;
 }
 
 function AppContent() {
@@ -245,17 +221,14 @@ function AppContent() {
                       <Route path="/pagar" element={<Pagar />} />
                       <Route path="/receber" element={<Receber />} />
                       <Route path="/crm" element={<CRM />} />
-                      <Route path="/cofre" element={<CofreLocal />} />
 
                       {/* Rotas restritas a Master e Gerente */}
-                      <Route path="/conciliacao" element={<ConciliacaoRoute />} />
+                      <Route path="/conciliacao" element={<Conciliacao />} />
                       <Route path="/recorrencias" element={<Recorrencias />} />
                       <Route path="/cadastros" element={<Cadastros />} />
                       <Route path="/relatorios" element={<Relatorios />} />
-                      <Route path="/implantacao" element={<Implantacao />} />
 
                       {/* Rotas exclusivas do Master */}
-                      <Route path="/aprovacao-master" element={<MasterApprovalRoute />} />
                       <Route path="/configuracoes" element={<Configuracoes />} />
                       <Route path="/notificacoes" element={<Notificacoes />} />
                     </Routes>

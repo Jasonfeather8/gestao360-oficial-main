@@ -32,7 +32,7 @@ import type { PrintableDocumentData } from './printing/types';
 
 import { supabase } from '@/integrations/supabase/client';
 import Button from './Button';
-import { calculateFinalAmount } from '../utils/adjustments';
+import { calculateAdjustmentAmount } from '../utils/adjustments';
 
 function formatBRL(value: any): string {
   if (value === null || value === undefined) return '';
@@ -207,18 +207,15 @@ export default function NovoLancamentoDrawer() {
     setModalOpen,
     selectedLancamentoIdForModal,
     setSelectedLancamentoIdForModal,
-    transacaoBancoParaLancamento,
-    setTransacaoBancoParaLancamento,
     selectedRecorrenciaAction,
     setSelectedRecorrenciaAction,
     lancamentoFormDraft,
     setLancamentoFormDraft,
     setEntidadeFormDraft,
-    resetAllDrafts,
-    sinalizarConciliacaoOperacao
+    resetAllDrafts
   } = useUIStore();
 
-  const { createLancamento, createLancamentoFromTransaction, updateLancamento, baixaLancamento, isCreating, isUpdating, data: lancamentos = [] } = useLancamentos();
+  const { createLancamento, updateLancamento, baixaLancamento, isCreating, isUpdating, data: lancamentos = [] } = useLancamentos();
   const { data: lancamentoSelecionado, isLoading: isLancamentoSelecionadoLoading } = useLancamento(selectedLancamentoIdForModal);
   const { data: entidades = [] } = useEntidades();
   const { data: rawCentros = [] } = useCentrosCusto();
@@ -287,35 +284,14 @@ export default function NovoLancamentoDrawer() {
     return lancamentoSelecionado || lancamentos.find(l => l.id === selectedLancamentoIdForModal) || null;
   }, [selectedLancamentoIdForModal, lancamentoSelecionado, lancamentos]);
   const isEditingLoading = isEditing && isLancamentoSelecionadoLoading && !editingItem;
-  const isFromExtrato = Boolean(transacaoBancoParaLancamento);
 
   useEffect(() => {
     if (isNovoLancamentoOpen && !isEditing) {
       resetAllDrafts();
       setAttachments([]);
       setParcelasManuais([]);
-      if (transacaoBancoParaLancamento) {
-        const transactionDate = transacaoBancoParaLancamento.data_transacao;
-        setLancamentoFormDraft({
-          tipo: transacaoBancoParaLancamento.valor > 0 ? 'entrada' : 'saida',
-          valor_previsto: formatBRL(Math.abs(transacaoBancoParaLancamento.valor)),
-          data_emissao: transactionDate,
-          data_vencimento: transactionDate,
-          data_competencia: transactionDate,
-          data_pagamento: transactionDate,
-          descricao_bancaria_original: transacaoBancoParaLancamento.descricao_banco,
-          conta_bancaria_id: transacaoBancoParaLancamento.conta_bancaria_id,
-          condicao: 'a_vista',
-          recorrencia: false,
-          recorrencia_com_entrada: false,
-          recorrencia_repeat: false,
-          quantidade_total_parcelas: '1',
-          ja_recebido: false,
-          valor_recebido: '0,00'
-        });
-      }
     }
-  }, [isNovoLancamentoOpen, isEditing, transacaoBancoParaLancamento]);
+  }, [isNovoLancamentoOpen, isEditing]);
 
   useEffect(() => {
     if (editingItem) {
@@ -326,7 +302,6 @@ export default function NovoLancamentoDrawer() {
         data_vencimento: editingItem.data_vencimento,
         data_competencia: editingItem.data_competencia || editingItem.data_emissao,
         data_pagamento: editingItem.data_pagamento || editingItem.data_vencimento,
-        descricao_bancaria_original: editingItem.descricao_bancaria_original || '',
         entidade_id: editingItem.entidade_id,
         centro_custo_id: editingItem.centro_custo_id,
         categoria_id: editingItem.categoria_id,
@@ -397,13 +372,13 @@ export default function NovoLancamentoDrawer() {
   }, [editingItem, categoriasAjuste, isEditing]);
 
   useEffect(() => {
-    if (!isFromExtrato && contas.length > 0 && !lancamentoFormDraft.conta_bancaria_id) {
+    if (contas.length > 0 && !lancamentoFormDraft.conta_bancaria_id) {
       setLancamentoFormDraft({ conta_bancaria_id: contas[0].id });
     }
-    if (!isFromExtrato && centros.length > 0 && !lancamentoFormDraft.centro_custo_id) {
+    if (centros.length > 0 && !lancamentoFormDraft.centro_custo_id) {
       setLancamentoFormDraft({ centro_custo_id: centros[0].id });
     }
-  }, [contas, centros, isNovoLancamentoOpen, isFromExtrato]);
+  }, [contas, centros, isNovoLancamentoOpen]);
 
   const filteredCategorias = useMemo(() => {
     return categorias.filter(c => c.tipo === lancamentoFormDraft.tipo);
@@ -429,10 +404,10 @@ export default function NovoLancamentoDrawer() {
   }, [entidades, entidadesCompativeis, lancamentoFormDraft.entidade_id]);
 
   useEffect(() => {
-    if (filteredCategorias.length > 0 && !isEditing && !isFromExtrato && !lancamentoFormDraft.categoria_id) {
+    if (filteredCategorias.length > 0 && !isEditing && !lancamentoFormDraft.categoria_id) {
       setLancamentoFormDraft({ categoria_id: filteredCategorias[0].id });
     }
-  }, [filteredCategorias, isEditing, isFromExtrato]);
+  }, [filteredCategorias, isEditing]);
 
   // Parcel Generation Logic
   useEffect(() => {
@@ -494,19 +469,22 @@ export default function NovoLancamentoDrawer() {
   ]);
 
   // Financial Calculations
-  const isDefinitivePayment = editingItem?.status_aprovacao === 'confirmado_master' &&
-    (editingItem.status_pagamento === 'pago' || editingItem.status_pagamento === 'pago_parcial');
-
   const calculations = useMemo(() => {
     const valorBase = parseMoney(lancamentoFormDraft.valor_previsto);
     
-    const subtotal = calculateFinalAmount({
-      original: valorBase,
-      discount: lancamentoFormDraft.desconto_valor,
-      discountType: lancamentoFormDraft.desconto_tipo,
-      increase: lancamentoFormDraft.acrescimo_valor,
-      increaseType: lancamentoFormDraft.acrescimo_tipo,
-    });
+    const desconto = calculateAdjustmentAmount(
+      lancamentoFormDraft.desconto_valor,
+      lancamentoFormDraft.desconto_tipo,
+      valorBase
+    );
+
+    const acrescimo = calculateAdjustmentAmount(
+      lancamentoFormDraft.acrescimo_valor,
+      lancamentoFormDraft.acrescimo_tipo,
+      valorBase
+    );
+
+    const subtotal = valorBase - desconto + acrescimo;
     const recebido = parseMoney(lancamentoFormDraft.valor_recebido);
     const diferenca = recebido - subtotal;
     
@@ -531,15 +509,15 @@ export default function NovoLancamentoDrawer() {
         number: parcel.numero,
         dueDate: parcel.data,
         amount: parseMoney(parcel.valor),
-        paidAmount: isDefinitivePayment ? parseMoney(lancamentoFormDraft.valor_recebido) : 0,
-        status: isDefinitivePayment ? editingItem?.status_pagamento || 'pago' : 'aberto'
+        paidAmount: 0,
+        status: lancamentoFormDraft.ja_recebido ? 'pago' : 'aberto'
       }))
       : [{
         number: 1,
         dueDate: lancamentoFormDraft.data_vencimento,
         amount: parseMoney(lancamentoFormDraft.valor_previsto),
         paidAmount: parseMoney(lancamentoFormDraft.valor_recebido),
-        status: isDefinitivePayment ? editingItem?.status_pagamento || 'pago' : 'aberto'
+        status: lancamentoFormDraft.ja_recebido ? 'pago' : 'aberto'
       }];
     const recipient = entidades.find(entity => entity.id === lancamentoFormDraft.entidade_id)?.nome_razao_social || 'Não informado';
     const category = categorias.find(categoryItem => categoryItem.id === lancamentoFormDraft.categoria_id)?.nome;
@@ -556,7 +534,7 @@ export default function NovoLancamentoDrawer() {
       description: lancamentoFormDraft.observacoes,
       issueDate: lancamentoFormDraft.data_emissao,
       dueDate: lancamentoFormDraft.data_vencimento,
-      paymentDate: isDefinitivePayment ? lancamentoFormDraft.data_pagamento : undefined,
+      paymentDate: lancamentoFormDraft.ja_recebido ? lancamentoFormDraft.data_pagamento : undefined,
       amount: baseAmount,
       receivedAmount: parseMoney(lancamentoFormDraft.valor_recebido),
       adjustedAmount: calculations.subtotal,
@@ -565,15 +543,15 @@ export default function NovoLancamentoDrawer() {
         { label: 'Acréscimo', value: `${lancamentoFormDraft.acrescimo_valor || '0,00'} ${lancamentoFormDraft.acrescimo_tipo === 'porcentagem' ? '%' : ''}`.trim() }
       ],
       parcels: draftParcels,
-      status: isDefinitivePayment ? editingItem?.status_pagamento || 'pago' : 'aberto',
+      status: lancamentoFormDraft.ja_recebido ? 'pago' : 'aberto',
       approvalStatus: editingItem?.status_aprovacao || 'Rascunho não salvo',
-      provisional: !isDefinitivePayment
+      provisional: true
     };
   }, [contas, categorias, calculations.subtotal, editingItem, entidades, lancamentoFormDraft, parcelasManuais, user?.email]);
 
   // Saldo Insuficiente validation (Item 1)
   const selectedConta = contas.find(c => c.id === lancamentoFormDraft.conta_bancaria_id);
-  const isSaidaImediata = false;
+  const isSaidaImediata = lancamentoFormDraft.tipo === 'saida' && lancamentoFormDraft.ja_recebido && !isAVREdit;
   const saldoRecebimento = Math.max(0, calculations.subtotal);
   const valorRecebido = parseMoney(lancamentoFormDraft.valor_recebido);
   const valorOperacaoSaida = isSaidaImediata && valorRecebido > 0 ? valorRecebido : 0;
@@ -597,10 +575,10 @@ export default function NovoLancamentoDrawer() {
   const shouldLockEntity = isAVREdit ? avrHasReceived : shouldLockFields;
 
   const handleClose = () => {
+
     setModalOpen('isNovoLancamentoOpen', false);
     setSelectedLancamentoIdForModal(null);
     setSelectedRecorrenciaAction(null);
-    setTransacaoBancoParaLancamento(null);
   };
 
   const generateAVRParcels = () => {
@@ -741,7 +719,7 @@ export default function NovoLancamentoDrawer() {
       return;
     }
 
-    if (!isFromExtrato && !lancamentoFormDraft.entidade_id) {
+    if (!lancamentoFormDraft.entidade_id) {
       showToast('Por favor, preencha o destinatário.', 'warning');
       setIsSubmitting(false);
       return;
@@ -801,12 +779,8 @@ export default function NovoLancamentoDrawer() {
       centro_custo_id: lancamentoFormDraft.centro_custo_id || null,
       categoria_id: lancamentoFormDraft.categoria_id || null,
       conta_bancaria_id: lancamentoFormDraft.conta_bancaria_id || null,
-      status_pagamento: editingItem?.status_aprovacao === 'confirmado_master' &&
-        (editingItem.status_pagamento === 'pago' || editingItem.status_pagamento === 'pago_parcial')
-        ? editingItem.status_pagamento
-        : 'aberto',
+      status_pagamento: lancamentoFormDraft.ja_recebido ? (pagamentoParcial ? 'pago_parcial' : 'pago') : 'aberto',
       status_aprovacao: editingItem?.status_aprovacao || 'pendente_digital',
-      descricao_bancaria_original: editingItem?.descricao_bancaria_original || lancamentoFormDraft.descricao_bancaria_original || null,
       observacoes: lancamentoFormDraft.observacoes,
       condicao: lancamentoFormDraft.condicao,
       ja_recebido: lancamentoFormDraft.ja_recebido,
@@ -830,16 +804,6 @@ export default function NovoLancamentoDrawer() {
           mode: selectedRecorrenciaAction || undefined
         });
         showToast('Lançamento atualizado com sucesso!', 'success');
-      } else if (isFromExtrato && transacaoBancoParaLancamento) {
-        createdItem = await createLancamentoFromTransaction({
-          transacaoBancoId: transacaoBancoParaLancamento.id,
-          dadosComerciais: itemDetails,
-        });
-        sinalizarConciliacaoOperacao({
-          tipo: 'novo_lancamento',
-          contaId: transacaoBancoParaLancamento.conta_bancaria_id,
-          mes: transacaoBancoParaLancamento.data_transacao.slice(0, 7),
-        });
       } else {
         let recurrencePayload = undefined;
         const isRecurrent = lancamentoFormDraft.condicao === 'a_prazo' || lancamentoFormDraft.recorrencia_repeat;
@@ -1043,10 +1007,10 @@ export default function NovoLancamentoDrawer() {
 
                 <div className="flex flex-col gap-2">
                   <label className="text-[10px] font-black text-secondary uppercase tracking-widest">Direcionador de Fluxo Contábil</label>
-                  <div className={`flex bg-neutral-100 dark:bg-surface-container border-2 border-neutral-100 dark:border-surface-border rounded-xl p-1 h-12 select-none ${shouldLockFields || isFromExtrato ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <div className={`flex bg-neutral-100 dark:bg-surface-container border-2 border-neutral-100 dark:border-surface-border rounded-xl p-1 h-12 select-none ${shouldLockFields ? 'opacity-50 pointer-events-none' : ''}`}>
                     <button
                       type="button"
-                      disabled={shouldLockFields || isFromExtrato}
+                      disabled={shouldLockFields}
                       onClick={() => setLancamentoFormDraft({ tipo: 'entrada' })}
                       className={`flex-1 text-xs font-black rounded-lg transition-all uppercase tracking-tighter ${
                         lancamentoFormDraft.tipo === 'entrada'
@@ -1058,7 +1022,7 @@ export default function NovoLancamentoDrawer() {
                     </button>
                     <button
                       type="button"
-                      disabled={shouldLockFields || isFromExtrato}
+                      disabled={shouldLockFields}
                       onClick={() => setLancamentoFormDraft({ tipo: 'saida' })}
                       className={`flex-1 text-xs font-black rounded-lg transition-all uppercase tracking-tighter ${
                         lancamentoFormDraft.tipo === 'saida'
@@ -1083,7 +1047,7 @@ export default function NovoLancamentoDrawer() {
                         label: e.nome_razao_social,
                         sublabel: e.tipo.toUpperCase()
                       }))}
-                      required={!isFromExtrato}
+                      required
                       disabled={shouldLockEntity}
                       onAddClick={shouldLockEntity ? undefined : () => {
                         setEntidadeFormDraft({ tipo: lancamentoFormDraft.tipo === 'saida' ? 'fornecedor' : 'cliente' });
@@ -1097,7 +1061,7 @@ export default function NovoLancamentoDrawer() {
                   {!isAVREdit && (
                     <div className="flex flex-col gap-2">
                       <label className="text-[10px] font-black text-secondary uppercase tracking-widest">Valor Estimado <span className="text-alert-red">*</span></label>
-                      <div className={`relative group ${shouldLockFields || isFromExtrato ? 'opacity-50 pointer-events-none' : ''}`}>
+                      <div className={`relative group ${shouldLockFields ? 'opacity-50 pointer-events-none' : ''}`}>
                         <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xs text-secondary font-black">R$</span>
                         <MoneyInput
                           value={lancamentoFormDraft.valor_previsto}
@@ -1105,7 +1069,7 @@ export default function NovoLancamentoDrawer() {
                           className="w-full h-12 pl-10 pr-4 bg-white border-2 border-neutral-200 rounded-xl font-mono text-sm font-black text-on-surface focus:outline-none focus:border-primary transition-all shadow-xs"
                           placeholder="0,00"
                           required
-                          disabled={shouldLockFields || isFromExtrato}
+                          disabled={shouldLockFields}
                         />
                       </div>
                     </div>
@@ -1114,10 +1078,10 @@ export default function NovoLancamentoDrawer() {
                   <div className="flex flex-col gap-2">
                     <div className="flex justify-between items-center">
                       <label className="text-[10px] font-black text-secondary uppercase tracking-widest">Condição <span className="text-alert-red">*</span></label>
-                      <label className={`flex items-center gap-2 cursor-pointer select-none ${shouldLockFields || isFromExtrato ? 'opacity-50 pointer-events-none' : ''}`}>
+                      <label className={`flex items-center gap-2 cursor-pointer select-none ${shouldLockFields ? 'opacity-50 pointer-events-none' : ''}`}>
                         <input
                           type="checkbox"
-                          disabled={shouldLockFields || isFromExtrato}
+                          disabled={shouldLockFields}
                           checked={lancamentoFormDraft.recorrencia_repeat}
                           onChange={(e) => setLancamentoFormDraft({ recorrencia_repeat: e.target.checked })}
                           className="rounded-md border-neutral-300 text-primary focus:ring-primary w-4 h-4 transition-all"
@@ -1125,10 +1089,10 @@ export default function NovoLancamentoDrawer() {
                         <span className="text-[10px] font-black text-secondary uppercase tracking-widest">Repetir</span>
                       </label>
                     </div>
-                    <div className={`flex bg-neutral-100 dark:bg-surface-container border-2 border-neutral-100 dark:border-surface-border rounded-xl p-1 h-12 select-none ${shouldLockFields || isFromExtrato ? 'opacity-50 pointer-events-none' : ''}`}>
+                    <div className={`flex bg-neutral-100 dark:bg-surface-container border-2 border-neutral-100 dark:border-surface-border rounded-xl p-1 h-12 select-none ${shouldLockFields ? 'opacity-50 pointer-events-none' : ''}`}>
                       <button
                         type="button"
-                        disabled={shouldLockFields || isFromExtrato}
+                        disabled={shouldLockFields}
                         onClick={() => setLancamentoFormDraft({ condicao: 'a_vista' })}
                         className={`flex-1 text-[10px] font-black rounded-lg transition-all uppercase tracking-tighter ${
                           lancamentoFormDraft.condicao === 'a_vista'
@@ -1140,7 +1104,7 @@ export default function NovoLancamentoDrawer() {
                       </button>
                       <button
                         type="button"
-                        disabled={shouldLockFields || isFromExtrato}
+                        disabled={shouldLockFields}
                         onClick={() => setLancamentoFormDraft({ condicao: 'a_prazo' })}
                         className={`flex-1 text-[10px] font-black rounded-lg transition-all uppercase tracking-tighter ${
                           lancamentoFormDraft.condicao === 'a_prazo'
@@ -1158,16 +1122,13 @@ export default function NovoLancamentoDrawer() {
                 {!isAVREdit && (
                   <div className="p-4 bg-neutral-50 rounded-2xl border-2 border-neutral-100 space-y-4">
                   <label className="flex items-center gap-3 cursor-pointer select-none">
-                    <input
+                    <input 
                       type="checkbox"
-                      disabled={isFromExtrato || shouldLockFields}
-                      checked={lancamentoFormDraft.ja_recebido}
+                      checked={lancamentoFormDraft.ja_recebido} 
                       onChange={(e) => setLancamentoFormDraft({ ja_recebido: e.target.checked })}
                       className="rounded-md border-neutral-300 text-primary focus:ring-primary w-5 h-5 transition-all"
                     />
-                    <span className="font-black text-[10px] text-on-background uppercase tracking-wider">
-                      {lancamentoFormDraft.tipo === 'saida' ? 'Já foi pago?' : 'Já foi recebido?'}
-                    </span>
+                    <span className="font-black text-[10px] text-on-background uppercase tracking-wider">Já foi recebido / pago?</span>
                   </label>
 
                   {lancamentoFormDraft.ja_recebido && (
@@ -1177,10 +1138,9 @@ export default function NovoLancamentoDrawer() {
                           <label className="text-[10px] font-black text-secondary uppercase tracking-widest">Data do Recebimento</label>
                           <input
                             type="date"
-                            disabled={isFromExtrato || shouldLockFields}
                             value={lancamentoFormDraft.data_pagamento}
                             onChange={(e) => setLancamentoFormDraft({ data_pagamento: e.target.value })}
-                            className="w-full h-10 bg-white border-2 border-neutral-200 text-xs font-bold rounded-lg px-3 focus:outline-none focus:border-primary shadow-xs disabled:opacity-50"
+                            className="w-full h-10 bg-white border-2 border-neutral-200 text-xs font-bold rounded-lg px-3 focus:outline-none focus:border-primary shadow-xs"
                           />
                         </div>
                         <div className="flex flex-col gap-2">
@@ -1190,8 +1150,7 @@ export default function NovoLancamentoDrawer() {
                             <MoneyInput
                               value={lancamentoFormDraft.valor_recebido}
                               onChange={(val) => setLancamentoFormDraft({ valor_recebido: val })}
-                              disabled={isFromExtrato || shouldLockFields}
-                              className="w-full h-10 pl-8 pr-3 bg-white border-2 border-neutral-200 rounded-lg font-mono text-xs font-black text-on-surface focus:outline-none focus:border-primary shadow-xs disabled:opacity-50"
+                              className="w-full h-10 pl-8 pr-3 bg-white border-2 border-neutral-200 rounded-lg font-mono text-xs font-black text-on-surface focus:outline-none focus:border-primary shadow-xs"
                             />
                           </div>
                         </div>
@@ -1201,7 +1160,7 @@ export default function NovoLancamentoDrawer() {
                         <div className="p-3 bg-neutral-100 border border-neutral-200 rounded-xl flex items-center gap-2">
                           <Clock className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
                           <span className="text-[8px] font-black text-neutral-500 uppercase tracking-tighter">
-                            Esta sinalização mantém o título como previsão, sem baixa ou efeito no saldo. A conciliação registrará a data bancária real.
+                            Este pagamento afetará apenas o <span className="text-primary">Saldo Operacional</span> até ser validado pelo Master.
                           </span>
                         </div>
                       )}
@@ -1215,7 +1174,7 @@ export default function NovoLancamentoDrawer() {
                     <label className="text-[10px] font-black text-secondary uppercase tracking-widest">Data de Competência</label>
                     <input
                       type="date"
-                      disabled={shouldLockFields || isFromExtrato}
+                      disabled={shouldLockFields}
                       value={lancamentoFormDraft.data_competencia}
                       onChange={(e) => setLancamentoFormDraft({ data_competencia: e.target.value })}
                       className={`w-full h-12 bg-white border-2 border-neutral-200 text-sm font-bold rounded-xl focus:outline-none focus:border-primary transition-all px-4 shadow-xs ${shouldLockFields ? 'opacity-50' : ''}`}
@@ -1227,7 +1186,7 @@ export default function NovoLancamentoDrawer() {
                     <input
                       type="date"
                       required
-                      disabled={shouldLockFields || isFromExtrato}
+                      disabled={shouldLockFields}
                       value={lancamentoFormDraft.data_vencimento}
                       onChange={(e) => setLancamentoFormDraft({ data_vencimento: e.target.value })}
                       className={`w-full h-12 bg-white border-2 border-neutral-200 text-sm font-bold rounded-xl focus:outline-none focus:border-primary transition-all px-4 shadow-xs ${shouldLockFields ? 'opacity-50' : ''}`}
@@ -1248,7 +1207,6 @@ export default function NovoLancamentoDrawer() {
                     <MoneyInput
                       value={lancamentoFormDraft.desconto_valor}
                       onChange={(val) => setLancamentoFormDraft({ desconto_valor: val })}
-                      mode={lancamentoFormDraft.desconto_tipo === 'porcentagem' ? 'percentage' : 'money'}
                       className="w-full h-12 px-4 bg-white border-2 border-neutral-200 rounded-xl font-mono text-sm font-black text-on-surface focus:outline-none focus:border-primary transition-all shadow-xs"
                     />
 
@@ -1291,7 +1249,6 @@ export default function NovoLancamentoDrawer() {
                     <MoneyInput
                       value={lancamentoFormDraft.acrescimo_valor}
                       onChange={(val) => setLancamentoFormDraft({ acrescimo_valor: val })}
-                      mode={lancamentoFormDraft.acrescimo_tipo === 'porcentagem' ? 'percentage' : 'money'}
                       className="w-full h-12 px-4 bg-white border-2 border-neutral-200 rounded-xl font-mono text-sm font-black text-on-surface focus:outline-none focus:border-primary transition-all shadow-xs"
                     />
 
@@ -1334,7 +1291,7 @@ export default function NovoLancamentoDrawer() {
                   {lancamentoFormDraft.ja_recebido && (
                     <div className="flex justify-between items-center px-2 mt-2">
                       <span className={`text-[10px] font-black uppercase tracking-widest ${recebimentoAcimaSaldo ? 'text-alert-red' : pagamentoParcial ? 'text-alert-red' : 'text-bank-truth-green'}`}>
-                        {recebimentoAcimaSaldo ? 'Valor acima do saldo' : pagamentoParcial ? 'Valor informado parcialmente' : 'Previsão sinalizada'}
+                        {recebimentoAcimaSaldo ? 'Valor acima do saldo' : pagamentoParcial ? 'Pago Parcial' : 'Liquidado, Pago'}
                       </span>
                       <span className={`text-sm font-black ${recebimentoAcimaSaldo || pagamentoParcial ? 'text-alert-red' : 'text-bank-truth-green'}`}>
                         R$ {formatBRL(recebimentoAcimaSaldo ? valorRecebido - saldoRecebimento : Math.max(0, saldoRecebimento - valorRecebido))}
@@ -1347,7 +1304,7 @@ export default function NovoLancamentoDrawer() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className={shouldLockFields ? 'opacity-50 pointer-events-none' : ''}>
                     <SearchableSelect
-                      label="Conta Contábil"
+                      label="Categoria Contábil"
                       placeholder="Selecione..."
                       value={lancamentoFormDraft.categoria_id}
                       onChange={(val) => setLancamentoFormDraft({ categoria_id: val })}
@@ -1382,7 +1339,7 @@ export default function NovoLancamentoDrawer() {
                   <div className="flex flex-col gap-2">
                     <div className="flex justify-between items-center">
                       <label className="text-[10px] font-black text-secondary uppercase tracking-widest">Conta Bancária <span className="text-alert-red">*</span></label>
-                      <button type="button" disabled={isFromExtrato} onClick={() => setIsQuickAccountOpen(true)} className="text-[10px] font-black text-primary hover:underline uppercase tracking-widest flex items-center gap-1 disabled:opacity-50 disabled:pointer-events-none"><Plus className="w-3 h-3" /> Nova Conta</button>
+                      <button type="button" onClick={() => setIsQuickAccountOpen(true)} className="text-[10px] font-black text-primary hover:underline uppercase tracking-widest flex items-center gap-1"><Plus className="w-3 h-3" /> Nova Conta</button>
                     </div>
                     <div className="grid grid-cols-1 gap-2">
                       {contas.length === 0 ? (
@@ -1401,7 +1358,6 @@ export default function NovoLancamentoDrawer() {
                           <button
                             key={cnt.id}
                             type="button"
-                            disabled={isFromExtrato}
                             onClick={() => setLancamentoFormDraft({ conta_bancaria_id: cnt.id })}
                             className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-all text-left ${
                               lancamentoFormDraft.conta_bancaria_id === cnt.id
@@ -1433,7 +1389,7 @@ export default function NovoLancamentoDrawer() {
                     <label className="text-[10px] font-black text-secondary uppercase tracking-widest">Data de Emissão</label>
                     <input
                       type="date"
-                      disabled={shouldLockFields || isFromExtrato}
+                      disabled={shouldLockFields}
                       value={lancamentoFormDraft.data_emissao}
                       onChange={(e) => setLancamentoFormDraft({ data_emissao: e.target.value })}
                       className={`w-full h-12 bg-white border-2 border-neutral-200 text-sm font-bold rounded-xl focus:outline-none focus:border-primary transition-all px-4 shadow-xs ${shouldLockFields ? 'opacity-50' : ''}`}
@@ -1442,7 +1398,7 @@ export default function NovoLancamentoDrawer() {
                 </div>
 
                 {/* Seção de Parcelamento / Repetição */}
-                {!isEditing && !isFromExtrato && (lancamentoFormDraft.condicao === 'a_prazo' || lancamentoFormDraft.recorrencia_repeat) && (
+                {!isEditing && (lancamentoFormDraft.condicao === 'a_prazo' || lancamentoFormDraft.recorrencia_repeat) && (
                   <motion.div
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -1697,20 +1653,8 @@ export default function NovoLancamentoDrawer() {
                   ))}
                 </div>
 
-                {(isFromExtrato || Boolean(editingItem?.descricao_bancaria_original)) && (
-                  <div className="flex flex-col gap-2">
-                    <label className="text-[10px] font-black text-secondary uppercase tracking-widest">Descrição Bancária Original</label>
-                    <input
-                      type="text"
-                      readOnly
-                      value={lancamentoFormDraft.descricao_bancaria_original}
-                      className="w-full h-12 bg-neutral-100 border-2 border-neutral-200 text-sm font-medium rounded-xl px-4 text-neutral-500 cursor-not-allowed shadow-xs"
-                    />
-                  </div>
-                )}
-
                 <div className="flex flex-col gap-2">
-                  <label className="text-[10px] font-black text-secondary uppercase tracking-widest">{isFromExtrato ? 'Observações Complementares' : 'Observações Contábeis'}</label>
+                  <label className="text-[10px] font-black text-secondary uppercase tracking-widest">Observações Contábeis</label>
                   <textarea
                     rows={4}
                     readOnly={isEditing}
@@ -1736,7 +1680,7 @@ export default function NovoLancamentoDrawer() {
                 <div className="px-6 py-3 bg-neutral-50 border-t border-neutral-100 flex items-center gap-3 shrink-0">
                   <Shield className="w-4 h-4 text-neutral-400 shrink-0" />
                   <span className="text-[9px] font-bold text-secondary uppercase tracking-tighter">
-                    A sinalização permanece como previsão: não baixa nem altera saldo. A conciliação e a aprovação Master seguem seus próprios estados.
+                    Esta operação atualizará apenas o <span className="text-primary font-black">Saldo Operacional</span>. A consolidação no saldo real depende da aprovação Master.
                   </span>
                 </div>
               )}

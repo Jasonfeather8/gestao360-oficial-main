@@ -1,6 +1,6 @@
-export type DiagnosticLevel = 'info' | 'warn' | 'error';
+type DiagnosticLevel = 'info' | 'warn' | 'error';
 
-export type DiagnosticEntry = {
+type DiagnosticEntry = {
   timestamp: string;
   level: DiagnosticLevel;
   scope: string;
@@ -8,46 +8,17 @@ export type DiagnosticEntry = {
   details?: unknown;
 };
 
-const STORAGE_KEY = 'gestao360_data_bridge_integrity_logs';
+const STORAGE_KEY = 'gestao360_diagnostic_logs';
 const MAX_ENTRIES = 100;
-const SENSITIVE_KEY = /(password|senha|token|secret|authorization|cookie|credential|api[-_ ]?key|access[-_ ]?token|refresh[-_ ]?token)/i;
-const subscribers = new Set<() => void>();
-
-function redactString(value: string) {
-  return value
-    .replace(/(bearer\s+)[a-z0-9._~+/=-]+/gi, '$1[REDACTED]')
-    .replace(/((?:password|senha|token|secret|authorization|cookie|credential|api[-_ ]?key)\s*[:=]\s*)[^\s,;]+/gi, '$1[REDACTED]');
-}
-
-function notifySubscribers() {
-  subscribers.forEach((subscriber) => {
-    try {
-      subscriber();
-    } catch {
-      // A listener must never interrupt logging.
-    }
-  });
-}
 
 function serialize(details: unknown) {
-  if (details instanceof Error) {
-    return {
-      name: details.name,
-      message: redactString(details.message),
-      stack: details.stack ? redactString(details.stack) : undefined,
-    };
-  }
+  if (details instanceof Error) return { name: details.name, message: details.message, stack: details.stack };
   try {
-    return JSON.parse(JSON.stringify(details, (key, value) => {
-      if (SENSITIVE_KEY.test(key)) return '[REDACTED]';
-      if (typeof value === 'string') return redactString(value);
-      if (value instanceof Error) {
-        return { name: value.name, message: redactString(value.message), stack: value.stack ? redactString(value.stack) : undefined };
-      }
-      return value;
-    }));
+    return JSON.parse(JSON.stringify(details, (_key, value) => value instanceof Error
+      ? { name: value.name, message: value.message, stack: value.stack }
+      : value));
   } catch {
-    return redactString(String(details));
+    return String(details);
   }
 }
 
@@ -57,31 +28,21 @@ export const diagnosticLogger = {
       timestamp: new Date().toISOString(),
       level,
       scope,
-      message: redactString(message),
+      message,
       details: details === undefined ? undefined : serialize(details),
     };
 
     try {
       const previous = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]') as DiagnosticEntry[];
       localStorage.setItem(STORAGE_KEY, JSON.stringify([...previous, entry].slice(-MAX_ENTRIES)));
-      notifySubscribers();
     } catch {
       // Logging must never interrupt the application flow.
     }
 
-    try {
-      const output = `[${entry.scope}] ${entry.message}`;
-      if (level === 'error') console.error(output, entry.details ?? '');
-      else if (level === 'warn') console.warn(output, entry.details ?? '');
-      else console.info(output, entry.details ?? '');
-    } catch {
-      // Logging must never interrupt the application flow.
-    }
-  },
-
-  subscribe(listener: () => void) {
-    subscribers.add(listener);
-    return () => subscribers.delete(listener);
+    const output = `[${scope}] ${message}`;
+    if (level === 'error') console.error(output, entry.details ?? '');
+    else if (level === 'warn') console.warn(output, entry.details ?? '');
+    else console.info(output, entry.details ?? '');
   },
 
   info(scope: string, message: string, details?: unknown) {
@@ -101,15 +62,6 @@ export const diagnosticLogger = {
       return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]') as DiagnosticEntry[];
     } catch {
       return [];
-    }
-  },
-
-  clearEntries() {
-    try {
-      localStorage.removeItem(STORAGE_KEY);
-      notifySubscribers();
-    } catch {
-      // Logging must never interrupt the application flow.
     }
   },
 };

@@ -20,13 +20,14 @@ import {
   User,
   X
 } from 'lucide-react';
-import { useLancamentos, useContas, useCentrosCusto, useAuditoriaLogs, useEntidades, useContasSaldos, useConsolidatedFinancialSummary } from '../hooks/useData';
+import { useLancamentos, useContas, useCentrosCusto, useAuditoriaLogs, useEntidades, useContasSaldos } from '../hooks/useData';
 import { useAuth } from '../hooks/useAuth';
 import { useUIStore } from '../store/uiStore';
 import { calculateAdjustmentAmount } from '../utils/adjustments';
-import { isFinancialReportItem } from '../utils/financialItems';
 
 import { useDragScroll } from '../hooks/useDragScroll';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 
 export default function Dashboard() {
   const { role } = useAuth();
@@ -57,7 +58,16 @@ export default function Dashboard() {
   // Detail modal state for audit
   const [selectedAuditLog, setSelectedAuditLog] = useState<any | null>(null);
 
-  const { data: consolidatedSummary, isLoading: loadingConsolidatedSummary } = useConsolidatedFinancialSummary();
+  const { data: stats, isLoading: loadingStats } = useQuery({
+    queryKey: ['dashboardStats'],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return null;
+      const { data, error } = await supabase.rpc('get_dashboard_stats', { p_user_id: user.id });
+      if (error) throw error;
+      return data;
+    }
+  });
   
   const { setModalOpen, setActiveTab } = useUIStore();
 
@@ -103,26 +113,26 @@ export default function Dashboard() {
   };
 
   const totals = useMemo(() => {
-   const paidSum = filteredLancamentos.filter(l => l.status_pagamento === 'pago' && l.status_aprovacao === 'confirmado_master').length;
-   const unpaidSum = filteredLancamentos.filter(l => l.status_pagamento === 'aberto' || l.status_pagamento === 'pago_parcial' || l.status_pagamento === 'quitação_pendente').length;
+   const paidSum = filteredLancamentos.filter(l => l.status_pagamento === 'pago').length;
+   const unpaidSum = filteredLancamentos.filter(l => l.status_pagamento === 'aberto').length;
    const bpiSum = filteredLancamentos.filter(l => l.status_pagamento === 'bpi').length;
    const totalStatusCount = paidSum + unpaidSum + bpiSum || 1;
 
    // Real juros and discounts metrics
    const jurosPagos = filteredLancamentos
-     .filter(l => l.tipo === 'saida' && l.status_pagamento === 'pago' && l.status_aprovacao === 'confirmado_master')
+     .filter(l => l.tipo === 'saida' && l.status_pagamento === 'pago')
      .reduce((acc, l) => acc + calculateAdjustmentAmount(l.acrescimo_valor, l.acrescimo_tipo, l.valor_previsto), 0);
 
    const descontosObtidos = filteredLancamentos
-     .filter(l => l.tipo === 'saida' && l.status_pagamento === 'pago' && l.status_aprovacao === 'confirmado_master')
+     .filter(l => l.tipo === 'saida' && l.status_pagamento === 'pago')
      .reduce((acc, l) => acc + calculateAdjustmentAmount(l.desconto_valor, l.desconto_tipo, l.valor_previsto), 0);
 
    const jurosRecebidos = filteredLancamentos
-     .filter(l => l.tipo === 'entrada' && l.status_pagamento === 'pago' && l.status_aprovacao === 'confirmado_master')
+     .filter(l => l.tipo === 'entrada' && l.status_pagamento === 'pago')
      .reduce((acc, l) => acc + calculateAdjustmentAmount(l.acrescimo_valor, l.acrescimo_tipo, l.valor_previsto), 0);
 
    const descontosConcedidos = filteredLancamentos
-     .filter(l => l.tipo === 'entrada' && l.status_pagamento === 'pago' && l.status_aprovacao === 'confirmado_master')
+     .filter(l => l.tipo === 'entrada' && l.status_pagamento === 'pago')
      .reduce((acc, l) => acc + calculateAdjustmentAmount(l.desconto_valor, l.desconto_tipo, l.valor_previsto), 0);
 
    return {
@@ -153,10 +163,12 @@ export default function Dashboard() {
    });
  }, [contas, contasSaldos]);
 
- const globalBalances = {
-   operacional: consolidatedSummary?.consolidated_operational || 0,
-   auditado: consolidatedSummary?.consolidated_confirmed || 0
- };
+ const globalBalances = useMemo(() => {
+   return {
+     operacional: accountsBalances.reduce((sum, acc) => sum + (acc.operacional || 0), 0),
+     auditado: accountsBalances.reduce((sum, acc) => sum + (acc.auditado || 0), 0)
+   };
+ }, [accountsBalances]);
 
   const costCenterBreakdown = useMemo(() => {
     return centrosCusto.map(cc => {
@@ -167,7 +179,7 @@ export default function Dashboard() {
     });
   }, [centrosCusto, filteredLancamentos]);
 
-  if (loadingLancamentos || loadingContas || loadingConsolidatedSummary) {
+  if (loadingLancamentos || loadingContas || loadingStats) {
     return (
       <div className="flex-1 flex items-center justify-center min-h-[400px]">
         <div className="flex flex-col items-center gap-2">
@@ -205,10 +217,10 @@ export default function Dashboard() {
               <button onClick={() => {
                 const headers = 'KPI,Valor\n';
                 const rows = [
-                  ['Saldo Consolidado', valueFormatter(consolidatedSummary?.consolidated_confirmed || 0)],
-                  ['Expectativa Final', valueFormatter(consolidatedSummary?.consolidated_simulated || 0)],
-                  ['Pendentes Saida', valueFormatter(consolidatedSummary?.pending_bank_out_value || 0)],
-                  ['Pendentes Entrada', valueFormatter(consolidatedSummary?.pending_bank_in_value || 0)]
+                  ['Saldo Consolidado', valueFormatter(stats?.total_consolidado || 0)],
+                  ['Expectativa Final', valueFormatter(stats?.total_simulado || 0)],
+                  ['Pendentes Saida', valueFormatter(stats?.pendente_saida_valor || 0)],
+                  ['Pendentes Entrada', valueFormatter(stats?.pendente_entrada_valor || 0)]
                 ].map(r => r.join(',')).join('\n');
                 const blob = new Blob([headers + rows], { type: 'text/csv;charset=utf-8;' });
                 const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = 'dashboard_real.csv'; link.click();
@@ -228,7 +240,7 @@ export default function Dashboard() {
                 
                 <div className="space-y-4">
                   <div>
-                    <h3 className="text-2xl font-bold font-mono text-on-surface">{valueFormatter(consolidatedSummary?.consolidated_operational || 0)}</h3>
+                    <h3 className="text-2xl font-bold font-mono text-on-surface">{valueFormatter(stats?.total_operacional || 0)}</h3>
                     <div className="text-[10px] font-semibold text-secondary flex items-center gap-1 uppercase tracking-widest mt-1">
                       <Clock className="w-3.5 h-3.5" /> Saldo Operacional (Disponível)
                     </div>
@@ -237,7 +249,7 @@ export default function Dashboard() {
                   <div className="pt-4 border-t border-surface-border/50">
                     {isMaster ? (
                       <>
-                        <h4 className="text-lg font-bold font-mono text-bank-truth-green">{valueFormatter(consolidatedSummary?.consolidated_confirmed || 0)}</h4>
+                        <h4 className="text-lg font-bold font-mono text-bank-truth-green">{valueFormatter(stats?.total_consolidado || 0)}</h4>
                         <div className="text-[10px] font-semibold text-bank-truth-green flex items-center gap-1 uppercase tracking-widest mt-1">
                           <CheckCircle2 className="w-3.5 h-3.5" /> Saldo Real (Confirmado Master)
                         </div>
@@ -247,7 +259,7 @@ export default function Dashboard() {
                         <div>
                           <p className="text-[9px] font-black text-secondary uppercase tracking-widest">Em Validação Master</p>
                           <p className="text-xs font-bold font-mono text-neutral-400">
-                            {valueFormatter(Math.max(0, (consolidatedSummary?.consolidated_operational || 0) - (consolidatedSummary?.consolidated_confirmed || 0)))}
+                            {valueFormatter(Math.max(0, (stats?.total_operacional || 0) - (stats?.total_consolidado || 0)))}
                           </p>
                         </div>
                         <div className="bg-neutral-50 px-2 py-1 rounded-lg border border-neutral-100 flex items-center gap-1">
@@ -263,14 +275,14 @@ export default function Dashboard() {
               <div className="bg-white dark:bg-surface p-6 rounded-xl border border-surface-border shadow-sm relative overflow-hidden group">
                 <div className="absolute top-0 left-0 w-1 h-full bg-primary"></div>
                 <div className="flex justify-between items-start mb-4"><span className="text-xs font-bold text-secondary uppercase tracking-wider">Expectativa Final</span><LineChart className="w-5 h-5 text-primary" /></div>
-                <h3 className="text-2xl font-bold font-mono text-on-surface">{valueFormatter(consolidatedSummary?.consolidated_simulated || 0)}</h3>
+                <h3 className="text-2xl font-bold font-mono text-on-surface">{valueFormatter(stats?.total_simulado || 0)}</h3>
                 <p className="text-xs text-secondary mt-2">Cenário previsto para final do período</p>
                 
-                {(consolidatedSummary?.pending_bank_out_count || 0) + (consolidatedSummary?.pending_bank_in_count || 0) > 0 && (
+                {stats?.quitacao_pendente_count > 0 && (
                    <div className="mt-4 p-2 bg-amber-50 rounded-lg border border-amber-100 flex items-center gap-2">
                      <AlertTriangle className="w-4 h-4 text-amber-600" />
                      <span className="text-[9px] font-black text-amber-700 uppercase">
-                       {(consolidatedSummary?.pending_bank_out_count || 0) + (consolidatedSummary?.pending_bank_in_count || 0)} Pendências bancárias aguardando Master
+                       {stats.quitacao_pendente_count} Quitações aguardando Master
                      </span>
                    </div>
                 )}
@@ -290,11 +302,11 @@ export default function Dashboard() {
                   >
                     <div className="flex flex-col">
                       <span className="text-[9px] font-black text-alert-red uppercase">Pendentes (Saída)</span>
-                      <span className="text-lg font-bold font-mono text-on-surface group-hover:text-primary">{valueFormatter(consolidatedSummary?.pending_bank_out_value || 0)}</span>
+                      <span className="text-lg font-bold font-mono text-on-surface group-hover:text-primary">{valueFormatter(stats?.pendente_saida_valor || 0)}</span>
                     </div>
                     <div className="text-right">
                       <span className="bg-red-50 text-alert-red text-[10px] font-black px-2 py-1 rounded-lg border border-red-100">
-                        {consolidatedSummary?.pending_bank_out_count || 0} Itens
+                        {stats?.pendente_saida_count || 0} Itens
                       </span>
                     </div>
                   </div>
@@ -307,11 +319,11 @@ export default function Dashboard() {
                   >
                     <div className="flex flex-col">
                       <span className="text-[9px] font-black text-bank-truth-green uppercase">Pendentes (Entrada)</span>
-                      <span className="text-lg font-bold font-mono text-on-surface group-hover:text-primary">{valueFormatter(consolidatedSummary?.pending_bank_in_value || 0)}</span>
+                      <span className="text-lg font-bold font-mono text-on-surface group-hover:text-primary">{valueFormatter(stats?.pendente_entrada_valor || 0)}</span>
                     </div>
                     <div className="text-right">
                       <span className="bg-emerald-50 text-bank-truth-green text-[10px] font-black px-2 py-1 rounded-lg border border-emerald-100">
-                        {consolidatedSummary?.pending_bank_in_count || 0} Itens
+                        {stats?.pendente_entrada_count || 0} Itens
                       </span>
                     </div>
                   </div>
@@ -399,32 +411,6 @@ export default function Dashboard() {
                 ))}
               </div>
 
-            </section>
-
-            <section className="bg-surface p-4 rounded-xl border border-surface-border shadow-sm animate-fade-in">
-              <div className="flex items-center justify-between mb-3">
-                <h4 className="text-xs font-black uppercase tracking-wider text-secondary flex items-center gap-2"><Shield className="w-4 h-4 text-primary" /> Resumo consolidado</h4>
-                <span className="text-[9px] font-bold text-secondary uppercase">Bancos e físico do Cofre separados</span>
-              </div>
-              <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-                {[
-                  ['Bancos confirmados', consolidatedSummary?.bank_confirmed],
-                  ['Bancos operacionais', consolidatedSummary?.bank_operational],
-                  ['Cofre aprovado', consolidatedSummary?.cash_approved],
-                  ['Cofre operacional', consolidatedSummary?.cash_operational],
-                  ['Total confirmado', consolidatedSummary?.consolidated_confirmed],
-                  ['Total operacional', consolidatedSummary?.consolidated_operational],
-                ].map(([label, value]) => (
-                  <div key={String(label)} className="rounded-lg border border-surface-border/70 bg-surface-low-low p-3">
-                    <p className="text-[9px] font-black uppercase tracking-wider text-secondary">{label}</p>
-                    <p className="mt-1 text-sm font-bold font-mono text-on-surface">{valueFormatter(Number(value || 0))}</p>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-[10px] font-bold text-secondary">
-                <span>Pendências do Cofre: {consolidatedSummary?.pending_cash_movements || 0} movimentações · {consolidatedSummary?.pending_cash_transfers || 0} transferências</span>
-                <span>{valueFormatter(Number(consolidatedSummary?.cash_pending || 0))} em aprovação · {valueFormatter(Number(consolidatedSummary?.pending_cash_transfer_value || 0))} em transferências</span>
-              </div>
             </section>
 
             <section className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in">
@@ -521,7 +507,7 @@ export default function Dashboard() {
               <table className="w-full text-left border-collapse">
                 <thead><tr className="bg-neutral-50 text-neutral-400 border-b border-neutral-100 text-[9px] font-black uppercase tracking-widest"><th className="py-4 px-8">Data</th><th className="py-4 px-8">Descrição</th><th className="py-4 px-8">Entidade</th><th className="py-4 px-8 text-right">Valor</th></tr></thead>
                 <tbody className="text-[11px] font-bold">
-                  {lancamentos.filter(l => isFinancialReportItem(l) && l.status_pagamento === 'pago' && l.status_aprovacao === 'confirmado_master').slice(0, 50).map(l => (
+                  {lancamentos.filter(l => l.status_pagamento === 'pago').slice(0, 50).map(l => (
                     <tr key={l.id} className="border-b border-neutral-50 hover:bg-neutral-50">
 
                       <td className="py-4 px-8 font-mono">{l.data_vencimento.split('-').reverse().join('/')}</td>
