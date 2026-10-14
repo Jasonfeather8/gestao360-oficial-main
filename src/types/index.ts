@@ -106,35 +106,6 @@ export interface LancamentoFinanceiro {
   updated_at: string;
 }
 
-export interface TransacaoBanco {
-  id: string;
-  conta_bancaria_id: string;
-  data_transacao: string;
-  valor: number;
-  descricao_banco: string;
-  tipo_movimento: 'debito' | 'credito';
-  hash_transacao: string; // duplicate prevention
-  status_conciliacao: boolean;
-}
-
-export interface Conciliacao {
-  id: string;
-  lancamento_id: string;
-  transacao_banco_id: string;
-  usuario_conciliador_id: string;
-  data_conciliacao: string;
-}
-
-export type TipoDiferenca = 'juros' | 'multa' | 'desconto' | 'tarifa' | 'pagamento_parcial' | 'ajuste_manual';
-
-export interface DiferencaFinanceira {
-  id: string;
-  conciliacao_id: string;
-  tipo_diferenca: TipoDiferenca;
-  valor_diferenca: number;
-  observacao_justificativa: string;
-}
-
 export interface Recorrencia {
   id: string;
   periodicidade: 'diario' | 'semanal' | 'quinzenal' | 'mensal' | 'bimestral' | 'trimestral' | 'semestral' | 'anual' | 'personalizado';

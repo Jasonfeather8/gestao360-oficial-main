@@ -8,12 +8,10 @@ import { categoriasService } from '../services/categoriasService';
 import { contasService } from '../services/contasService';
 import { lancamentosService } from '../services/lancamentosService';
 import { recorrenciasService } from '../services/recorrenciasService';
-import { conciliacoesService } from '../services/conciliacoesService';
 import { usuariosService } from '../services/usuariosService';
 import { auditoriaService } from '../services/auditoriaService';
 import { notificationsService } from '../services/notificationsService';
 import { diagnosticLogger } from '../services/diagnosticLogger';
-import { TipoDiferenca } from '../types';
 
 export function useNotifications() {
   const queryClient = useQueryClient();
@@ -297,65 +295,6 @@ export function useRecorrencias() {
   const stopMutation = useMutation({ mutationFn: recorrenciasService.stopRecorrencia, onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['recorrencias'] }); queryClient.invalidateQueries({ queryKey: ['lancamentos'] }); } });
 
   return { ...query, stopRecorrencia: stopMutation.mutateAsync, isStopping: stopMutation.isPending };
-}
-
-export function useConciliacao() {
-  const queryClient = useQueryClient();
-  const { role, user } = useAuth();
-  const isMaster = role === 'master';
-
-  const conciliacoesQuery = useQuery({ queryKey: ['conciliacoes'], queryFn: conciliacoesService.getConciliacoes });
-  const transacoesQuery = useQuery({ queryKey: ['transacoes'], queryFn: conciliacoesService.getAllTransacoes });
-
-  const importMutation = useMutation({
-    mutationFn: ({ contaBancariaId, rows, importMode }: { contaBancariaId: string, rows: any[], importMode: 'entrada' | 'saida' | 'ambos' }) => 
-      conciliacoesService.importCSV(contaBancariaId, rows, importMode),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['transacoes'] })
-  });
-
-  const linkMutation = useMutation({
-    mutationFn: ({ lancamentoId, transacaoBancoId, usuarioId }: { lancamentoId: string, transacaoBancoId: string, usuarioId: string }) =>
-      conciliacoesService.linkConciliacao(lancamentoId, transacaoBancoId, usuarioId, isMaster),
-    onSuccess: () => { 
-      queryClient.invalidateQueries({ queryKey: ['conciliacoes'] }); 
-      queryClient.invalidateQueries({ queryKey: ['transacoes'] }); 
-      queryClient.invalidateQueries({ queryKey: ['lancamentos'] }); 
-    }
-  });
-
-  const unlinkMutation = useMutation({
-    mutationFn: ({ conciliacaoId }: { conciliacaoId: string }) => 
-      conciliacoesService.unlinkConciliacao(conciliacaoId),
-    onSuccess: () => { 
-      queryClient.invalidateQueries({ queryKey: ['conciliacoes'] }); 
-      queryClient.invalidateQueries({ queryKey: ['transacoes'] }); 
-      queryClient.invalidateQueries({ queryKey: ['lancamentos'] }); 
-    }
-  });
-
-  const cleanupMutation = useMutation({
-    mutationFn: (contaId: string) => conciliacoesService.cleanupUnreconciled(contaId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['transacoes'] })
-  });
-
-  const classifyDifferenceMutation = useMutation({
-    mutationFn: (data: any) => conciliacoesService.classifyDifference(data.conciliacaoId, data.tipoDiferenca, data.valorDiferenca, data.observacaoJustificativa),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['diferencas'] })
-  });
-
-  return {
-    conciliacoes: conciliacoesQuery.data || [],
-    transacoes: transacoesQuery.data || [],
-    isFetchingTransacoes: transacoesQuery.isPending,
-    isLinking: linkMutation.isPending,
-    isUnlinking: unlinkMutation.isPending,
-    isCleaning: cleanupMutation.isPending,
-    importCSV: importMutation.mutateAsync,
-    linkConciliacao: linkMutation.mutateAsync,
-    unlinkConciliacao: unlinkMutation.mutateAsync,
-    cleanupTransacoes: cleanupMutation.mutateAsync,
-    classifyDifference: classifyDifferenceMutation.mutateAsync
-  };
 }
 
 export function useUsuarios() {

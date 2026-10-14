@@ -30,9 +30,6 @@ interface UIState {
   isNovaContaOpen: boolean;
   isComprovanteOpen: boolean;
   isInterceptorRecorrenciaOpen: boolean;
-  isImportarCSVOpen: boolean;
-  isClassificarDiferencaOpen: boolean;
-  isVincularConciliarOpen: boolean;
   isTransferenciaBancariaOpen: boolean;
   isNovoUsuarioOpen: boolean;
   isLegacyImportOpen: boolean;
@@ -45,11 +42,6 @@ interface UIState {
   selectedLancamentoIdForModal: string | null;
   selectedLancamentoIdsForBatch: string[];
   selectedRecorrenciaAction: 'single' | 'all' | null;
-
-  selectedTransacaoForConciliationId: string | null;
-  selectedLancamentoForConciliationId: string | null;
-  currentConciliationDifferenceValue: number;
-  currentConciliationId: string | null;
 
   // Temp Draft states so users don't lose typed progress
   lancamentoFormDraft: {
@@ -106,16 +98,11 @@ interface UIState {
   setActiveConfigSubTab: (sub: 'equipe' | 'auditoria' | 'legacy') => void;
   setCurrentUserId: (id: string) => void;
   
-  setModalOpen: (modal: keyof Omit<UIState, 'theme' | 'activeTab' | 'activeConfigSubTab' | 'currentUserId' | 'scrollPositions' | 'selectedLancamentoIdForModal' | 'selectedRecorrenciaAction' | 'selectedTransacaoForConciliationId' | 'selectedLancamentoForConciliationId' | 'currentConciliationDifferenceValue' | 'currentConciliationId' | 'lancamentoFormDraft' | 'entidadeFormDraft' | 'setTheme' | 'setActiveTab' | 'setActiveConfigSubTab' | 'setCurrentUserId' | 'setModalOpen' | 'setSelectedLancamentoIdForModal' | 'setSelectedRecorrenciaAction' | 'setSelectedTransacaoForConciliaId' | 'setSelectedLancamentoForConciliaId' | 'setCurrentConciliationId' | 'setLancamentoFormDraft' | 'setEntidadeFormDraft' | 'setScrollPosition'>, value: boolean) => void;
+  setModalOpen: (modal: keyof Omit<UIState, 'theme' | 'activeTab' | 'activeConfigSubTab' | 'currentUserId' | 'scrollPositions' | 'selectedLancamentoIdForModal' | 'selectedRecorrenciaAction' | 'lancamentoFormDraft' | 'entidadeFormDraft' | 'setTheme' | 'setActiveTab' | 'setActiveConfigSubTab' | 'setCurrentUserId' | 'setModalOpen' | 'setSelectedLancamentoIdForModal' | 'setSelectedRecorrenciaAction' | 'setLancamentoFormDraft' | 'setEntidadeFormDraft' | 'setScrollPosition'>, value: boolean) => void;
   
   setSelectedLancamentoIdForModal: (id: string | null) => void;
   setSelectedLancamentoIdsForBatch: (ids: string[]) => void;
   setSelectedRecorrenciaAction: (action: 'single' | 'all' | null) => void;
-
-  setSelectedTransacaoForConciliationId: (id: string | null) => void;
-  setSelectedLancamentoForConciliationId: (id: string | null) => void;
-  setCurrentConciliationDifferenceValue: (val: number) => void;
-  setCurrentConciliationId: (id: string | null) => void;
 
   setLancamentoFormDraft: (draft: Partial<UIState['lancamentoFormDraft']>) => void;
   setEntidadeFormDraft: (draft: Partial<UIState['entidadeFormDraft']>) => void;
@@ -185,9 +172,6 @@ export const useUIStore = create<UIState>()(
       isNovaContaOpen: false,
       isComprovanteOpen: false,
       isInterceptorRecorrenciaOpen: false,
-      isImportarCSVOpen: false,
-      isClassificarDiferencaOpen: false,
-      isVincularConciliarOpen: false,
       isTransferenciaBancariaOpen: false,
       isNovoUsuarioOpen: false,
       isLegacyImportOpen: false,
@@ -199,11 +183,6 @@ export const useUIStore = create<UIState>()(
       selectedLancamentoIdsForBatch: [],
 
       selectedRecorrenciaAction: null,
-
-      selectedTransacaoForConciliationId: null,
-      selectedLancamentoForConciliationId: null,
-      currentConciliationDifferenceValue: 0,
-      currentConciliationId: null,
 
       lancamentoFormDraft: initialDrafts.lancamentoFormDraft,
       entidadeFormDraft: initialDrafts.entidadeFormDraft,
@@ -220,16 +199,11 @@ export const useUIStore = create<UIState>()(
       setSelectedLancamentoIdsForBatch: (ids) => set({ selectedLancamentoIdsForBatch: ids }),
       setSelectedRecorrenciaAction: (action) => set({ selectedRecorrenciaAction: action }),
 
-      setSelectedTransacaoForConciliationId: (id) => set({ selectedTransacaoForConciliationId: id }),
-      setSelectedLancamentoForConciliationId: (id) => set({ selectedLancamentoForConciliationId: id }),
-      setCurrentConciliationDifferenceValue: (currentConciliationDifferenceValue) => set({ currentConciliationDifferenceValue }),
-      setCurrentConciliationId: (currentConciliationId) => set({ currentConciliationId }),
-
-      setLancamentoFormDraft: (draft) => set((state) => ({ 
-        lancamentoFormDraft: { ...state.lancamentoFormDraft, ...draft } 
+      setLancamentoFormDraft: (draft) => set((state) => ({
+        lancamentoFormDraft: { ...state.lancamentoFormDraft, ...draft }
       })),
       
-      setEntidadeFormDraft: (draft) => set((state) => ({ 
+      setEntidadeFormDraft: (draft) => set((state) => ({
         entidadeFormDraft: { ...state.entidadeFormDraft, ...draft } 
       })),
       
