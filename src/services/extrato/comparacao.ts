@@ -34,6 +34,22 @@ export function valorEfetivoLancamento(lancamento: LancamentoFinanceiro): number
   return arredondar(previsto - valorDesconto + valorAcrescimo);
 }
 
+/**
+ * Valor de `valor_previsto` que faz o valor efetivo do lançamento bater com o
+ * valor da linha do extrato, considerando desconto/acréscimo já registrados.
+ */
+export function valorPrevistoParaConciliar(lancamento: LancamentoFinanceiro, valorExtrato: number): number {
+  const desconto = Number(lancamento.desconto_valor ?? 0);
+  const acrescimo = Number(lancamento.acrescimo_valor ?? 0);
+  const descontoPercentual = lancamento.desconto_tipo === 'porcentagem' ? desconto : 0;
+  const acrescimoPercentual = lancamento.acrescimo_tipo === 'porcentagem' ? acrescimo : 0;
+  const descontoFixo = lancamento.desconto_tipo === 'porcentagem' ? 0 : desconto;
+  const acrescimoFixo = lancamento.acrescimo_tipo === 'porcentagem' ? 0 : acrescimo;
+  const fator = 1 - descontoPercentual / 100 + acrescimoPercentual / 100;
+  if (fator <= 0) return arredondar(valorExtrato + descontoFixo - acrescimoFixo);
+  return arredondar((valorExtrato + descontoFixo - acrescimoFixo) / fator);
+}
+
 /** Dia de referência do lançamento: data de pagamento quando já baixado, senão vencimento. */
 export function dataReferenciaLancamento(lancamento: LancamentoFinanceiro): string | null {
   const bruta =
@@ -43,7 +59,7 @@ export function dataReferenciaLancamento(lancamento: LancamentoFinanceiro): stri
   return bruta ? bruta.slice(0, 10) : null;
 }
 
-function direcaoLancamento(lancamento: LancamentoFinanceiro): DirecaoExtrato {
+export function direcaoLancamento(lancamento: LancamentoFinanceiro): DirecaoExtrato {
   return lancamento.tipo === 'entrada' ? 'entrada' : 'saida';
 }
 

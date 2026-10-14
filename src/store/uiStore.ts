@@ -37,6 +37,7 @@ interface UIState {
   isAprovacaoModalOpen: boolean;
   isSidebarCollapsed: boolean;
   lancamentoDraftPreset: boolean;
+  avrPreset: { lancamentoId: string; valor: string } | null;
 
   // Selected item contexts for modals
 
@@ -99,7 +100,7 @@ interface UIState {
   setActiveConfigSubTab: (sub: 'equipe' | 'auditoria' | 'legacy') => void;
   setCurrentUserId: (id: string) => void;
   
-  setModalOpen: (modal: keyof Omit<UIState, 'theme' | 'activeTab' | 'activeConfigSubTab' | 'currentUserId' | 'scrollPositions' | 'selectedLancamentoIdForModal' | 'selectedRecorrenciaAction' | 'lancamentoFormDraft' | 'lancamentoDraftPreset' | 'entidadeFormDraft' | 'setTheme' | 'setActiveTab' | 'setActiveConfigSubTab' | 'setCurrentUserId' | 'setModalOpen' | 'setSelectedLancamentoIdForModal' | 'setSelectedRecorrenciaAction' | 'setLancamentoFormDraft' | 'setLancamentoDraftPreset' | 'setEntidadeFormDraft' | 'setScrollPosition'>, value: boolean) => void;
+  setModalOpen: (modal: keyof Omit<UIState, 'theme' | 'activeTab' | 'activeConfigSubTab' | 'currentUserId' | 'scrollPositions' | 'selectedLancamentoIdForModal' | 'selectedRecorrenciaAction' | 'lancamentoFormDraft' | 'lancamentoDraftPreset' | 'avrPreset' | 'entidadeFormDraft' | 'setTheme' | 'setActiveTab' | 'setActiveConfigSubTab' | 'setCurrentUserId' | 'setModalOpen' | 'setSelectedLancamentoIdForModal' | 'setSelectedRecorrenciaAction' | 'setLancamentoFormDraft' | 'setLancamentoDraftPreset' | 'setAvrPreset' | 'setEntidadeFormDraft' | 'setScrollPosition'>, value: boolean) => void;
   
   setSelectedLancamentoIdForModal: (id: string | null) => void;
   setSelectedLancamentoIdsForBatch: (ids: string[]) => void;
@@ -107,6 +108,7 @@ interface UIState {
 
   setLancamentoFormDraft: (draft: Partial<UIState['lancamentoFormDraft']>) => void;
   setLancamentoDraftPreset: (preset: boolean) => void;
+  setAvrPreset: (preset: { lancamentoId: string; valor: string } | null) => void;
   setEntidadeFormDraft: (draft: Partial<UIState['entidadeFormDraft']>) => void;
   setScrollPosition: (key: string, position: number) => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
@@ -181,6 +183,7 @@ export const useUIStore = create<UIState>()(
       isAprovacaoModalOpen: false,
       isSidebarCollapsed: false,
       lancamentoDraftPreset: false,
+      avrPreset: null,
 
       selectedLancamentoIdForModal: null,
       selectedLancamentoIdsForBatch: [],
@@ -206,6 +209,7 @@ export const useUIStore = create<UIState>()(
         lancamentoFormDraft: { ...state.lancamentoFormDraft, ...draft }
       })),
       setLancamentoDraftPreset: (lancamentoDraftPreset) => set({ lancamentoDraftPreset }),
+      setAvrPreset: (avrPreset) => set({ avrPreset }),
       
       setEntidadeFormDraft: (draft) => set((state) => ({
         entidadeFormDraft: { ...state.entidadeFormDraft, ...draft }

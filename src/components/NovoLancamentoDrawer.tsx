@@ -213,6 +213,8 @@ export default function NovoLancamentoDrawer() {
     setLancamentoFormDraft,
     lancamentoDraftPreset,
     setLancamentoDraftPreset,
+    avrPreset,
+    setAvrPreset,
     setEntidadeFormDraft,
     resetAllDrafts
   } = useUIStore();
@@ -340,6 +342,7 @@ export default function NovoLancamentoDrawer() {
       return;
     }
 
+    const valorAVRPreset = avrPreset && avrPreset.lancamentoId === editingItem.id ? avrPreset.valor : null;
     setIsAVREdit(true);
     setAvrHasReceived(Number(editingItem.valor_recebido) > 0);
     const existingAvrReason = (categoriasAjuste as any[]).find(reason => reason.nome === (editingItem as any).motivo_ajuste);
@@ -348,7 +351,7 @@ export default function NovoLancamentoDrawer() {
     setAvrPeriodicity('mensal');
     setAvrCustomDays('30');
     setAvrWithEntry(false);
-    setAvrSingleParcelValue(formatBRL(editingItem.valor_previsto));
+    setAvrSingleParcelValue(valorAVRPreset ?? formatBRL(editingItem.valor_previsto));
     setAvrParcels([]);
 
     const loadAVRData = async () => {
@@ -369,7 +372,7 @@ export default function NovoLancamentoDrawer() {
         id: parcel.id,
         numero: parcel.numero_parcela || 1,
         data: parcel.data_vencimento,
-        valor: formatBRL(parcel.valor_previsto),
+        valor: parcel.id === editingItem.id && valorAVRPreset ? valorAVRPreset : formatBRL(parcel.valor_previsto),
         status: parcel.status_pagamento,
         valor_recebido: parcel.valor_recebido
       }));
@@ -588,6 +591,7 @@ export default function NovoLancamentoDrawer() {
     setModalOpen('isNovoLancamentoOpen', false);
     setSelectedLancamentoIdForModal(null);
     setSelectedRecorrenciaAction(null);
+    setAvrPreset(null);
   };
 
   const generateAVRParcels = () => {

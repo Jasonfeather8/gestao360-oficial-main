@@ -13,6 +13,7 @@ import {
   HelpCircle,
   Landmark,
   Loader2,
+  PenLine,
   PlusCircle,
   Sparkles,
   Trash2,
@@ -22,9 +23,10 @@ import {
 import { useAuth } from '../hooks/useAuth';
 import { useContas, useLancamentosDaConta } from '../hooks/useData';
 import { useUIStore } from '../store/uiStore';
-import { compararExtrato } from '../services/extrato/comparacao';
+import SeletorAVRModal from '../components/Conciliacao/SeletorAVRModal';
+import { compararExtrato, dataReferenciaLancamento, direcaoLancamento, valorPrevistoParaConciliar } from '../services/extrato/comparacao';
 import { lerExtrato } from '../services/extrato/motorLeitura';
-import type { ExtratoLido, ItemComparacao, ProgressoLeituraExtrato } from '../types';
+import type { ExtratoLido, ItemComparacao, LancamentoFinanceiro, ProgressoLeituraExtrato } from '../types';
 
 const moeda = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const dataFormatada = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
@@ -47,6 +49,7 @@ export default function Conciliacao() {
     setSelectedRecorrenciaAction,
     setLancamentoFormDraft,
     setLancamentoDraftPreset,
+    setAvrPreset,
   } = useUIStore();
   const podeLancarNoErp = hasRole(['master', 'gerente']);
   const [contaId, setContaId] = useState('');
@@ -58,6 +61,7 @@ export default function Conciliacao() {
   const [arrastando, setArrastando] = useState(false);
   const [mostrarNaoInterpretadas, setMostrarNaoInterpretadas] = useState(false);
   const [mostrarIgnoradas, setMostrarIgnoradas] = useState(false);
+  const [seletorAVR, setSeletorAVR] = useState<ItemComparacao | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -137,6 +141,35 @@ export default function Conciliacao() {
     setModalOpen('isNovoLancamentoOpen', true);
   };
 
+  const candidatosAVR = useMemo(() => {
+    if (!seletorAVR) return [];
+    return lancamentos.filter((lancamento) =>
+      direcaoLancamento(lancamento) === seletorAVR.direcao &&
+      dataReferenciaLancamento(lancamento) === seletorAVR.data &&
+      lancamento.status_pagamento === 'aberto' &&
+      Number(lancamento.valor_recebido ?? 0) === 0
+    );
+  }, [seletorAVR, lancamentos]);
+
+  const abrirSeletorAVR = (item: ItemComparacao) => {
+    if (item.valorExtrato === null) return;
+    setSeletorAVR(item);
+  };
+
+  // O AVR em si continua sendo o fluxo existente do drawer: aqui só escolhemos
+  // o lançamento alvo e o valor que faz o efetivo bater com o extrato.
+  const aplicarAVR = (lancamento: LancamentoFinanceiro) => {
+    const valorExtrato = seletorAVR?.valorExtrato ?? 0;
+    setAvrPreset({
+      lancamentoId: lancamento.id,
+      valor: formatarValorInput(valorPrevistoParaConciliar(lancamento, valorExtrato)),
+    });
+    setSeletorAVR(null);
+    setSelectedLancamentoIdForModal(lancamento.id);
+    setSelectedRecorrenciaAction(null);
+    setModalOpen('isNovoLancamentoOpen', true);
+  };
+
   const renderItem = (item: ItemComparacao) => {
     const status = {
       conciliado: { label: 'Conciliado', icon: CheckCircle2, className: 'bg-bank-truth-green/10 text-bank-truth-green' },
@@ -183,14 +216,24 @@ export default function Conciliacao() {
             {moeda.format(valorPrincipal)}
           </p>
           {podeLancarNoErp && (item.status === 'pendente_banco' || item.status === 'divergente') && (
-            <button
-              type="button"
-              onClick={() => abrirLancamentoDoExtrato(item)}
-              title="Criar um novo lançamento no ERP com os dados desta linha do extrato"
-              className="inline-flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-primary transition hover:bg-primary/20"
-            >
-              <PlusCircle className="h-3.5 w-3.5" />Lançar
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => abrirLancamentoDoExtrato(item)}
+                title="Criar um novo lançamento no ERP com os dados desta linha do extrato"
+                className="inline-flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-primary transition hover:bg-primary/20"
+              >
+                <PlusCircle className="h-3.5 w-3.5" />Lançar
+              </button>
+              <button
+                type="button"
+                onClick={() => abrirSeletorAVR(item)}
+                title="Ajustar (AVR) um lançamento do ERP do mesmo dia com o valor desta linha"
+                className="inline-flex items-center gap-1 rounded-lg border border-surface-border px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-on-surface-variant transition hover:bg-surface"
+              >
+                <PenLine className="h-3.5 w-3.5" />AVR
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -269,6 +312,29 @@ export default function Conciliacao() {
       ) : (
         <AnimatePresence mode="wait">
           <motion.div key="extrato-carregado" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-5">
+            {resultado && extrato.linhas.length > 0 && (() => {
+              const totalLinhas = extrato.linhas.length;
+              const percentual = Math.min(100, Math.round((resultado.resumo.conciliados / totalLinhas) * 100));
+              return (
+                <section className="sticky top-0 z-30 rounded-2xl border border-surface-border bg-white/95 px-4 py-3 shadow-sm backdrop-blur dark:bg-surface/95">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex min-w-0 flex-1 items-center gap-3">
+                      <span className="shrink-0 text-sm font-black text-on-surface">{percentual}%</span>
+                      <div className="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-surface-container-low">
+                        <div className="h-full bg-bank-truth-green transition-all" style={{ width: `${percentual}%` }} />
+                      </div>
+                      <span className="shrink-0 text-xs text-on-surface-variant">{resultado.resumo.conciliados} de {totalLinhas} linhas</span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-bold">
+                      <span className="text-bank-truth-green">{resultado.resumo.conciliados} conciliados</span>
+                      <span className="text-alert-red">{resultado.resumo.divergentes} divergentes</span>
+                      <span className="text-pending-amber">{resultado.resumo.pendentesBanco} falta no ERP</span>
+                      <span className="text-bpi-blue">{resultado.resumo.pendentesErp} falta no extrato</span>
+                    </div>
+                  </div>
+                </section>
+              );
+            })()}
             <section className="flex flex-col justify-between gap-4 rounded-[28px] border border-surface-border bg-white p-5 dark:bg-surface sm:flex-row sm:items-center">
               <div className="flex min-w-0 items-start gap-3">
                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><FileText className="h-5 w-5" /></div>
@@ -461,6 +527,17 @@ export default function Conciliacao() {
             </div>
           </motion.section>
         </motion.div>}
+        {seletorAVR && (
+          <SeletorAVRModal
+            aberto
+            data={seletorAVR.data}
+            direcao={seletorAVR.direcao}
+            valorExtrato={seletorAVR.valorExtrato ?? 0}
+            candidatos={candidatosAVR}
+            onFechar={() => setSeletorAVR(null)}
+            onSelecionar={aplicarAVR}
+          />
+        )}
       </AnimatePresence>
     </div>
   );
