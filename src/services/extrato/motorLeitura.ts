@@ -1,16 +1,24 @@
-import type { ExtratoLido } from '../../types';
+import type { ExtratoLido, ProgressoLeituraExtrato } from '../../types';
+import { lerExtratoIA } from './motorIA';
 import { lerExtratoPdf } from './pdfReader';
 
 /**
  * Contrato do motor de leitura de extrato.
- * O motor de IA será apenas mais uma implementação registrada em MOTORES.
  */
 export interface MotorLeituraExtrato {
   id: 'pdf_texto' | 'ia';
   nome: string;
   aceita: (arquivo: File) => boolean;
-  ler: (arquivo: File) => Promise<ExtratoLido>;
+  ler: (arquivo: File, onProgress?: (progresso: ProgressoLeituraExtrato) => void) => Promise<ExtratoLido>;
 }
+
+const motorIA: MotorLeituraExtrato = {
+  id: 'ia',
+  nome: 'IA (OpenAI)',
+  aceita: (arquivo) =>
+    arquivo.type === 'application/pdf' || arquivo.name.toLowerCase().endsWith('.pdf'),
+  ler: lerExtratoIA,
+};
 
 const motorPdfTexto: MotorLeituraExtrato = {
   id: 'pdf_texto',
@@ -20,7 +28,7 @@ const motorPdfTexto: MotorLeituraExtrato = {
   ler: lerExtratoPdf,
 };
 
-const MOTORES: MotorLeituraExtrato[] = [motorPdfTexto];
+const MOTORES: MotorLeituraExtrato[] = [motorIA, motorPdfTexto];
 
 export function getMotorLeitura(arquivo: File): MotorLeituraExtrato {
   const motor = MOTORES.find((candidato) => candidato.aceita(arquivo));
@@ -28,6 +36,9 @@ export function getMotorLeitura(arquivo: File): MotorLeituraExtrato {
   return motor;
 }
 
-export async function lerExtrato(arquivo: File): Promise<ExtratoLido> {
-  return getMotorLeitura(arquivo).ler(arquivo);
+export async function lerExtrato(
+  arquivo: File,
+  onProgress?: (progresso: ProgressoLeituraExtrato) => void,
+): Promise<ExtratoLido> {
+  return getMotorLeitura(arquivo).ler(arquivo, onProgress);
 }

@@ -142,6 +142,46 @@ export type DirecaoExtrato = 'entrada' | 'saida';
 /** Como a direção (entrada/saída) de uma linha do extrato foi determinada. */
 export type OrigemDirecao = 'sinal' | 'marcador' | 'saldo';
 
+export type ConfiancaLinha = 'alta' | 'media' | 'baixa';
+
+export interface MetaExtrato {
+  banco: string | null;
+  agencia: string | null;
+  conta: string | null;
+  periodoInicio: string | null;
+  periodoFim: string | null;
+  saldoInicial: number | null;
+  saldoFinal: number | null;
+}
+
+export type StatusConferencia = 'ok' | 'divergente' | 'nao_verificavel';
+
+export interface ConferenciaExtrato {
+  status: StatusConferencia;
+  entradas: number;
+  saidas: number;
+  saldoInicial: number | null;
+  saldoFinal: number | null;
+  diferenca: number | null;
+}
+
+export type MotivoLinhaIgnorada = 'saldo' | 'totalizador' | 'cabecalho' | 'rodape' | 'outro';
+
+export interface LinhaIgnorada {
+  pagina: number | null;
+  texto: string;
+  motivo: MotivoLinhaIgnorada;
+}
+
+export interface ProgressoLeituraExtrato {
+  etapa: 'preparando' | 'enviando' | 'lendo';
+  loteAtual: number;
+  totalLotes: number;
+  paginaInicio: number | null;
+  paginaFim: number | null;
+  totalPaginas: number | null;
+}
+
 export interface LinhaExtrato {
   id: string;
   /** Data da transação no formato ISO (yyyy-mm-dd). */
@@ -150,17 +190,24 @@ export interface LinhaExtrato {
   /** Valor absoluto, em reais. */
   valor: number;
   direcao: DirecaoExtrato;
-  origemDirecao: OrigemDirecao;
-  pagina: number;
-  linha: number;
+  origemDirecao?: OrigemDirecao;
+  pagina: number | null;
+  linha?: number;
   textoOriginal: string;
+  confianca?: ConfiancaLinha;
+  documento?: string;
 }
 
-export type MotivoNaoInterpretada = 'sem_data' | 'direcao_indefinida';
+export type MotivoNaoInterpretada =
+  | 'sem_data'
+  | 'direcao_indefinida'
+  | 'sem_valor'
+  | 'valor_ilegivel'
+  | 'data_impossivel';
 
 export interface LinhaNaoInterpretada {
-  pagina: number;
-  linha: number;
+  pagina: number | null;
+  linha?: number;
   texto: string;
   motivo: MotivoNaoInterpretada;
 }
@@ -174,6 +221,9 @@ export interface ExtratoLido {
   dataFim: string | null;
   linhas: LinhaExtrato[];
   naoInterpretadas: LinhaNaoInterpretada[];
+  meta?: MetaExtrato;
+  conferencia?: ConferenciaExtrato;
+  linhasIgnoradas?: LinhaIgnorada[];
 }
 
 export type StatusItemComparacao =
