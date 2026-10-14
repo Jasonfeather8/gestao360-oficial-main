@@ -10,8 +10,10 @@ import {
   ChevronUp,
   FileSearch,
   FileText,
+  HelpCircle,
   Landmark,
   Loader2,
+  Sparkles,
   Trash2,
   Upload,
   X,
@@ -19,7 +21,7 @@ import {
 import { useContas, useLancamentosDaConta } from '../hooks/useData';
 import { compararExtrato } from '../services/extrato/comparacao';
 import { lerExtrato } from '../services/extrato/motorLeitura';
-import type { ExtratoLido, ItemComparacao } from '../types';
+import type { ExtratoLido, ItemComparacao, ProgressoLeituraExtrato } from '../types';
 
 const moeda = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const dataFormatada = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
@@ -38,10 +40,12 @@ export default function Conciliacao() {
   const [contaId, setContaId] = useState('');
   const [extrato, setExtrato] = useState<ExtratoLido | null>(null);
   const [processando, setProcessando] = useState(false);
+  const [progresso, setProgresso] = useState<ProgressoLeituraExtrato | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [arrastando, setArrastando] = useState(false);
   const [mostrarNaoInterpretadas, setMostrarNaoInterpretadas] = useState(false);
+  const [mostrarIgnoradas, setMostrarIgnoradas] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -63,12 +67,13 @@ export default function Conciliacao() {
     setErro(null);
     setProcessando(true);
     try {
-      const extratoLido = await lerExtrato(file);
+      const extratoLido = await lerExtrato(file, setProgresso);
       setExtrato(extratoLido);
       setIsImportOpen(false);
     } catch (error) {
       setErro(error instanceof Error ? error.message : 'Não foi possível ler o extrato.');
     } finally {
+      setProgresso(null);
       setProcessando(false);
     }
   };
@@ -86,11 +91,14 @@ export default function Conciliacao() {
     }[item.status];
     const StatusIcon = status.icon;
     const valorPrincipal = item.valorExtrato ?? item.valorErp ?? 0;
-    const origem = item.linhaExtrato?.origemDirecao === 'sinal'
-      ? 'sinal do valor'
-      : item.linhaExtrato?.origemDirecao === 'marcador'
-        ? 'marcador D/C'
-        : 'variação de saldo';
+    const origemDirecao = item.linhaExtrato?.origemDirecao;
+    const origem = origemDirecao
+      ? origemDirecao === 'sinal'
+        ? 'sinal do valor'
+        : origemDirecao === 'marcador'
+          ? 'marcador D/C'
+          : 'variação de saldo'
+      : 'extraído por IA';
 
     return (
       <div key={item.id} className="flex items-start justify-between gap-3 border-b border-surface-border/70 py-3 last:border-b-0">
@@ -99,10 +107,15 @@ export default function Conciliacao() {
             ? <ArrowUpRight className="mt-0.5 h-4 w-4 shrink-0 text-bank-truth-green" />
             : <ArrowDownLeft className="mt-0.5 h-4 w-4 shrink-0 text-alert-red" />}
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-on-surface">{item.descricao || 'Movimentação sem descrição'}</p>
-            <span className={`mt-1 inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-bold ${status.className}`}>
-              <StatusIcon className="h-3 w-3" />{status.label}
-            </span>
+            <p className="truncate text-sm font-semibold text-on-surface" title={item.linhaExtrato?.textoOriginal || undefined}>{item.descricao || 'Movimentação sem descrição'}</p>
+            <div className="mt-1 flex flex-wrap items-center gap-1">
+              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-bold ${status.className}`}>
+                <StatusIcon className="h-3 w-3" />{status.label}
+              </span>
+              {item.linhaExtrato?.confianca === 'baixa' && (
+                <span title="A IA teve baixa certeza nesta linha; confira o texto original." className="inline-flex items-center rounded-full bg-pending-amber/10 px-2 py-1 text-[10px] font-bold text-pending-amber">confiança baixa</span>
+              )}
+            </div>
             {item.status === 'conciliado' && item.lancamento?.observacoes && (
               <p className="mt-1 text-xs text-on-surface-variant">ERP: {item.lancamento.observacoes}</p>
             )}
@@ -113,7 +126,7 @@ export default function Conciliacao() {
             )}
             {item.linhaExtrato && (
               <p className="mt-1 text-[10px] text-on-surface-variant" title={origem}>
-                PDF p.{item.linhaExtrato.pagina} · l.{item.linhaExtrato.linha}
+                PDF p.{item.linhaExtrato.pagina ?? '?'}{item.linhaExtrato.linha !== undefined ? ` · l.${item.linhaExtrato.linha}` : ''}
               </p>
             )}
           </div>
@@ -159,7 +172,7 @@ export default function Conciliacao() {
             <Landmark className="h-7 w-7 text-primary" />Conciliação Bancária
           </h1>
           <p className="mt-1 text-xs font-bold uppercase tracking-widest text-secondary">Conferência do extrato com os lançamentos do ERP</p>
-          <p className="mt-2 text-xs text-on-surface-variant">Somente leitura: nada é gravado no ERP</p>
+          <p className="mt-2 text-xs text-on-surface-variant">Leitura do PDF por IA · somente leitura, nada é gravado no ERP</p>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row">
           {seletorConta('min-w-0 sm:min-w-[260px]')}
@@ -182,6 +195,7 @@ export default function Conciliacao() {
           <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 text-primary"><FileSearch className="h-8 w-8" /></div>
           <h2 className="text-xl font-bold">Nenhum extrato carregado</h2>
           <p className="mt-2 max-w-lg text-sm text-on-surface-variant">Escolha uma conta bancária e importe o PDF para comparar as movimentações em memória.</p>
+          <p className="mt-2 text-xs text-on-surface-variant">A leitura do PDF é feita por IA (OpenAI) e o arquivo é apagado ao final do processamento.</p>
           <div className="my-6 grid gap-3 text-left sm:grid-cols-2">
             <div className="rounded-2xl border border-surface-border p-4 text-sm"><span className="mr-2 font-bold text-primary">1.</span>Escolha a conta bancária</div>
             <div className="rounded-2xl border border-surface-border p-4 text-sm"><span className="mr-2 font-bold text-primary">2.</span>Importe o extrato em PDF</div>
@@ -204,6 +218,15 @@ export default function Conciliacao() {
                   <p className="mt-1 text-xs text-on-surface-variant">
                     Período: {formatarData(extrato.dataInicio)} – {formatarData(extrato.dataFim)} · {extrato.paginas} {extrato.paginas === 1 ? 'página' : 'páginas'} · {extrato.linhas.length} {extrato.linhas.length === 1 ? 'linha lida' : 'linhas lidas'}
                   </p>
+                  {extrato.meta && [
+                    extrato.meta.banco && `Banco ${extrato.meta.banco}`,
+                    extrato.meta.agencia && `Agência ${extrato.meta.agencia}`,
+                    extrato.meta.conta && `Conta ${extrato.meta.conta}`,
+                  ].filter(Boolean).length > 0 && (
+                    <p className="mt-1 text-xs text-on-surface-variant">
+                      {[extrato.meta.banco && `Banco ${extrato.meta.banco}`, extrato.meta.agencia && `Agência ${extrato.meta.agencia}`, extrato.meta.conta && `Conta ${extrato.meta.conta}`].filter(Boolean).join(' · ')}
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="flex shrink-0 gap-2">
@@ -212,22 +235,77 @@ export default function Conciliacao() {
               </div>
             </section>
 
+            {extrato.conferencia && (() => {
+              const conferencia = extrato.conferencia;
+              const status = {
+                ok: { titulo: 'Saldos conferem', Icon: CheckCircle2, classes: 'border-bank-truth-green/30 bg-bank-truth-green/10 text-bank-truth-green', texto: 'Saldo inicial + entradas − saídas fecha com o saldo final informado no extrato.' },
+                divergente: { titulo: 'Divergência entre saldos e movimentações', Icon: AlertTriangle, classes: 'border-alert-red/30 bg-alert-red/10 text-alert-red', texto: `A soma das movimentações não fecha com os saldos do extrato: diferença de ${conferencia.diferenca === null ? '—' : moeda.format(conferencia.diferenca)}. Pode haver linha não lida — confira as linhas duvidosas abaixo.` },
+                nao_verificavel: { titulo: 'Conferência de saldos não disponível', Icon: HelpCircle, classes: 'border-surface-border bg-surface-container-low text-on-surface-variant', texto: 'O extrato não informa saldo inicial e/ou final, então não foi possível conferir a soma das movimentações.' },
+              }[conferencia.status];
+              const Icon = status.Icon;
+              return (
+                <section className={`rounded-2xl border p-4 ${status.classes}`}>
+                  <div className="flex items-start gap-3">
+                    <Icon className="mt-0.5 h-5 w-5 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <h3 className="text-sm font-bold">{status.titulo}</h3>
+                      <p className="mt-1 text-sm">{status.texto}</p>
+                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                        <p>Saldo inicial <span className="block font-bold">{conferencia.saldoInicial === null ? '—' : moeda.format(conferencia.saldoInicial)}</span></p>
+                        <p>Entradas <span className="block font-bold">{moeda.format(conferencia.entradas)}</span></p>
+                        <p>Saídas <span className="block font-bold">{moeda.format(conferencia.saidas)}</span></p>
+                        <p>Saldo final <span className="block font-bold">{conferencia.saldoFinal === null ? '—' : moeda.format(conferencia.saldoFinal)}</span></p>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+              );
+            })()}
+
             {!extrato.temTexto && <div className="rounded-2xl border border-pending-amber/30 bg-pending-amber/10 p-4 text-sm text-pending-amber">Este PDF não possui camada de texto. PDFs digitalizados podem não ser interpretados.</div>}
             {extrato.linhas.length === 0 && <div className="rounded-2xl border border-pending-amber/30 bg-pending-amber/10 p-4 text-sm text-pending-amber">Nenhuma linha com data e valor foi identificada neste PDF</div>}
             {totalCount > lancamentos.length && <div className="rounded-2xl border border-pending-amber/30 bg-pending-amber/10 p-4 text-sm text-pending-amber">Foram carregados 1000 de {totalCount} lançamentos; a comparação pode estar incompleta.</div>}
             {extrato.naoInterpretadas.length > 0 && (
               <section className="overflow-hidden rounded-2xl border border-pending-amber/30 bg-pending-amber/10">
                 <button type="button" onClick={() => setMostrarNaoInterpretadas(!mostrarNaoInterpretadas)} className="flex w-full items-center justify-between gap-3 p-4 text-left text-sm font-bold text-pending-amber">
-                  <span>{extrato.naoInterpretadas.length} linha(s) não interpretada(s)</span>{mostrarNaoInterpretadas ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                  <span>{extrato.naoInterpretadas.length} linhas que a IA não conseguiu interpretar</span>{mostrarNaoInterpretadas ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                 </button>
                 <AnimatePresence>
                   {mostrarNaoInterpretadas && <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
                     <ul className="space-y-2 border-t border-pending-amber/20 px-4 py-3">
-                      {extrato.naoInterpretadas.map((linha, index) => (
-                        <li key={`${linha.pagina}-${linha.linha}-${index}`} className="text-xs text-on-surface">
-                          <span className="font-bold">p.{linha.pagina} · l.{linha.linha}</span> · {linha.texto} <span className="text-pending-amber">({linha.motivo === 'sem_data' ? 'Linha sem data' : 'Entrada/saída não identificada'})</span>
-                        </li>
-                      ))}
+                      {extrato.naoInterpretadas.map((linha, index) => {
+                        const motivos = {
+                          sem_data: 'Linha sem data',
+                          direcao_indefinida: 'Entrada/saída não identificada',
+                          sem_valor: 'Linha sem valor',
+                          valor_ilegivel: 'Valor ilegível',
+                          data_impossivel: 'Data inválida',
+                        };
+                        return (
+                          <li key={`${linha.pagina}-${linha.linha}-${index}`} className="text-xs text-on-surface">
+                            <span className="font-bold">p.{linha.pagina ?? '?'}{linha.linha !== undefined ? ` · l.${linha.linha}` : ''}</span> · {linha.texto} <span className="text-pending-amber">({motivos[linha.motivo]})</span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </motion.div>}
+                </AnimatePresence>
+              </section>
+            )}
+
+            {!!extrato.linhasIgnoradas?.length && (
+              <section className="overflow-hidden rounded-2xl border border-bpi-blue/30 bg-bpi-blue/10">
+                <button type="button" onClick={() => setMostrarIgnoradas(!mostrarIgnoradas)} className="flex w-full items-center justify-between gap-3 p-4 text-left text-sm font-bold text-bpi-blue">
+                  <span>{extrato.linhasIgnoradas.length} linhas ignoradas (saldos, totais, cabeçalhos)</span>{mostrarIgnoradas ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                </button>
+                <p className="px-4 pb-3 text-xs text-on-surface-variant">Estas linhas não são transações e ficaram fora da conciliação.</p>
+                <AnimatePresence>
+                  {mostrarIgnoradas && <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                    <ul className="space-y-2 border-t border-bpi-blue/20 px-4 py-3">
+                      {extrato.linhasIgnoradas.map((linha, index) => {
+                        const motivos = { saldo: 'Saldo', totalizador: 'Totalizador', cabecalho: 'Cabeçalho', rodape: 'Rodapé', outro: 'Outro' };
+                        return <li key={`${linha.pagina}-${index}`} className="text-xs text-on-surface"><span className="font-bold">p.{linha.pagina ?? '?'}</span> · {linha.texto} <span className="text-bpi-blue">({motivos[linha.motivo]})</span></li>;
+                      })}
                     </ul>
                   </motion.div>}
                 </AnimatePresence>
@@ -299,8 +377,25 @@ export default function Conciliacao() {
                 onDrop={(event) => { event.preventDefault(); setArrastando(false); selecionarArquivo(event.dataTransfer.files[0]); }}
                 className={`flex min-h-48 w-full flex-col items-center justify-center rounded-2xl border-2 border-dashed px-6 py-8 text-center transition ${arrastando ? 'border-primary bg-primary/5' : 'border-surface-border hover:border-primary/60'} disabled:cursor-not-allowed disabled:opacity-60`}
               >
-                {processando ? <><Loader2 className="mb-3 h-8 w-8 animate-spin text-primary" /><span className="text-sm font-semibold text-on-surface">Lendo o extrato...</span></> : <><Upload className="mb-3 h-8 w-8 text-secondary" /><span className="font-bold text-on-surface">Arraste o PDF para cá ou clique para selecionar</span><span className="mt-2 text-xs text-on-surface-variant">Apenas arquivos PDF</span></>}
+                {processando ? (
+                  <>
+                    <Loader2 className="mb-3 h-8 w-8 animate-spin text-primary" />
+                    <span className="text-sm font-semibold text-on-surface">
+                      {progresso?.etapa === 'enviando'
+                        ? 'Enviando o PDF com segurança...'
+                        : progresso?.etapa === 'lendo'
+                          ? `Lendo páginas ${progresso.paginaInicio ?? '?'}–${progresso.paginaFim ?? '?'} de ${progresso.totalPaginas ?? '?'} · lote ${progresso.loteAtual} de ${progresso.totalLotes}`
+                          : 'Preparando o arquivo...'}
+                    </span>
+                    {progresso?.totalPaginas && (
+                      <div className="mt-4 h-2 w-full max-w-xs overflow-hidden rounded-full bg-surface-container-low">
+                        <div className="h-full bg-primary transition-all" style={{ width: `${Math.min(100, Math.round(((progresso.paginaFim ?? 0) / progresso.totalPaginas) * 100))}%` }} />
+                      </div>
+                    )}
+                  </>
+                ) : <><Upload className="mb-3 h-8 w-8 text-secondary" /><span className="font-bold text-on-surface">Arraste o PDF para cá ou clique para selecionar</span><span className="mt-2 text-xs text-on-surface-variant">Apenas arquivos PDF</span></>}
               </button>
+              {!processando && <div className="flex items-start gap-3 rounded-xl border border-surface-border bg-surface-container-low p-3 text-xs text-on-surface-variant"><Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-secondary" /><p>A leitura é feita por IA (OpenAI). O PDF é enviado temporariamente e apagado do servidor ao final do processamento.</p></div>}
               {erro && <p role="alert" className="rounded-xl bg-alert-red/10 p-3 text-sm text-alert-red">{erro}</p>}
               <footer className="flex justify-end pt-2">
                 <button type="button" disabled={processando} onClick={() => setIsImportOpen(false)} className="rounded-xl border border-surface-border px-5 py-2.5 text-sm font-bold text-on-surface hover:bg-surface disabled:opacity-50">Cancelar</button>
