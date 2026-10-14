@@ -160,3 +160,92 @@ export interface ResumoSaldo {
   saldo_simulado: number;
   ultima_atualizacao: string;
 }
+
+// ===========================================================================
+// Módulo de Extrato — leitura do arquivo e comparação (somente leitura)
+// Nada aqui é persistido: a comparação existe apenas na memória da tela.
+// ===========================================================================
+
+export type DirecaoExtrato = 'entrada' | 'saida';
+
+/** Como a direção (entrada/saída) de uma linha do extrato foi determinada. */
+export type OrigemDirecao = 'sinal' | 'marcador' | 'saldo';
+
+export interface LinhaExtrato {
+  id: string;
+  /** Data da transação no formato ISO (yyyy-mm-dd). */
+  data: string;
+  descricao: string;
+  /** Valor absoluto, em reais. */
+  valor: number;
+  direcao: DirecaoExtrato;
+  origemDirecao: OrigemDirecao;
+  pagina: number;
+  linha: number;
+  textoOriginal: string;
+}
+
+export type MotivoNaoInterpretada = 'sem_data' | 'direcao_indefinida';
+
+export interface LinhaNaoInterpretada {
+  pagina: number;
+  linha: number;
+  texto: string;
+  motivo: MotivoNaoInterpretada;
+}
+
+export interface ExtratoLido {
+  arquivoNome: string;
+  /** Falso quando o PDF não possui camada de texto (extrato digitalizado). */
+  temTexto: boolean;
+  paginas: number;
+  dataInicio: string | null;
+  dataFim: string | null;
+  linhas: LinhaExtrato[];
+  naoInterpretadas: LinhaNaoInterpretada[];
+}
+
+export type StatusItemComparacao =
+  | 'conciliado'
+  | 'pendente_banco'
+  | 'pendente_erp'
+  | 'divergente';
+
+export interface ItemComparacao {
+  id: string;
+  status: StatusItemComparacao;
+  data: string;
+  direcao: DirecaoExtrato;
+  descricao: string;
+  valorExtrato: number | null;
+  valorErp: number | null;
+  linhaExtrato: LinhaExtrato | null;
+  lancamento: LancamentoFinanceiro | null;
+}
+
+export interface DiaComparacao {
+  data: string;
+  entradas: ItemComparacao[];
+  saidas: ItemComparacao[];
+  totalEntradas: number;
+  totalSaidas: number;
+  conciliados: number;
+  pendentes: number;
+  divergentes: number;
+}
+
+export interface ResumoComparacao {
+  totalEntradas: number;
+  totalSaidas: number;
+  conciliados: number;
+  pendentesBanco: number;
+  pendentesErp: number;
+  divergentes: number;
+}
+
+export interface ResultadoComparacao {
+  dataInicio: string | null;
+  dataFim: string | null;
+  dias: DiaComparacao[];
+  resumo: ResumoComparacao;
+}
