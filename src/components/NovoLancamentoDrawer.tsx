@@ -211,6 +211,8 @@ export default function NovoLancamentoDrawer() {
     setSelectedRecorrenciaAction,
     lancamentoFormDraft,
     setLancamentoFormDraft,
+    lancamentoDraftPreset,
+    setLancamentoDraftPreset,
     setEntidadeFormDraft,
     resetAllDrafts
   } = useUIStore();
@@ -286,12 +288,19 @@ export default function NovoLancamentoDrawer() {
   const isEditingLoading = isEditing && isLancamentoSelecionadoLoading && !editingItem;
 
   useEffect(() => {
-    if (isNovoLancamentoOpen && !isEditing) {
+    if (!isNovoLancamentoOpen) return;
+    if (lancamentoDraftPreset) {
+      setLancamentoDraftPreset(false);
+      setAttachments([]);
+      setParcelasManuais([]);
+      return;
+    }
+    if (!isEditing) {
       resetAllDrafts();
       setAttachments([]);
       setParcelasManuais([]);
     }
-  }, [isNovoLancamentoOpen, isEditing]);
+  }, [isNovoLancamentoOpen]);
 
   useEffect(() => {
     if (editingItem) {

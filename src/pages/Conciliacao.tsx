@@ -13,12 +13,15 @@ import {
   HelpCircle,
   Landmark,
   Loader2,
+  PlusCircle,
   Sparkles,
   Trash2,
   Upload,
   X,
 } from 'lucide-react';
+import { useAuth } from '../hooks/useAuth';
 import { useContas, useLancamentosDaConta } from '../hooks/useData';
+import { useUIStore } from '../store/uiStore';
 import { compararExtrato } from '../services/extrato/comparacao';
 import { lerExtrato } from '../services/extrato/motorLeitura';
 import type { ExtratoLido, ItemComparacao, ProgressoLeituraExtrato } from '../types';
@@ -37,6 +40,15 @@ function dataUtc(data: string): Date {
 
 export default function Conciliacao() {
   const { data: contas = [] } = useContas();
+  const { hasRole } = useAuth();
+  const {
+    setModalOpen,
+    setSelectedLancamentoIdForModal,
+    setSelectedRecorrenciaAction,
+    setLancamentoFormDraft,
+    setLancamentoDraftPreset,
+  } = useUIStore();
+  const podeLancarNoErp = hasRole(['master', 'gerente']);
   const [contaId, setContaId] = useState('');
   const [extrato, setExtrato] = useState<ExtratoLido | null>(null);
   const [processando, setProcessando] = useState(false);
@@ -82,6 +94,49 @@ export default function Conciliacao() {
     if (file && contaId) void handleArquivo(file);
   };
 
+  const formatarValorInput = (valor: number) =>
+    valor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  // Abre o Novo Lançamento já preenchido com a linha do extrato. A tela de
+  // conciliação não grava nada: quem grava é o fluxo existente do drawer.
+  const abrirLancamentoDoExtrato = (item: ItemComparacao) => {
+    const linha = item.linhaExtrato;
+    if (!linha || !contaId) return;
+    const valor = formatarValorInput(linha.valor);
+    setLancamentoFormDraft({
+      tipo: linha.direcao === 'entrada' ? 'entrada' : 'saida',
+      valor_previsto: valor,
+      data_emissao: linha.data,
+      data_vencimento: linha.data,
+      data_competencia: linha.data,
+      data_pagamento: linha.data,
+      conta_bancaria_id: contaId,
+      entidade_id: '',
+      centro_custo_id: '',
+      categoria_id: '',
+      recorrencia: false,
+      recorrencia_com_entrada: false,
+      recorrencia_repeat: false,
+      periodicidade: 'mensal',
+      periodicidade_customizada_dias: '30',
+      quantidade_total_parcelas: '1',
+      observacoes: item.descricao || 'Lançamento criado a partir do extrato',
+      condicao: 'a_vista',
+      ja_recebido: true,
+      desconto_valor: '0,00',
+      desconto_tipo: 'valor',
+      motivo_desconto_id: '',
+      acrescimo_valor: '0,00',
+      acrescimo_tipo: 'valor',
+      motivo_acrescimo_id: '',
+      valor_recebido: valor,
+    });
+    setLancamentoDraftPreset(true);
+    setSelectedLancamentoIdForModal(null);
+    setSelectedRecorrenciaAction(null);
+    setModalOpen('isNovoLancamentoOpen', true);
+  };
+
   const renderItem = (item: ItemComparacao) => {
     const status = {
       conciliado: { label: 'Conciliado', icon: CheckCircle2, className: 'bg-bank-truth-green/10 text-bank-truth-green' },
@@ -123,9 +178,21 @@ export default function Conciliacao() {
             )}
           </div>
         </div>
-        <p className={`shrink-0 text-sm font-bold ${item.direcao === 'entrada' ? 'text-bank-truth-green' : 'text-alert-red'}`}>
-          {moeda.format(valorPrincipal)}
-        </p>
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          <p className={`text-sm font-bold ${item.direcao === 'entrada' ? 'text-bank-truth-green' : 'text-alert-red'}`}>
+            {moeda.format(valorPrincipal)}
+          </p>
+          {podeLancarNoErp && (item.status === 'pendente_banco' || item.status === 'divergente') && (
+            <button
+              type="button"
+              onClick={() => abrirLancamentoDoExtrato(item)}
+              title="Criar um novo lançamento no ERP com os dados desta linha do extrato"
+              className="inline-flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-primary transition hover:bg-primary/20"
+            >
+              <PlusCircle className="h-3.5 w-3.5" />Lançar
+            </button>
+          )}
+        </div>
       </div>
     );
   };
@@ -164,7 +231,7 @@ export default function Conciliacao() {
             <Landmark className="h-7 w-7 text-primary" />Conciliação Bancária
           </h1>
           <p className="mt-1 text-xs font-bold uppercase tracking-widest text-secondary">Conferência do extrato com os lançamentos do ERP</p>
-          <p className="mt-2 text-xs text-on-surface-variant">Leitura do PDF por IA · somente leitura, nada é gravado no ERP</p>
+          <p className="mt-2 text-xs text-on-surface-variant">Leitura do PDF por IA · itens pendentes podem ser lançados no ERP direto desta tela</p>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row">
           {seletorConta('min-w-0 sm:min-w-[260px]')}

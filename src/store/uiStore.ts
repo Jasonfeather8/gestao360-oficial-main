@@ -36,6 +36,7 @@ interface UIState {
   isBaixaLancamentoOpen: boolean;
   isAprovacaoModalOpen: boolean;
   isSidebarCollapsed: boolean;
+  lancamentoDraftPreset: boolean;
 
   // Selected item contexts for modals
 
@@ -98,13 +99,14 @@ interface UIState {
   setActiveConfigSubTab: (sub: 'equipe' | 'auditoria' | 'legacy') => void;
   setCurrentUserId: (id: string) => void;
   
-  setModalOpen: (modal: keyof Omit<UIState, 'theme' | 'activeTab' | 'activeConfigSubTab' | 'currentUserId' | 'scrollPositions' | 'selectedLancamentoIdForModal' | 'selectedRecorrenciaAction' | 'lancamentoFormDraft' | 'entidadeFormDraft' | 'setTheme' | 'setActiveTab' | 'setActiveConfigSubTab' | 'setCurrentUserId' | 'setModalOpen' | 'setSelectedLancamentoIdForModal' | 'setSelectedRecorrenciaAction' | 'setLancamentoFormDraft' | 'setEntidadeFormDraft' | 'setScrollPosition'>, value: boolean) => void;
+  setModalOpen: (modal: keyof Omit<UIState, 'theme' | 'activeTab' | 'activeConfigSubTab' | 'currentUserId' | 'scrollPositions' | 'selectedLancamentoIdForModal' | 'selectedRecorrenciaAction' | 'lancamentoFormDraft' | 'lancamentoDraftPreset' | 'entidadeFormDraft' | 'setTheme' | 'setActiveTab' | 'setActiveConfigSubTab' | 'setCurrentUserId' | 'setModalOpen' | 'setSelectedLancamentoIdForModal' | 'setSelectedRecorrenciaAction' | 'setLancamentoFormDraft' | 'setLancamentoDraftPreset' | 'setEntidadeFormDraft' | 'setScrollPosition'>, value: boolean) => void;
   
   setSelectedLancamentoIdForModal: (id: string | null) => void;
   setSelectedLancamentoIdsForBatch: (ids: string[]) => void;
   setSelectedRecorrenciaAction: (action: 'single' | 'all' | null) => void;
 
   setLancamentoFormDraft: (draft: Partial<UIState['lancamentoFormDraft']>) => void;
+  setLancamentoDraftPreset: (preset: boolean) => void;
   setEntidadeFormDraft: (draft: Partial<UIState['entidadeFormDraft']>) => void;
   setScrollPosition: (key: string, position: number) => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
@@ -178,6 +180,7 @@ export const useUIStore = create<UIState>()(
       isBaixaLancamentoOpen: false,
       isAprovacaoModalOpen: false,
       isSidebarCollapsed: false,
+      lancamentoDraftPreset: false,
 
       selectedLancamentoIdForModal: null,
       selectedLancamentoIdsForBatch: [],
@@ -202,9 +205,10 @@ export const useUIStore = create<UIState>()(
       setLancamentoFormDraft: (draft) => set((state) => ({
         lancamentoFormDraft: { ...state.lancamentoFormDraft, ...draft }
       })),
+      setLancamentoDraftPreset: (lancamentoDraftPreset) => set({ lancamentoDraftPreset }),
       
       setEntidadeFormDraft: (draft) => set((state) => ({
-        entidadeFormDraft: { ...state.entidadeFormDraft, ...draft } 
+        entidadeFormDraft: { ...state.entidadeFormDraft, ...draft }
       })),
       
       setScrollPosition: (key, position) => set((state) => ({
