@@ -206,6 +206,41 @@ export function useLancamentos(filters?: any) {
   };
 }
 
+const MARGEM_DIAS_LANCAMENTOS = 60;
+
+function deslocarDias(iso: string, dias: number): string {
+  const data = new Date(`${iso}T00:00:00Z`);
+  data.setUTCDate(data.getUTCDate() + dias);
+  return data.toISOString().slice(0, 10);
+}
+
+// Lançamentos da conta para conciliar: a janela é ampliada porque o dia de
+// referência pode ser a baixa (data_pagamento) e não o vencimento.
+export function useLancamentosDaConta(
+  contaId: string | null,
+  dataInicio: string | null,
+  dataFim: string | null,
+) {
+  const habilitado = Boolean(contaId && dataInicio && dataFim);
+  const filters = habilitado
+    ? {
+        contaId: contaId as string,
+        startDate: deslocarDias(dataInicio as string, -MARGEM_DIAS_LANCAMENTOS),
+        endDate: deslocarDias(dataFim as string, MARGEM_DIAS_LANCAMENTOS),
+        page: 1,
+        pageSize: 1000,
+      }
+    : undefined;
+
+  const query = useQuery({
+    queryKey: ['lancamentos', filters],
+    enabled: habilitado,
+    queryFn: ({ signal }) => lancamentosService.getAll(filters, signal),
+  });
+
+  return { ...query, data: query.data?.data || [], totalCount: query.data?.count || 0 };
+}
+
 export function useLancamento(id: string | null) {
   return useQuery({ queryKey: ['lancamento', id], queryFn: () => id ? lancamentosService.getById(id) : Promise.resolve(null), enabled: !!id });
 }
