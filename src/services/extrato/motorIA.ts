@@ -218,8 +218,8 @@ export async function lerExtratoIA(
 
   await limparTemporariosAntigos(user.id);
 
-  const nomeSanitizado = arquivo.name.replace(/[^a-zA-Z0-9._-]/g, '').slice(0, 60) || 'extrato.pdf';
-  const caminho = `extratos/${user.id}/${Date.now()}-${nomeSanitizado}.pdf`;
+  const nomeBase = arquivo.name.replace(/[^a-zA-Z0-9._-]/g, '').replace(/\.pdf$/i, '').slice(0, 60) || 'extrato';
+  const caminho = `extratos/${user.id}/${Date.now()}-${nomeBase}.pdf`;
   const totalLotes = Math.ceil(totalPaginas / PAGINAS_POR_LOTE);
   const linhas: LinhaExtrato[] = [];
   const naoInterpretadas: LinhaNaoInterpretada[] = [];
