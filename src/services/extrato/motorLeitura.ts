@@ -1,12 +1,11 @@
 import type { ExtratoLido, ProgressoLeituraExtrato } from '../../types';
 import { lerExtratoIA } from './motorIA';
-import { lerExtratoPdf } from './pdfReader';
 
 /**
- * Contrato do motor de leitura de extrato.
+ * Contrato do único motor de leitura de extrato disponível atualmente.
  */
 export interface MotorLeituraExtrato {
-  id: 'pdf_texto' | 'ia';
+  id: 'ia';
   nome: string;
   aceita: (arquivo: File) => boolean;
   ler: (arquivo: File, onProgress?: (progresso: ProgressoLeituraExtrato) => void) => Promise<ExtratoLido>;
@@ -20,15 +19,7 @@ const motorIA: MotorLeituraExtrato = {
   ler: lerExtratoIA,
 };
 
-const motorPdfTexto: MotorLeituraExtrato = {
-  id: 'pdf_texto',
-  nome: 'PDF (texto)',
-  aceita: (arquivo) =>
-    arquivo.type === 'application/pdf' || arquivo.name.toLowerCase().endsWith('.pdf'),
-  ler: lerExtratoPdf,
-};
-
-const MOTORES: MotorLeituraExtrato[] = [motorIA, motorPdfTexto];
+const MOTORES: MotorLeituraExtrato[] = [motorIA];
 
 export function getMotorLeitura(arquivo: File): MotorLeituraExtrato {
   const motor = MOTORES.find((candidato) => candidato.aceita(arquivo));

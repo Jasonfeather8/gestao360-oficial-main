@@ -91,14 +91,6 @@ export default function Conciliacao() {
     }[item.status];
     const StatusIcon = status.icon;
     const valorPrincipal = item.valorExtrato ?? item.valorErp ?? 0;
-    const origemDirecao = item.linhaExtrato?.origemDirecao;
-    const origem = origemDirecao
-      ? origemDirecao === 'sinal'
-        ? 'sinal do valor'
-        : origemDirecao === 'marcador'
-          ? 'marcador D/C'
-          : 'variação de saldo'
-      : 'extraído por IA';
 
     return (
       <div key={item.id} className="flex items-start justify-between gap-3 border-b border-surface-border/70 py-3 last:border-b-0">
@@ -125,8 +117,8 @@ export default function Conciliacao() {
               </p>
             )}
             {item.linhaExtrato && (
-              <p className="mt-1 text-[10px] text-on-surface-variant" title={origem}>
-                PDF p.{item.linhaExtrato.pagina ?? '?'}{item.linhaExtrato.linha !== undefined ? ` · l.${item.linhaExtrato.linha}` : ''}
+              <p className="mt-1 text-[10px] text-on-surface-variant">
+                PDF p.{item.linhaExtrato.pagina ?? '?'}
               </p>
             )}
           </div>
@@ -262,8 +254,7 @@ export default function Conciliacao() {
               );
             })()}
 
-            {!extrato.temTexto && <div className="rounded-2xl border border-pending-amber/30 bg-pending-amber/10 p-4 text-sm text-pending-amber">Este PDF não possui camada de texto. PDFs digitalizados podem não ser interpretados.</div>}
-            {extrato.linhas.length === 0 && <div className="rounded-2xl border border-pending-amber/30 bg-pending-amber/10 p-4 text-sm text-pending-amber">Nenhuma linha com data e valor foi identificada neste PDF</div>}
+            {extrato.linhas.length === 0 && <div className="rounded-2xl border border-pending-amber/30 bg-pending-amber/10 p-4 text-sm text-pending-amber">Nenhuma linha com data e valor foi identificada neste PDF. Se o arquivo for digitalizado (imagem) ou estiver protegido, a leitura por IA pode não conseguir extrair as movimentações.</div>}
             {totalCount > lancamentos.length && <div className="rounded-2xl border border-pending-amber/30 bg-pending-amber/10 p-4 text-sm text-pending-amber">Foram carregados 1000 de {totalCount} lançamentos; a comparação pode estar incompleta.</div>}
             {extrato.naoInterpretadas.length > 0 && (
               <section className="overflow-hidden rounded-2xl border border-pending-amber/30 bg-pending-amber/10">
@@ -282,8 +273,8 @@ export default function Conciliacao() {
                           data_impossivel: 'Data inválida',
                         };
                         return (
-                          <li key={`${linha.pagina}-${linha.linha}-${index}`} className="text-xs text-on-surface">
-                            <span className="font-bold">p.{linha.pagina ?? '?'}{linha.linha !== undefined ? ` · l.${linha.linha}` : ''}</span> · {linha.texto} <span className="text-pending-amber">({motivos[linha.motivo]})</span>
+                          <li key={`${linha.pagina}-${index}`} className="text-xs text-on-surface">
+                            <span className="font-bold">p.{linha.pagina ?? '?'}</span> · {linha.texto} <span className="text-pending-amber">({motivos[linha.motivo]})</span>
                           </li>
                         );
                       })}

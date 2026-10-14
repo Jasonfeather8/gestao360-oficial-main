@@ -19,6 +19,16 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
+const limitePaginasConfigurado = Number(Deno.env.get('LOTE_MAXIMO_PAGINAS') ?? '20')
+const LOTE_MAXIMO_PAGINAS = Number.isInteger(limitePaginasConfigurado) && limitePaginasConfigurado > 0
+  ? limitePaginasConfigurado
+  : 20
+const PRECOS_POR_MILHAO: Record<string, { entrada: number; saida: number }> = {
+  'gpt-4.1': { entrada: 2, saida: 8 },
+  'gpt-4.1-mini': { entrada: 0.4, saida: 1.6 },
+  'gpt-5': { entrada: 1.25, saida: 10 },
+}
+
 const schema = {
   type: 'object',
   additionalProperties: false,
@@ -114,6 +124,13 @@ function validIsoDate(value: unknown): value is string {
 
 function finiteNumberOrNull(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function estimarCusto(modelo: string, tokensEntrada: number, tokensSaida: number): number | null {
+  const preco = PRECOS_POR_MILHAO[modelo]
+  if (!preco) return null
+  const custo = (tokensEntrada * preco.entrada + tokensSaida * preco.saida) / 1_000_000
+  return Math.round(custo * 1e6) / 1e6
 }
 
 function normalizePage(value: unknown): number | null {
@@ -280,6 +297,9 @@ serve(async (req) => {
     if (total < 1) throw new HttpError(400, 'PDF sem páginas legíveis')
     const inicio = Math.min(paginaInicio, total)
     const fimSolicitado = paginaFim === undefined ? total : paginaFim
+    if (fimSolicitado - paginaInicio + 1 > LOTE_MAXIMO_PAGINAS) {
+      throw new HttpError(400, `O limite é de ${LOTE_MAXIMO_PAGINAS} páginas por lote. Reduza o intervalo solicitado.`)
+    }
     const fim = Math.min(fimSolicitado, total)
     if (inicio > fim) throw new HttpError(400, 'Intervalo de páginas inválido para este PDF')
 
@@ -366,14 +386,18 @@ serve(async (req) => {
     }
 
     const uso = isRecord(respostaOpenAi.usage) ? respostaOpenAi.usage : {}
-    console.info(`[ler-extrato] Processamento concluído: tamanho=${originalBytes.byteLength}; páginas=${inicio}-${fim}/${total}; duração=${Date.now() - startedAt}ms; tokens=${Number(uso.input_tokens) || 0}/${Number(uso.output_tokens) || 0}`)
+    const tokensEntrada = Number(uso.input_tokens) || 0
+    const tokensSaida = Number(uso.output_tokens) || 0
+    const custoEstimadoUsd = estimarCusto(modelo, tokensEntrada, tokensSaida)
+    console.info(`[ler-extrato] Processamento concluído: tamanho=${originalBytes.byteLength}; páginas=${inicio}-${fim}/${total}; duração=${Date.now() - startedAt}ms; tokens=${tokensEntrada}/${tokensSaida}; custo_estimado_usd=${custoEstimadoUsd ?? 'null'}`)
     return jsonResponse({
       paginas: { inicio, fim, total },
       ...dadosNormalizados,
       uso: {
         modelo,
-        tokensEntrada: Number(uso.input_tokens) || 0,
-        tokensSaida: Number(uso.output_tokens) || 0,
+        tokensEntrada,
+        tokensSaida,
+        custoEstimadoUsd,
       },
     })
   } catch (error) {

@@ -14,6 +14,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { contarPaginas } from './pdfDocumento';
 
 const LIMITE_ARQUIVO = 20 * 1024 * 1024;
+const LIMITE_PAGINAS = 60;
 const PAGINAS_POR_LOTE = 10;
 const PREFIXO = '[motorIA]';
 
@@ -35,7 +36,7 @@ interface RespostaExtrato {
   linhas?: unknown;
   linhasIgnoradas?: unknown;
   linhasDuvidosas?: unknown;
-  uso?: { tokensEntrada?: unknown; tokensSaida?: unknown };
+  uso?: { tokensEntrada?: unknown; tokensSaida?: unknown; custoEstimadoUsd?: unknown };
 }
 
 interface ContextoLote {
@@ -211,6 +212,9 @@ export async function lerExtratoIA(
 
   const totalPaginas = await contarPaginas(arquivo);
   if (totalPaginas === 0) throw new Error('Não foi possível ler o PDF (arquivo vazio ou corrompido).');
+  if (totalPaginas > LIMITE_PAGINAS) {
+    throw new Error(`Este extrato tem ${totalPaginas} páginas; o limite por importação é de ${LIMITE_PAGINAS} páginas.`);
+  }
 
   await limparTemporariosAntigos(user.id);
 
@@ -224,6 +228,8 @@ export async function lerExtratoIA(
   let contexto: ContextoLote | undefined;
   let tokensEntrada = 0;
   let tokensSaida = 0;
+  let custoEstimadoUsd = 0;
+  let recebeuEstimativaCusto = false;
   let uploaded = false;
 
   try {
@@ -271,12 +277,16 @@ export async function lerExtratoIA(
       linhasIgnoradas.push(...mapearIgnoradas(data.linhasIgnoradas));
       tokensEntrada += valorNumero(data.uso?.tokensEntrada) ?? 0;
       tokensSaida += valorNumero(data.uso?.tokensSaida) ?? 0;
+      const custoLote = valorNumero(data.uso?.custoEstimadoUsd);
+      if (custoLote !== null) {
+        custoEstimadoUsd += custoLote;
+        recebeuEstimativaCusto = true;
+      }
     }
 
     const datas = linhas.map((linha) => linha.data).sort();
     const resultado: ExtratoLido = {
       arquivoNome: arquivo.name,
-      temTexto: linhas.length > 0,
       paginas: totalPaginas,
       dataInicio: datas[0] ?? null,
       dataFim: datas[datas.length - 1] ?? null,
@@ -287,7 +297,8 @@ export async function lerExtratoIA(
       conferencia: conferir(linhas, meta),
     };
 
-    console.info(`${PREFIXO} Leitura concluída: ${totalPaginas} páginas, ${linhas.length} linhas, ${tokensEntrada} tokens de entrada e ${tokensSaida} tokens de saída.`);
+    const custoLog = recebeuEstimativaCusto ? `, custo estimado US$ ${custoEstimadoUsd.toFixed(6)}` : '';
+    console.info(`${PREFIXO} Leitura concluída: ${totalPaginas} páginas, ${linhas.length} linhas, ${tokensEntrada} tokens de entrada e ${tokensSaida} tokens de saída${custoLog}.`);
     return resultado;
   } finally {
     if (uploaded) {

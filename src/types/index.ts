@@ -139,9 +139,6 @@ export interface ResumoSaldo {
 
 export type DirecaoExtrato = 'entrada' | 'saida';
 
-/** Como a direção (entrada/saída) de uma linha do extrato foi determinada. */
-export type OrigemDirecao = 'sinal' | 'marcador' | 'saldo';
-
 export type ConfiancaLinha = 'alta' | 'media' | 'baixa';
 
 export interface MetaExtrato {
@@ -190,9 +187,7 @@ export interface LinhaExtrato {
   /** Valor absoluto, em reais. */
   valor: number;
   direcao: DirecaoExtrato;
-  origemDirecao?: OrigemDirecao;
   pagina: number | null;
-  linha?: number;
   textoOriginal: string;
   confianca?: ConfiancaLinha;
   documento?: string;
@@ -207,15 +202,12 @@ export type MotivoNaoInterpretada =
 
 export interface LinhaNaoInterpretada {
   pagina: number | null;
-  linha?: number;
   texto: string;
   motivo: MotivoNaoInterpretada;
 }
 
 export interface ExtratoLido {
   arquivoNome: string;
-  /** Falso quando o PDF não possui camada de texto (extrato digitalizado). */
-  temTexto: boolean;
   paginas: number;
   dataInicio: string | null;
   dataFim: string | null;
