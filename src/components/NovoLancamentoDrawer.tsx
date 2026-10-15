@@ -211,8 +211,9 @@ export default function NovoLancamentoDrawer() {
     setSelectedRecorrenciaAction,
     lancamentoFormDraft,
     setLancamentoFormDraft,
-    lancamentoDraftPreset,
-    setLancamentoDraftPreset,
+    lancamentoPreset,
+    setLancamentoPreset,
+    setConciliacaoPosLancamento,
     avrPreset,
     setAvrPreset,
     setEntidadeFormDraft,
@@ -291,8 +292,7 @@ export default function NovoLancamentoDrawer() {
 
   useEffect(() => {
     if (!isNovoLancamentoOpen) return;
-    if (lancamentoDraftPreset) {
-      setLancamentoDraftPreset(false);
+    if (lancamentoPreset) {
       setAttachments([]);
       setParcelasManuais([]);
       return;
@@ -592,6 +592,7 @@ export default function NovoLancamentoDrawer() {
     setSelectedLancamentoIdForModal(null);
     setSelectedRecorrenciaAction(null);
     setAvrPreset(null);
+    setLancamentoPreset(null);
   };
 
   const generateAVRParcels = () => {
@@ -871,6 +872,13 @@ export default function NovoLancamentoDrawer() {
       }
 
       showToast(editingItem ? 'Lançamento atualizado!' : 'Lançamento cadastrado com sucesso!', 'success');
+      if (!editingItem && lancamentoPreset && (createdItem as any)?.id) {
+        setConciliacaoPosLancamento({
+          lancamentoId: (createdItem as any).id,
+          dataExtrato: lancamentoPreset.dataExtrato,
+        });
+        setLancamentoPreset(null);
+      }
       resetAllDrafts();
       setAttachments([]);
       handleClose();

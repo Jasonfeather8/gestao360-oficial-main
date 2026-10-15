@@ -62,9 +62,12 @@ function parseMoney(value: string | number | undefined | null): number {
 export default function BaixaLancamentoModal() {
   const { 
     isBaixaLancamentoOpen, 
-    setModalOpen, 
+    setModalOpen,
     selectedLancamentoIdForModal,
-    setSelectedLancamentoIdForModal
+    setSelectedLancamentoIdForModal,
+    baixaPreset,
+    setBaixaPreset,
+    setSelectedLancamentoIdsForBatch
   } = useUIStore();
 
   const { role } = useAuth();
@@ -150,7 +153,7 @@ export default function BaixaLancamentoModal() {
       setDiasPersonalizadosAVR('30');
       setComEntradaAVR(false);
       setParcelasAVR([]);
-      setDataPagamento(lancamento.data_pagamento || new Date().toISOString().split('T')[0]);
+      setDataPagamento(baixaPreset?.lancamentoId === lancamento.id ? baixaPreset.dataPagamento : (lancamento.data_pagamento || new Date().toISOString().split('T')[0]));
       setDataCompetencia(lancamento.data_competencia || '');
       setDataLancamento(lancamento.data_emissao || '');
       setCondicao(lancamento.condicao === 'a_vista' ? 'a_vista' : 'a_prazo');
@@ -233,6 +236,7 @@ export default function BaixaLancamentoModal() {
     setModalOpen('isBaixaLancamentoOpen', false);
     setSelectedLancamentoIdForModal(null);
     setDispensarComprovante(false);
+    if (baixaPreset) setBaixaPreset(null);
   };
 
   const isGerenteOrMaster = role === 'master' || role === 'gerente';
@@ -471,6 +475,11 @@ export default function BaixaLancamentoModal() {
         }
       }
 
+      if (baixaPreset?.aprovarDepois && role === 'master') {
+        setSelectedLancamentoIdsForBatch([lancamento.id]);
+        setModalOpen('isAprovacaoModalOpen', true);
+      }
+      setBaixaPreset(null);
       handleClose();
     } catch (err: any) {
       alert('Erro ao processar baixa: ' + err.message);

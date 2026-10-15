@@ -18,6 +18,7 @@ import LancamentoDetailsSlide from './components/Lancamentos/LancamentoDetailsSl
 import CadastroRapidoModal from './components/CadastroRapidoModal';
 import BaixaLancamentoModal from './components/BaixaLancamentoModal';
 import AprovacaoModal from './components/AprovacaoModal';
+import PosLancamentoModal from './components/Conciliacao/PosLancamentoModal';
 import AITestSuite from './components/AITestSuite';
 
 import NewLaunchButton from './components/NewLaunchButton';
@@ -151,6 +152,28 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function MasterRoute({ children }: { children: React.ReactNode }) {
+  const { session, role, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (role !== 'master') {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return <>{children}</>;
+}
+
 function AppContent() {
   const { setModalOpen, isSidebarCollapsed, setSidebarCollapsed } = useUIStore();
   const { signOut } = useAuth();
@@ -222,8 +245,8 @@ function AppContent() {
                       <Route path="/receber" element={<Receber />} />
                       <Route path="/crm" element={<CRM />} />
 
-                      {/* Rotas restritas a Master e Gerente */}
-                      <Route path="/conciliacao" element={<Conciliacao />} />
+                      {/* Rota exclusiva do Master */}
+                      <Route path="/conciliacao" element={<MasterRoute><Conciliacao /></MasterRoute>} />
                       <Route path="/recorrencias" element={<Recorrencias />} />
                       <Route path="/cadastros" element={<Cadastros />} />
                       <Route path="/relatorios" element={<Relatorios />} />
@@ -243,6 +266,7 @@ function AppContent() {
               <CadastroRapidoModal />
               <BaixaLancamentoModal />
               <AprovacaoModal />
+              <PosLancamentoModal />
               {/* <AITestSuite /> */}
 
             </div>

@@ -36,7 +36,9 @@ interface UIState {
   isBaixaLancamentoOpen: boolean;
   isAprovacaoModalOpen: boolean;
   isSidebarCollapsed: boolean;
-  lancamentoDraftPreset: boolean;
+  lancamentoPreset: { dataExtrato: string } | null;
+  conciliacaoPosLancamento: { lancamentoId: string; dataExtrato: string } | null;
+  baixaPreset: { lancamentoId: string; dataPagamento: string; aprovarDepois: boolean } | null;
   avrPreset: { lancamentoId: string; valor: string } | null;
 
   // Selected item contexts for modals
@@ -100,14 +102,16 @@ interface UIState {
   setActiveConfigSubTab: (sub: 'equipe' | 'auditoria' | 'legacy') => void;
   setCurrentUserId: (id: string) => void;
   
-  setModalOpen: (modal: keyof Omit<UIState, 'theme' | 'activeTab' | 'activeConfigSubTab' | 'currentUserId' | 'scrollPositions' | 'selectedLancamentoIdForModal' | 'selectedRecorrenciaAction' | 'lancamentoFormDraft' | 'lancamentoDraftPreset' | 'avrPreset' | 'entidadeFormDraft' | 'setTheme' | 'setActiveTab' | 'setActiveConfigSubTab' | 'setCurrentUserId' | 'setModalOpen' | 'setSelectedLancamentoIdForModal' | 'setSelectedRecorrenciaAction' | 'setLancamentoFormDraft' | 'setLancamentoDraftPreset' | 'setAvrPreset' | 'setEntidadeFormDraft' | 'setScrollPosition'>, value: boolean) => void;
+  setModalOpen: (modal: keyof Omit<UIState, 'theme' | 'activeTab' | 'activeConfigSubTab' | 'currentUserId' | 'scrollPositions' | 'selectedLancamentoIdForModal' | 'selectedLancamentoIdsForBatch' | 'selectedRecorrenciaAction' | 'lancamentoFormDraft' | 'lancamentoPreset' | 'conciliacaoPosLancamento' | 'baixaPreset' | 'avrPreset' | 'entidadeFormDraft' | 'setTheme' | 'setActiveTab' | 'setActiveConfigSubTab' | 'setCurrentUserId' | 'setModalOpen' | 'setSelectedLancamentoIdForModal' | 'setSelectedLancamentoIdsForBatch' | 'setSelectedRecorrenciaAction' | 'setLancamentoFormDraft' | 'setLancamentoPreset' | 'setConciliacaoPosLancamento' | 'setBaixaPreset' | 'setAvrPreset' | 'setEntidadeFormDraft' | 'setScrollPosition'>, value: boolean) => void;
   
   setSelectedLancamentoIdForModal: (id: string | null) => void;
   setSelectedLancamentoIdsForBatch: (ids: string[]) => void;
   setSelectedRecorrenciaAction: (action: 'single' | 'all' | null) => void;
 
   setLancamentoFormDraft: (draft: Partial<UIState['lancamentoFormDraft']>) => void;
-  setLancamentoDraftPreset: (preset: boolean) => void;
+  setLancamentoPreset: (preset: { dataExtrato: string } | null) => void;
+  setConciliacaoPosLancamento: (pos: { lancamentoId: string; dataExtrato: string } | null) => void;
+  setBaixaPreset: (preset: { lancamentoId: string; dataPagamento: string; aprovarDepois: boolean } | null) => void;
   setAvrPreset: (preset: { lancamentoId: string; valor: string } | null) => void;
   setEntidadeFormDraft: (draft: Partial<UIState['entidadeFormDraft']>) => void;
   setScrollPosition: (key: string, position: number) => void;
@@ -182,7 +186,9 @@ export const useUIStore = create<UIState>()(
       isBaixaLancamentoOpen: false,
       isAprovacaoModalOpen: false,
       isSidebarCollapsed: false,
-      lancamentoDraftPreset: false,
+      lancamentoPreset: null,
+      conciliacaoPosLancamento: null,
+      baixaPreset: null,
       avrPreset: null,
 
       selectedLancamentoIdForModal: null,
@@ -208,7 +214,9 @@ export const useUIStore = create<UIState>()(
       setLancamentoFormDraft: (draft) => set((state) => ({
         lancamentoFormDraft: { ...state.lancamentoFormDraft, ...draft }
       })),
-      setLancamentoDraftPreset: (lancamentoDraftPreset) => set({ lancamentoDraftPreset }),
+      setLancamentoPreset: (lancamentoPreset) => set({ lancamentoPreset }),
+      setConciliacaoPosLancamento: (conciliacaoPosLancamento) => set({ conciliacaoPosLancamento }),
+      setBaixaPreset: (baixaPreset) => set({ baixaPreset }),
       setAvrPreset: (avrPreset) => set({ avrPreset }),
       
       setEntidadeFormDraft: (draft) => set((state) => ({

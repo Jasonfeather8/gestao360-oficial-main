@@ -902,45 +902,54 @@ export const lancamentosService = {
       updatePayload.status_pagamento = 'pago';
       updatePayload.data_pagamento = new Date().toISOString().split('T')[0];
     } else if (targetStatus === 'reprovado') {
-      // Quando reprovado, o título volta a ficar aberto e limpa datas de pagamento se existirem
       updatePayload.status_pagamento = 'aberto';
       updatePayload.data_pagamento = null;
     }
 
-    if (targetStatus === 'confirmado_master') {
-      const { data: partialRows, error: partialRowsError } = await supabase
-        .from('lancamentos_financeiros')
-        .select('id, status_pagamento, vinculo_residuo_id')
-        .in('id', ids);
-      if (partialRowsError) throw partialRowsError;
-
-      const partialIds = new Set((partialRows || [])
-        .filter(row => row.status_pagamento === 'pago_parcial' || row.vinculo_residuo_id)
-        .map(row => row.id));
-      const regularIds = ids.filter(id => !partialIds.has(id));
-
-      if (regularIds.length > 0) {
-        const { error } = await supabase
-          .from('lancamentos_financeiros')
-          .update(updatePayload)
-          .in('id', regularIds);
-        if (error) throw error;
-      }
-
-      if (partialIds.size > 0) {
-        const { error } = await supabase
-          .from('lancamentos_financeiros')
-          .update({ ...updatePayload, status_pagamento: 'pago_parcial' })
-          .in('id', Array.from(partialIds));
-        if (error) throw error;
-      }
-    } else {
+    if (targetStatus !== 'confirmado_master') {
       const { error } = await supabase
         .from('lancamentos_financeiros')
         .update(updatePayload)
         .in('id', ids);
       if (error) throw error;
+      return;
     }
+
+    const { data: rows, error: rowsError } = await supabase
+      .from('lancamentos_financeiros')
+      .select('id, status_pagamento, vinculo_residuo_id, data_pagamento')
+      .in('id', ids);
+    if (rowsError) throw rowsError;
+
+    const registros = rows || [];
+    const parcialIds = new Set(registros
+      .filter(row => row.status_pagamento === 'pago_parcial' || row.vinculo_residuo_id)
+      .map(row => row.id));
+    const comDataPagamento = new Set(registros.filter(row => row.data_pagamento).map(row => row.id));
+
+    const aplicar = async (grupoIds: string[], preservarDataPagamento: boolean) => {
+      if (grupoIds.length === 0) return;
+      const payload: any = { ...updatePayload };
+      if (preservarDataPagamento) delete payload.data_pagamento;
+
+      const regulares = grupoIds.filter(id => !parcialIds.has(id));
+      const parciais = grupoIds.filter(id => parcialIds.has(id));
+
+      if (regulares.length > 0) {
+        const { error } = await supabase.from('lancamentos_financeiros').update(payload).in('id', regulares);
+        if (error) throw error;
+      }
+      if (parciais.length > 0) {
+        const { error } = await supabase
+          .from('lancamentos_financeiros')
+          .update({ ...payload, status_pagamento: 'pago_parcial' })
+          .in('id', parciais);
+        if (error) throw error;
+      }
+    };
+
+    await aplicar(ids.filter(id => comDataPagamento.has(id)), true);
+    await aplicar(ids.filter(id => !comDataPagamento.has(id)), false);
   },
 
   confirmarQuitacao: async (id: string, isMaster: boolean = false): Promise<void> => {

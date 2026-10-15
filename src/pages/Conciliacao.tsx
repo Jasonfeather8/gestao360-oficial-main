@@ -48,10 +48,10 @@ export default function Conciliacao() {
     setSelectedLancamentoIdForModal,
     setSelectedRecorrenciaAction,
     setLancamentoFormDraft,
-    setLancamentoDraftPreset,
+    setLancamentoPreset,
     setAvrPreset,
   } = useUIStore();
-  const podeLancarNoErp = hasRole(['master', 'gerente']);
+  const podeAgirNaConciliacao = hasRole(['master']);
   const [contaId, setContaId] = useState('');
   const [extrato, setExtrato] = useState<ExtratoLido | null>(null);
   const [processando, setProcessando] = useState(false);
@@ -126,16 +126,16 @@ export default function Conciliacao() {
       quantidade_total_parcelas: '1',
       observacoes: item.descricao || 'Lançamento criado a partir do extrato',
       condicao: 'a_vista',
-      ja_recebido: true,
+      ja_recebido: false,
       desconto_valor: '0,00',
       desconto_tipo: 'valor',
       motivo_desconto_id: '',
       acrescimo_valor: '0,00',
       acrescimo_tipo: 'valor',
       motivo_acrescimo_id: '',
-      valor_recebido: valor,
+      valor_recebido: '0,00',
     });
-    setLancamentoDraftPreset(true);
+    setLancamentoPreset({ dataExtrato: linha.data });
     setSelectedLancamentoIdForModal(null);
     setSelectedRecorrenciaAction(null);
     setModalOpen('isNovoLancamentoOpen', true);
@@ -215,7 +215,7 @@ export default function Conciliacao() {
           <p className={`text-sm font-bold ${item.direcao === 'entrada' ? 'text-bank-truth-green' : 'text-alert-red'}`}>
             {moeda.format(valorPrincipal)}
           </p>
-          {podeLancarNoErp && (item.status === 'pendente_banco' || item.status === 'divergente') && (
+          {podeAgirNaConciliacao && (item.status === 'pendente_banco' || item.status === 'divergente') && (
             <div className="flex items-center gap-2">
               <button
                 type="button"
