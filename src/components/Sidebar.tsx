@@ -19,6 +19,7 @@ import {
 
 import { useUIStore, TabType } from '../store/uiStore';
 import { useAuth } from '../hooks/useAuth';
+import { RECORRENCIAS_HABILITADA } from '../config/features';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -93,7 +94,8 @@ export default function Sidebar({ isOpen, onClose, isCollapsed }: SidebarProps) 
 
         {/* Navigation list */}
         <nav className={`flex-1 p-4 space-y-1.5 scrollbar-thin ${isCollapsed ? 'overflow-visible' : 'overflow-y-auto'}`}>
-          {navItems.filter(item => item.roles.includes(role)).map((item) => {
+          {/* Controle de exibição da tela de recorrências em ../config/features. */}
+          {navItems.filter((item) => item.roles.includes(role) && (RECORRENCIAS_HABILITADA || item.path !== '/recorrencias')).map((item) => {
             const isActive = location.pathname.startsWith(item.path);
             const Icon = item.icon;
             return (

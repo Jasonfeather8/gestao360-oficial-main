@@ -10,6 +10,7 @@ import NotificationButton from './components/NotificationButton';
 import { useUIStore } from './store/uiStore';
 import { AuthProvider, useAuth } from './hooks/useAuth';
 import { useNotifications } from './hooks/useData';
+import { RECORRENCIAS_HABILITADA } from './config/features';
 
 // Custom layout components
 import Sidebar from './components/Sidebar';
@@ -247,7 +248,7 @@ function AppContent() {
 
                       {/* Rota exclusiva do Master */}
                       <Route path="/conciliacao" element={<MasterRoute><Conciliacao /></MasterRoute>} />
-                      <Route path="/recorrencias" element={<Recorrencias />} />
+                      <Route path="/recorrencias" element={RECORRENCIAS_HABILITADA ? <Recorrencias /> : <Navigate to="/dashboard" replace />} />
                       <Route path="/cadastros" element={<Cadastros />} />
                       <Route path="/relatorios" element={<Relatorios />} />
 
