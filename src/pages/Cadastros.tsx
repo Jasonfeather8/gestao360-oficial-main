@@ -452,7 +452,7 @@ export default function Cadastros() {
       <AnimatePresence>
         {/* Modal Nova/Edita Conta */}
         {isNewAccountOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-hidden">
+          <div key="cadastro-conta" className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-hidden">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsNewAccountOpen(false)} className="absolute inset-0 bg-black/60 backdrop-blur-xs" />
             <motion.form initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} onSubmit={handleAccountSubmit} className="bg-white w-full max-w-[440px] rounded-3xl shadow-2xl border-2 border-neutral-100 flex flex-col relative z-20 overflow-hidden">
               <header className="px-8 py-6 border-b border-neutral-50 flex justify-between items-center bg-neutral-50/50"><h2 className="text-sm font-black uppercase tracking-widest text-neutral-900">{editingAccount ? 'Editar Conta Bancária' : 'Nova Conta Bancária'}</h2><button type="button" onClick={() => setIsNewAccountOpen(false)} className="p-2 hover:bg-neutral-200 rounded-xl transition-colors"><X className="w-6 h-6" /></button></header>
@@ -538,7 +538,7 @@ export default function Cadastros() {
 
         {/* Modal Novo/Edita Centro de Custo */}
         {isNewCCOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-hidden">
+          <div key="cadastro-centro-custo" className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-hidden">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsNewCCOpen(false)} className="absolute inset-0 bg-black/60 backdrop-blur-xs" />
             <motion.form initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} onSubmit={handleCCSubmit} className="bg-white w-full max-w-[440px] rounded-3xl shadow-2xl border-2 border-neutral-100 flex flex-col relative z-20 overflow-hidden">
               <header className="px-8 py-6 border-b border-neutral-50 flex justify-between items-center bg-neutral-50/50"><h2 className="text-sm font-black uppercase tracking-widest text-neutral-900">{editingCC ? 'Editar Centro de Custo' : 'Novo Centro de Custo'}</h2><button type="button" onClick={() => setIsNewCCOpen(false)} className="p-2 hover:bg-neutral-200 rounded-xl transition-colors"><X className="w-6 h-6" /></button></header>
@@ -559,7 +559,7 @@ export default function Cadastros() {
 
         {/* Modal Nova/Edita Categoria */}
         {isNewCatOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-hidden">
+          <div key="cadastro-categoria" className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-hidden">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsNewCatOpen(false)} className="absolute inset-0 bg-black/60 backdrop-blur-xs" />
             <motion.form initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} onSubmit={handleCatSubmit} className="bg-white w-full max-w-[440px] rounded-3xl shadow-2xl border-2 border-neutral-100 flex flex-col relative z-20 overflow-hidden">
               <header className="px-8 py-6 border-b border-neutral-50 flex justify-between items-center bg-neutral-50/50"><h2 className="text-sm font-black uppercase tracking-widest text-neutral-900">{editingCat ? 'Editar Categoria' : 'Nova Categoria'}</h2><button type="button" onClick={() => setIsNewCatOpen(false)} className="p-2 hover:bg-neutral-200 rounded-xl transition-colors"><X className="w-6 h-6" /></button></header>
@@ -580,7 +580,7 @@ export default function Cadastros() {
 
         {/* Modal Novo/Edita Categoria Ajuste */}
         {isNewAjusteOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-hidden">
+          <div key="cadastro-motivo-ajuste" className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-hidden">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsNewAjusteOpen(false)} className="absolute inset-0 bg-black/60 backdrop-blur-xs" />
             <motion.form initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} onSubmit={handleAjusteSubmit} className="bg-white w-full max-w-[440px] rounded-3xl shadow-2xl border-2 border-neutral-100 flex flex-col relative z-20 overflow-hidden">
               <header className="px-8 py-6 border-b border-neutral-50 flex justify-between items-center bg-neutral-50/50"><h2 className="text-sm font-black uppercase tracking-widest text-neutral-900">{editingAjuste ? 'Editar Motivo' : 'Novo Motivo de Ajuste'}</h2><button type="button" onClick={() => setIsNewAjusteOpen(false)} className="p-2 hover:bg-neutral-200 rounded-xl transition-colors"><X className="w-6 h-6" /></button></header>
@@ -602,7 +602,7 @@ export default function Cadastros() {
         {/* Confirmation Modal */}
 
         {deleteConfirm && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-hidden">
+          <div key="cadastro-exclusao" className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-hidden">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setDeleteConfirm(null)} className="absolute inset-0 bg-black/60 backdrop-blur-xs" />
             <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="bg-white w-full max-w-[400px] rounded-3xl shadow-2xl border-2 border-neutral-100 flex flex-col relative z-20 overflow-hidden p-8 text-center space-y-6">
               <div className="w-20 h-20 bg-red-50 text-alert-red rounded-full flex items-center justify-center mx-auto mb-2">

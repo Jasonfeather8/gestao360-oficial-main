@@ -34,6 +34,10 @@ import Button from './Button';
 import { calculateAdjustmentAmount } from '../utils/adjustments';
 import { supabase } from '@/integrations/supabase/client';
 
+// Os tipos do motion não declaram `key`, mas o React exige key única entre os
+// filhos diretos do AnimatePresence externo (filhos sem key colidem em "").
+const KeyedAnimatePresence = AnimatePresence as React.ComponentType<React.PropsWithChildren<{ key?: React.Key }>>;
+
 interface LocalFile {
   name: string;
   size: number;
@@ -511,8 +515,8 @@ export default function BaixaLancamentoModal() {
   return (
     <AnimatePresence>
       {isBaixaLancamentoOpen && (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center p-4">
-          <motion.div 
+        <div key="baixa-modal" className="fixed inset-0 z-[300] flex items-center justify-center p-4">
+          <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -804,6 +808,7 @@ export default function BaixaLancamentoModal() {
               <AnimatePresence>
                 {isAVR && (
                   <motion.div
+                    key="baixa-avr-grade"
                     initial={{ opacity: 0, height: 0, scale: 0.95 }}
                     animate={{ opacity: 1, height: 'auto', scale: 1 }}
                     exit={{ opacity: 0, height: 0, scale: 0.95 }}
@@ -1000,6 +1005,7 @@ export default function BaixaLancamentoModal() {
 
                 {isObsRequired && (
                   <motion.div
+                    key="baixa-justificativa"
                     initial={{ opacity: 0, height: 0, scale: 0.95 }}
                     animate={{ opacity: 1, height: 'auto', scale: 1 }}
                     exit={{ opacity: 0, height: 0, scale: 0.95 }}
@@ -1244,7 +1250,7 @@ export default function BaixaLancamentoModal() {
       )}
 
       {/* Quick Add Reason Modal */}
-      <AnimatePresence>
+      <KeyedAnimatePresence key="baixa-motivo-rapido">
         {isQuickAddOpen && (
           <div className="fixed inset-0 z-[400] flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsQuickAddOpen(false)} className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
@@ -1280,10 +1286,10 @@ export default function BaixaLancamentoModal() {
             </motion.form>
           </div>
         )}
-      </AnimatePresence>
+      </KeyedAnimatePresence>
   
         {/* AVR Propagation Modal */}
-        <AnimatePresence>
+        <KeyedAnimatePresence key="baixa-avr-confirmacao">
           {isAVRConfirmationOpen && (
             <div className="fixed inset-0 z-[400] flex items-center justify-center p-4">
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsAVRConfirmationOpen(false)} className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
@@ -1340,10 +1346,10 @@ export default function BaixaLancamentoModal() {
               </motion.div>
             </div>
           )}
-        </AnimatePresence>
+        </KeyedAnimatePresence>
 
         {/* General Confirmation Modal */}
-        <AnimatePresence>
+        <KeyedAnimatePresence key="baixa-confirmacao-final">
           {isFinalConfirmationOpen && (
             <div className="fixed inset-0 z-[400] flex items-center justify-center p-4">
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsFinalConfirmationOpen(false)} className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
@@ -1397,7 +1403,7 @@ export default function BaixaLancamentoModal() {
               </motion.div>
             </div>
           )}
-        </AnimatePresence>
+        </KeyedAnimatePresence>
       </AnimatePresence>
 
     );

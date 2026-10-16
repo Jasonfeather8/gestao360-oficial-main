@@ -690,7 +690,7 @@ export const lancamentosService = {
    }
 
    // Define final payment status based on role
-   const finalPaymentStatus = isBPI ? 'bpi' : (isMaster ? 'pago' : 'quitação_pendente');
+   const finalPaymentStatus = isBPI ? 'bpi' : 'quitação_pendente';
 
    // AVR logic: Skip financial movement and only update values
    if (isAVR) {
@@ -812,7 +812,7 @@ export const lancamentosService = {
    }
 
    const updatePayload: any = {
-     status_pagamento: isPartial && !isBPI ? (isMaster ? 'pago_parcial' : 'quitação_pendente') : finalPaymentStatus,
+     status_pagamento: isPartial && !isBPI ? 'quitação_pendente' : finalPaymentStatus,
      ...(isBaixaFinanceira ? { status_aprovacao: 'digital' } : {}),
      data_pagamento: dataPagamentoVal,
      hora_pagamento: isBPI ? null : horaPagamentoVal,
@@ -917,13 +917,30 @@ export const lancamentosService = {
 
     const { data: rows, error: rowsError } = await supabase
       .from('lancamentos_financeiros')
-      .select('id, status_pagamento, vinculo_residuo_id, data_pagamento')
+      .select('id, status_pagamento, vinculo_residuo_id, data_pagamento, valor_previsto, valor_recebido, desconto_valor, desconto_tipo, acrescimo_valor, acrescimo_tipo')
       .in('id', ids);
     if (rowsError) throw rowsError;
 
     const registros = rows || [];
+    const valorFinalAjustadoCentavos = (row: typeof registros[number]): number => {
+      const valorPrevisto = Math.abs(Number(row.valor_previsto) || 0);
+      const ajusteDesconto = Math.round(calculateAdjustmentAmount(
+        row.desconto_valor,
+        normalizeAdjustmentType(row.desconto_tipo),
+        valorPrevisto
+      ) * 100) / 100;
+      const ajusteAcrescimo = Math.round(calculateAdjustmentAmount(
+        row.acrescimo_valor,
+        normalizeAdjustmentType(row.acrescimo_tipo),
+        valorPrevisto
+      ) * 100) / 100;
+      return Math.round((valorPrevisto - ajusteDesconto + ajusteAcrescimo) * 100);
+    };
     const parcialIds = new Set(registros
-      .filter(row => row.status_pagamento === 'pago_parcial' || row.vinculo_residuo_id)
+      .filter(row => row.status_pagamento === 'pago_parcial'
+        || Boolean(row.vinculo_residuo_id)
+        || (Number(row.valor_recebido) > 0
+          && Math.round(Number(row.valor_recebido) * 100) < valorFinalAjustadoCentavos(row)))
       .map(row => row.id));
     const comDataPagamento = new Set(registros.filter(row => row.data_pagamento).map(row => row.id));
 

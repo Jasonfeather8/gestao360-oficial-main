@@ -310,7 +310,7 @@ export default function Configuracoes() {
       {/* Modals with AnimatePresence */}
       <AnimatePresence>
         {isNovoUsuarioOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-hidden">
+          <div key="config-novo-usuario" className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-hidden">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setModalOpen('isNovoUsuarioOpen', false)} className="absolute inset-0 bg-black/60 backdrop-blur-xs" />
             <motion.form initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} onSubmit={handleInviteSubmit} className="bg-white w-full max-w-[480px] rounded-3xl shadow-2xl border-2 border-neutral-100 flex flex-col relative z-20 overflow-hidden">
               <header className="px-8 py-6 border-b border-neutral-50 flex justify-between items-center bg-neutral-50/50"><div className="flex items-center gap-4"><div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center shadow-sm"><UserPlus className="w-6 h-6" /></div><h2 className="text-sm font-black uppercase tracking-widest text-neutral-900">Novo Convite</h2></div><button type="button" onClick={() => setModalOpen('isNovoUsuarioOpen', false)} className="p-2 hover:bg-neutral-200 rounded-xl transition-colors"><X className="w-6 h-6" /></button></header>
@@ -334,7 +334,7 @@ export default function Configuracoes() {
         )}
 
         {isLegacyImportOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-hidden">
+          <div key="config-importacao-legado" className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-hidden">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => !isImportingProgress && setModalOpen('isLegacyImportOpen', false)} className="absolute inset-0 bg-black/60 backdrop-blur-xs" />
             <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="bg-white w-full max-w-[550px] rounded-3xl shadow-2xl border-2 border-neutral-100 flex flex-col relative z-20 overflow-hidden">
               <header className="px-8 py-6 border-b border-neutral-50 flex justify-between items-center bg-neutral-50/50"><h2 className="text-sm font-black uppercase tracking-widest text-neutral-900">Migração de Dados Legados</h2><button type="button" disabled={isImportingProgress} onClick={() => setModalOpen('isLegacyImportOpen', false)} className="p-2 hover:bg-neutral-200 rounded-xl transition-colors disabled:opacity-30"><X className="w-6 h-6" /></button></header>
@@ -348,7 +348,7 @@ export default function Configuracoes() {
         )}
 
         {selectedAuditLog && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-hidden">
+          <div key="config-log-auditoria" className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-hidden">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSelectedAuditLog(null)} className="absolute inset-0 bg-black/60 backdrop-blur-xs" />
             <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="bg-white w-full max-w-[500px] rounded-3xl shadow-2xl border-2 border-neutral-100 flex flex-col relative z-20 overflow-hidden">
               <header className="px-8 py-6 border-b border-neutral-50 flex justify-between items-center bg-neutral-50"><div className="flex items-center gap-3"><ShieldAlert className="w-6 h-6 text-primary" /><h3 className="text-xs font-black uppercase tracking-widest text-neutral-900">Inspetor de Auditoria</h3></div><button onClick={() => setSelectedAuditLog(null)} className="p-2 hover:bg-neutral-200 rounded-xl transition-colors"><X className="w-5 h-5" /></button></header>
