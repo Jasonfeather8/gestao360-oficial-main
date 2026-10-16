@@ -2,7 +2,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
-import { DashboardIndicadores } from '../types';
+import { DashboardIndicadores, ImportacaoDados } from '../types';
+import { desfazerImportacao } from '../services/migracao';
 import { entidadesService } from '../services/entidadesService';
 import { centrosCustoService } from '../services/centrosCustoService';
 import { categoriasService } from '../services/categoriasService';
@@ -325,5 +326,41 @@ export function useDashboardIndicadores(inicio?: string | null, fim?: string | n
       return data as DashboardIndicadores;
     },
     enabled: !!user?.id,
+  });
+}
+
+export function useImportacoesDados() {
+  const { user } = useAuth();
+
+  return useQuery({
+    queryKey: ['importacoesDados', user?.id],
+    queryFn: async (): Promise<ImportacaoDados[]> => {
+      const { data, error } = await supabase
+        .from('importacoes_dados')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (error) throw error;
+      return (data ?? []) as ImportacaoDados[];
+    },
+    enabled: !!user?.id,
+  });
+}
+
+export function useDesfazerImportacao() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (loteId: string) => desfazerImportacao(loteId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['importacoesDados'] });
+      queryClient.invalidateQueries({ queryKey: ['lancamentos'] });
+      queryClient.invalidateQueries({ queryKey: ['contasSaldos'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboardStats'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboardIndicadores'] });
+      queryClient.invalidateQueries({ queryKey: ['financialSummary'] });
+      queryClient.invalidateQueries({ queryKey: ['auditoriaLogs'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    },
   });
 }

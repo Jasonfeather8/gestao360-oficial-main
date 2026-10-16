@@ -365,3 +365,85 @@ export interface DashboardIndicadores {
   /** Meses com lançamentos, no formato 'YYYY-MM', para alimentar o seletor de período. */
   meses: string[];
 }
+
+export type MigracaoCampo =
+  | 'recebido'
+  | 'data'
+  | 'competencia'
+  | 'vencimento'
+  | 'descricao'
+  | 'cliente'
+  | 'conta'
+  | 'categoria'
+  | 'centro_custo'
+  | 'ref'
+  | 'anotacoes'
+  | 'valor';
+
+export type MigracaoColunas = Partial<Record<MigracaoCampo, number>>;
+
+export type MigracaoStatusPlanilha = 'recebido' | 'em_aberto' | 'atrasado' | 'cancelado' | 'desconhecido';
+
+export type MigracaoSituacao = 'pronta' | 'pendente' | 'duplicada' | 'cancelada' | 'erro';
+
+export interface MigracaoLinha {
+  id: string;
+  linhaOrigem: number;
+  statusPlanilha: MigracaoStatusPlanilha;
+  recebidoTexto: string;
+  recebido: boolean;
+  tipo: 'entrada' | 'saida' | null;
+  valor: number | null;
+  data: string | null;
+  competencia: string | null;
+  vencimento: string | null;
+  descricao: string;
+  anotacoes: string;
+  ref: string;
+  clienteNome: string;
+  contaNome: string;
+  categoriaNome: string;
+  centroCustoNome: string;
+  clienteId: string | null;
+  contaId: string | null;
+  categoriaId: string | null;
+  centroCustoId: string | null;
+  pendencias: string[];
+  incluir: boolean;
+  incluirManual?: boolean;
+  situacao: MigracaoSituacao;
+  resultadoPrevisto: string;
+}
+
+export interface MigracaoCadastros {
+  contas: { id: string; nome: string }[];
+  clientes: { id: string; nome: string }[];
+  categorias: { id: string; nome: string }[];
+  centrosCusto: { id: string; nome: string }[];
+}
+
+export interface AbaMigracao {
+  nome: string;
+  linhas: (string | number | Date | null)[][];
+}
+
+export interface PlanilhaMigracao {
+  nome: string;
+  tamanho: number;
+  abas: AbaMigracao[];
+}
+
+export interface ImportacaoDados {
+  id: string;
+  user_id: string;
+  arquivo_nome: string | null;
+  arquivo_hash: string | null;
+  total_linhas: number;
+  importadas: number;
+  erros: number;
+  valor_total: number;
+  status: string;
+  created_at: string;
+  desfeita_em: string | null;
+  desfeita_por: string | null;
+}
