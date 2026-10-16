@@ -96,7 +96,8 @@ function mapearLinhas(linhas: unknown, indiceLote: number): LinhaExtrato[] {
         : undefined;
 
     resultado.push({
-      id: `ia-${pagina ?? `lote${indiceLote}`}-${indice}`,
+      // O número de página da IA pode se repetir entre lotes, então o id inclui lote e índice.
+      id: `ia-lote${indiceLote}-${indice}`,
       data: item.data,
       descricao: valorTexto(item.descricao) ?? valorTexto(item.textoOriginal) ?? 'Lançamento sem descrição',
       valor: item.valor,

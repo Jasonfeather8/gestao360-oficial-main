@@ -1763,7 +1763,7 @@ export default function NovoLancamentoDrawer() {
       {/* Quick Action Modals */}
       <AnimatePresence>
         {isQuickCatOpen && (
-          <div className="fixed inset-0 z-[350] flex items-center justify-center p-4">
+          <div key="quick-categoria" className="fixed inset-0 z-[350] flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsQuickCatOpen(false)} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
             <motion.form initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} onSubmit={handleQuickCatSubmit} className="bg-white w-full max-w-[400px] rounded-3xl shadow-2xl relative z-10 overflow-hidden">
               <header className="px-8 py-5 border-b border-neutral-100 flex justify-between items-center"><h3 className="text-xs font-black uppercase tracking-widest text-neutral-900">Nova Categoria</h3><button type="button" onClick={() => setIsQuickCatOpen(false)}><X className="w-5 h-5 text-neutral-400" /></button></header>
@@ -1779,7 +1779,7 @@ export default function NovoLancamentoDrawer() {
         )}
 
         {isQuickCCOpen && (
-          <div className="fixed inset-0 z-[350] flex items-center justify-center p-4">
+          <div key="quick-centro-custo" className="fixed inset-0 z-[350] flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsQuickCCOpen(false)} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
             <motion.form initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} onSubmit={handleQuickCCSubmit} className="bg-white w-full max-w-[400px] rounded-3xl shadow-2xl relative z-10 overflow-hidden">
               <header className="px-8 py-5 border-b border-neutral-100 flex justify-between items-center"><h3 className="text-xs font-black uppercase tracking-widest text-neutral-900">Novo Centro de Custo</h3><button type="button" onClick={() => setIsQuickCCOpen(false)}><X className="w-5 h-5 text-neutral-400" /></button></header>
@@ -1795,7 +1795,7 @@ export default function NovoLancamentoDrawer() {
         )}
 
         {isQuickAccountOpen && (
-          <div className="fixed inset-0 z-[350] flex items-center justify-center p-4">
+          <div key="quick-conta" className="fixed inset-0 z-[350] flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsQuickAccountOpen(false)} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
             <motion.form initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} onSubmit={handleQuickAccountSubmit} className="bg-white w-full max-w-[400px] rounded-3xl shadow-2xl relative z-10 overflow-hidden">
               <header className="px-8 py-5 border-b border-neutral-100 flex justify-between items-center"><h3 className="text-xs font-black uppercase tracking-widest text-neutral-900">Nova Conta Bancária</h3><button type="button" onClick={() => setIsQuickAccountOpen(false)}><X className="w-5 h-5 text-neutral-400" /></button></header>
@@ -1812,7 +1812,7 @@ export default function NovoLancamentoDrawer() {
         )}
 
         {isQuickReasonOpen && (
-          <div className="fixed inset-0 z-[350] flex items-center justify-center p-4">
+          <div key="quick-motivo" className="fixed inset-0 z-[350] flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsQuickReasonOpen(false)} className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
             <motion.form initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} onSubmit={handleQuickReasonSubmit} className="bg-white w-full max-w-[360px] rounded-3xl shadow-2xl relative z-10 overflow-hidden">
               <header className="px-6 py-4 border-b border-neutral-100 flex justify-between items-center">
