@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
-  BarChart3,
   Coins,
   Settings,
   LayoutDashboard,
@@ -46,7 +45,6 @@ export default function Sidebar({ isOpen, onClose, isCollapsed }: SidebarProps) 
     { id: 'recorrencias' as TabType, label: 'Gestão de Recorrências', icon: Repeat, path: '/recorrencias', roles: ['master', 'gerente'] },
     { id: 'crm' as TabType, label: 'CRM & Entidades', icon: UserSquare2, path: '/crm', roles: ['master', 'gerente', 'colaborador'] },
     { id: 'cadastros' as TabType, label: 'Estrutura & Cadastros', icon: ShieldCheck, path: '/cadastros', roles: ['master', 'gerente'] },
-    { id: 'relatorios' as TabType, label: 'Relatórios Analíticos', icon: BarChart3, path: '/relatorios', roles: ['master', 'gerente'] },
     { id: 'configuracoes' as TabType, label: 'Configurações', icon: Settings, path: '/configuracoes', roles: ['master'] }
   ];
 

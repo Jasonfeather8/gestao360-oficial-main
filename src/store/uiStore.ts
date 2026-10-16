@@ -11,7 +11,6 @@ export type TabType =
   | 'recorrencias'
   | 'crm'
   | 'cadastros'
-  | 'relatorios'
   | 'configuracoes'
   | 'notificacoes';
 

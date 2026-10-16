@@ -263,3 +263,105 @@ export interface ResultadoComparacao {
   dias: DiaComparacao[];
   resumo: ResumoComparacao;
 }
+
+export interface DashboardSaldos {
+  real: number;
+  operacional: number;
+  simulado: number;
+}
+
+export interface DashboardCoberturaItem {
+  id: string;
+  descricao: string;
+  entidade: string | null;
+  vencimento: string | null;
+  valor: number;
+  acumulado: number;
+  coberto: boolean;
+}
+
+export interface DashboardPontoEstouro {
+  vencimento: string | null;
+  descricao: string;
+  entidade: string | null;
+  valor: number;
+  acumulado: number;
+  faltando: number;
+}
+
+export interface DashboardCobertura {
+  total_provisoes: number;
+  total_coberto: number;
+  total_descoberto: number;
+  percentual_coberto: number;
+  itens: DashboardCoberturaItem[];
+  ponto_estouro: DashboardPontoEstouro | null;
+}
+
+export interface DashboardCarteira {
+  pago_regular: number;
+  atrasado: number;
+  baixa_inatividade: number;
+  total: number;
+}
+
+export interface DashboardKpis {
+  realizado_entrada: number;
+  realizado_saida: number;
+  previsto_entrada: number;
+  previsto_saida: number;
+  liquidez: number;
+  saldo_projetado: number;
+  margem: number;
+}
+
+export interface DashboardFluxoDia {
+  data: string;
+  realizado: number;
+  previsto: number;
+}
+
+export interface DashboardCategoriaValor {
+  categoria: string;
+  valor: number;
+}
+
+export interface DashboardClienteValor {
+  cliente: string;
+  valor: number;
+}
+
+export interface DashboardPeriodo {
+  inicio: string | null;
+  fim: string | null;
+  kpis: DashboardKpis;
+  fluxo_diario: DashboardFluxoDia[];
+  saidas_por_categoria: DashboardCategoriaValor[];
+  receita_por_cliente: DashboardClienteValor[];
+}
+
+export interface DashboardCentroCustoResumo {
+  id: string;
+  nome: string;
+  receitas: number;
+  despesas: number;
+  resultado: number;
+}
+
+export interface DashboardCentrosCusto {
+  total_receitas: number;
+  total_despesas: number;
+  resultado: number;
+  melhores: DashboardCentroCustoResumo[];
+  deficitarios: DashboardCentroCustoResumo[];
+}
+
+export interface DashboardIndicadores {
+  saldos: DashboardSaldos;
+  cobertura: DashboardCobertura;
+  carteira: DashboardCarteira;
+  periodo: DashboardPeriodo;
+  centros_custo: DashboardCentrosCusto | null;
+  /** Meses com lançamentos, no formato 'YYYY-MM', para alimentar o seletor de período. */
+  meses: string[];
+}

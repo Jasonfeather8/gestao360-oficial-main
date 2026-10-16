@@ -18,9 +18,14 @@ import {
   RefreshCw,
   Eye,
   User,
-  X
+  X,
+  ShieldCheck,
+  Wallet,
+  PieChart as PieChartIcon,
+  Users,
+  Activity
 } from 'lucide-react';
-import { useLancamentos, useContas, useCentrosCusto, useAuditoriaLogs, useEntidades, useContasSaldos } from '../hooks/useData';
+import { useLancamentos, useContas, useCentrosCusto, useAuditoriaLogs, useEntidades, useContasSaldos, useDashboardIndicadores } from '../hooks/useData';
 import { useAuth } from '../hooks/useAuth';
 import { useUIStore } from '../store/uiStore';
 import { calculateAdjustmentAmount } from '../utils/adjustments';
@@ -28,6 +33,8 @@ import { calculateAdjustmentAmount } from '../utils/adjustments';
 import { useDragScroll } from '../hooks/useDragScroll';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import type { DashboardIndicadores } from '../types';
+import { CartesianGrid, Cell, ComposedChart, Line, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 export default function Dashboard() {
   const { role } = useAuth();
@@ -47,6 +54,15 @@ export default function Dashboard() {
   const { data: rawCentrosCusto = [] } = useCentrosCusto();
   const { data: auditoriaLogs = [], refetch: refetchAudit, isFetching: fetchingAudit } = useAuditoriaLogs();
   const { data: entidades = [] } = useEntidades();
+
+  const [periodFilter, setPeriodFilter] = useState('all');
+  const selectedMonth = periodFilter === 'all' ? null : periodFilter;
+  const monthStart = selectedMonth ? `${selectedMonth}-01` : null;
+  const monthEnd = selectedMonth
+    ? `${selectedMonth}-${String(new Date(Number(selectedMonth.slice(0, 4)), Number(selectedMonth.slice(5, 7)), 0).getDate()).padStart(2, '0')}`
+    : null;
+  const { data: indicadoresData, isLoading: loadingIndicadores } = useDashboardIndicadores(monthStart, monthEnd);
+  const indicadores: DashboardIndicadores | undefined = indicadoresData;
 
   const contas = useMemo(() => {
     return rawContas
@@ -71,32 +87,9 @@ export default function Dashboard() {
   
   const { setModalOpen, setActiveTab } = useUIStore();
 
-  const [periodFilter, setPeriodFilter] = useState<'all' | 'este-mes' | '2023-10' | '2026-06' | '90-dias'>('all');
-  const [customStart, setCustomStart] = useState('');
-  const [customEnd, setCustomEnd] = useState('');
-
   const filteredLancamentos = useMemo(() => {
     return lancamentos.filter(item => {
-      // Period filter
-      let periodMatch = true;
-      if (periodFilter === 'este-mes') {
-        const now = new Date();
-        const yearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-        periodMatch = item.data_vencimento.startsWith(yearMonth);
-      } else if (periodFilter === '90-dias') {
-        const now = new Date();
-        const ninetyDaysAgo = new Date();
-        ninetyDaysAgo.setDate(now.getDate() - 90);
-        const dateStr = item.data_vencimento;
-        const launchDate = new Date(dateStr);
-        periodMatch = launchDate >= ninetyDaysAgo && launchDate <= now;
-      } else if (periodFilter === '2023-10') {
-        periodMatch = item.data_vencimento.startsWith('2023-10');
-      } else if (periodFilter === '2026-06') {
-        periodMatch = item.data_vencimento.startsWith('2026-06');
-      } else if (customStart && customEnd) {
-        periodMatch = item.data_vencimento >= customStart && item.data_vencimento <= customEnd;
-      }
+      const periodMatch = periodFilter === 'all' || item.data_vencimento.startsWith(periodFilter);
 
       // Account filter
       const accountMatch = selectedAccountId ? item.conta_bancaria_id === selectedAccountId : true;
@@ -106,7 +99,7 @@ export default function Dashboard() {
 
       return periodMatch && accountMatch && ccMatch;
     });
-  }, [lancamentos, periodFilter, customStart, customEnd, selectedAccountId, selectedCCId]);
+  }, [lancamentos, periodFilter, selectedAccountId, selectedCCId]);
 
   const valueFormatter = (val: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
@@ -212,19 +205,46 @@ export default function Dashboard() {
           <>
             <section className="flex flex-wrap items-center justify-between gap-4 bg-white dark:bg-surface p-4 rounded-lg border border-surface-border shadow-sm animate-fade-in">
               <div className="flex flex-wrap items-center gap-4">
-                <div className="flex flex-col"><span className="text-xs font-medium text-secondary mb-1">Seletor de Período</span><div className="flex items-center gap-2 border border-surface-border rounded-lg px-3 py-2 bg-surface"><Calendar className="w-5 h-5 text-secondary" /><select value={periodFilter} onChange={(e) => setPeriodFilter(e.target.value as any)} className="bg-transparent border-none p-0 text-sm font-semibold focus:ring-0 w-48 text-on-surface outline-none cursor-pointer"><option value="all">Todo o Período</option><option value="este-mes">Este Mês</option><option value="2023-10">Outubro 2023</option><option value="2026-06">Junho 2026</option></select></div></div>
+                <div className="flex flex-col"><span className="text-xs font-medium text-secondary mb-1">Seletor de Período</span><div className="flex items-center gap-2 border border-surface-border rounded-lg px-3 py-2 bg-surface"><Calendar className="w-5 h-5 text-secondary" /><select value={periodFilter} onChange={(e) => setPeriodFilter(e.target.value)} className="bg-transparent border-none p-0 text-sm font-semibold focus:ring-0 w-48 text-on-surface outline-none cursor-pointer"><option value="all">Todo o período</option>{(indicadoresData?.meses || []).map(month => <option key={month} value={month}>{new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${month}-01T12:00:00Z`)).replace(/^./, letter => letter.toUpperCase())}</option>)}</select></div></div>
               </div>
               <button onClick={() => {
-                const headers = 'KPI,Valor\n';
-                const rows = [
-                  ['Saldo Consolidado', valueFormatter(stats?.total_consolidado || 0)],
-                  ['Expectativa Final', valueFormatter(stats?.total_simulado || 0)],
-                  ['Pendentes Saida', valueFormatter(stats?.pendente_saida_valor || 0)],
-                  ['Pendentes Entrada', valueFormatter(stats?.pendente_entrada_valor || 0)]
-                ].map(r => r.join(',')).join('\n');
-                const blob = new Blob([headers + rows], { type: 'text/csv;charset=utf-8;' });
-                const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = 'dashboard_real.csv'; link.click();
-              }} className="flex items-center gap-2 px-4 py-2 bg-secondary hover:bg-neutral-700 text-white rounded-lg text-sm font-semibold transition-all"><Download className="w-5 h-5" /> Exportar CSV</button>
+                const data = indicadores;
+                const rows: string[][] = [];
+                const addSection = (title: string, headers: string[], values: string[][]) => {
+                  rows.push([title], headers, ...values, []);
+                };
+                const csvValue = (value: string | number) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+                addSection('SALDOS', ['Indicador', 'Valor'], data ? [
+                  ['Real', valueFormatter(data.saldos.real)], ['Operacional', valueFormatter(data.saldos.operacional)], ['Simulado', valueFormatter(data.saldos.simulado)]
+                ] : []);
+                addSection('INDICADORES DO DASHBOARD', ['Indicador', 'Valor'], [
+                  ['Saldo Consolidado', valueFormatter(stats?.total_consolidado || 0)], ['Expectativa Final', valueFormatter(stats?.total_simulado || 0)], ['Pendentes Saída', valueFormatter(stats?.pendente_saida_valor || 0)], ['Pendentes Entrada', valueFormatter(stats?.pendente_entrada_valor || 0)]
+                ]);
+                addSection('COBERTURA DAS PROVISÕES', ['Indicador', 'Valor'], data ? [
+                  ['Total de provisões', valueFormatter(data.cobertura.total_provisoes)], ['Total coberto', valueFormatter(data.cobertura.total_coberto)], ['Total descoberto', valueFormatter(data.cobertura.total_descoberto)], ['Percentual coberto', `${data.cobertura.percentual_coberto.toFixed(1)}%`],
+                  ...(data.cobertura.ponto_estouro ? [['Ponto de estouro', `${data.cobertura.ponto_estouro.descricao} · falta ${valueFormatter(data.cobertura.ponto_estouro.faltando)}`]] : [['Ponto de estouro', 'Provisões 100% cobertas']])
+                ] : []);
+                addSection('ITENS DE COBERTURA', ['Descrição', 'Entidade', 'Vencimento', 'Valor', 'Acumulado', 'Coberto'], data?.cobertura.itens.map(item => [item.descricao, item.entidade || '', item.vencimento || '', valueFormatter(item.valor), valueFormatter(item.acumulado), item.coberto ? 'Sim' : 'Não']) || []);
+                addSection('CARTEIRA / INADIMPLÊNCIA', ['Indicador', 'Valor'], data ? [
+                  ['Pago regular', valueFormatter(data.carteira.pago_regular)], ['Atrasado', valueFormatter(data.carteira.atrasado)], ['Baixa por inatividade', valueFormatter(data.carteira.baixa_inatividade)], ['Total', valueFormatter(data.carteira.total)]
+                ] : []);
+                addSection('KPIs DO PERÍODO', ['Indicador', 'Valor'], data ? [
+                  ['Entradas realizadas', valueFormatter(data.periodo.kpis.realizado_entrada)], ['Saídas realizadas', valueFormatter(data.periodo.kpis.realizado_saida)], ['Entradas previstas', valueFormatter(data.periodo.kpis.previsto_entrada)], ['Saídas previstas', valueFormatter(data.periodo.kpis.previsto_saida)], ['Liquidez corrente', valueFormatter(data.periodo.kpis.liquidez)], ['Saldo projetado', valueFormatter(data.periodo.kpis.saldo_projetado)], ['Margem operacional', `${data.periodo.kpis.margem.toFixed(1)}%`]
+                ] : []);
+                addSection('FLUXO DE CAIXA DIÁRIO', ['Data', 'Realizado', 'Projetado'], data?.periodo.fluxo_diario.map(day => [day.data, valueFormatter(day.realizado), valueFormatter(day.previsto)]) || []);
+                addSection('SAÍDAS POR CATEGORIA', ['Categoria', 'Valor'], data?.periodo.saidas_por_categoria.map(item => [item.categoria, valueFormatter(item.valor)]) || []);
+                addSection('RECEITA POR CLIENTE', ['Cliente', 'Valor'], data?.periodo.receita_por_cliente.map(item => [item.cliente, valueFormatter(item.valor)]) || []);
+                if (isMaster && data?.centros_custo) {
+                  const centros = [...data.centros_custo.melhores, ...data.centros_custo.deficitarios];
+                  addSection('CENTROS DE CUSTO', ['Centro de custo', 'Receitas', 'Despesas', 'Resultado'], [
+                    ['TOTAL', valueFormatter(data.centros_custo.total_receitas), valueFormatter(data.centros_custo.total_despesas), valueFormatter(data.centros_custo.resultado)],
+                    ...centros.map(center => [center.nome, valueFormatter(center.receitas), valueFormatter(center.despesas), valueFormatter(center.resultado)])
+                  ]);
+                }
+                const csv = rows.map(row => row.map(csvValue).join(',')).join('\n');
+                const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = 'dashboard_real.csv'; link.click(); window.setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+              }} disabled={loadingIndicadores || !indicadores} className="flex items-center gap-2 px-4 py-2 bg-secondary hover:bg-neutral-700 text-white rounded-lg text-sm font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-50"><Download className="w-5 h-5" /> Exportar CSV</button>
             </section>
 
             <section className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-fade-in">
@@ -488,6 +508,81 @@ export default function Dashboard() {
                 </div>
               </div>
 
+            </section>
+
+            <section className="space-y-6 animate-fade-in">
+              {loadingIndicadores ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {[0, 1, 2, 3].map(item => <div key={item} className="h-56 rounded-xl border border-surface-border bg-surface animate-pulse" />)}
+                </div>
+              ) : indicadores ? (
+                <>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <article className="bg-white dark:bg-surface p-6 rounded-xl border border-surface-border shadow-sm">
+                      <div className="flex items-center justify-between mb-4"><h3 className="text-sm font-bold uppercase tracking-wider text-on-surface">Cobertura das Provisões</h3><ShieldCheck className="w-5 h-5 text-bank-truth-green" /></div>
+                      <div className="grid grid-cols-3 gap-3 mb-4">
+                        <div><p className="text-[10px] uppercase text-secondary">Provisões</p><p className="font-bold text-sm">{valueFormatter(indicadores.cobertura.total_provisoes)}</p></div>
+                        <div><p className="text-[10px] uppercase text-secondary">Coberto</p><p className="font-bold text-sm text-bank-truth-green">{valueFormatter(indicadores.cobertura.total_coberto)}</p></div>
+                        <div><p className="text-[10px] uppercase text-secondary">Cobertura</p><p className="font-bold text-sm">{indicadores.cobertura.percentual_coberto.toFixed(1)}%</p></div>
+                      </div>
+                      {indicadores.cobertura.ponto_estouro ? (
+                        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-900">
+                          <p className="flex items-center gap-2 text-xs font-bold"><AlertTriangle className="w-4 h-4" /> Ponto de estouro · {indicadores.cobertura.ponto_estouro.vencimento ? new Date(`${indicadores.cobertura.ponto_estouro.vencimento}T12:00:00`).toLocaleDateString('pt-BR') : 'Data não informada'}</p>
+                          <p className="mt-1 text-sm font-semibold">{indicadores.cobertura.ponto_estouro.descricao}{indicadores.cobertura.ponto_estouro.entidade ? ` · ${indicadores.cobertura.ponto_estouro.entidade}` : ''}</p>
+                          <p className="mt-1 text-xs">Faltam {valueFormatter(indicadores.cobertura.ponto_estouro.faltando)}</p>
+                        </div>
+                      ) : <p className="mb-4 rounded-lg bg-emerald-50 p-3 text-xs font-semibold text-emerald-800">As provisões estão 100% cobertas.</p>}
+                      <div className="max-h-56 overflow-y-auto rounded-lg border border-surface-border">
+                        {indicadores.cobertura.itens.length ? indicadores.cobertura.itens.map(item => (
+                          <div key={item.id} className="flex items-center justify-between gap-3 border-b border-surface-border/60 px-3 py-2 last:border-0">
+                            <div className="min-w-0"><p className="truncate text-xs font-semibold text-on-surface">{item.descricao}</p><p className="text-[10px] text-secondary">{item.vencimento ? new Date(`${item.vencimento}T12:00:00`).toLocaleDateString('pt-BR') : 'Sem vencimento'}{item.entidade ? ` · ${item.entidade}` : ''}</p></div>
+                            <div className="shrink-0 text-right"><p className="text-xs font-bold">{valueFormatter(item.valor)}</p><span className={`text-[10px] font-semibold ${item.coberto ? 'text-bank-truth-green' : 'text-alert-red'}`}>{item.coberto ? 'Coberto' : 'Descoberto'}</span></div>
+                          </div>
+                        )) : <p className="p-4 text-center text-xs text-secondary">Nenhuma provisão encontrada.</p>}
+                      </div>
+                    </article>
+
+                    <article className="bg-white dark:bg-surface p-6 rounded-xl border border-surface-border shadow-sm">
+                      <div className="flex items-center justify-between mb-4"><h3 className="text-sm font-bold uppercase tracking-wider text-on-surface">Inadimplência por Valor</h3><PieChartIcon className="w-5 h-5 text-primary" /></div>
+                      {indicadores.carteira.total > 0 ? <div className="flex flex-col sm:flex-row items-center gap-4">
+                        <div className="h-48 w-full sm:w-1/2"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={[{ name: 'Pago regular', value: indicadores.carteira.pago_regular }, { name: 'Atrasado', value: indicadores.carteira.atrasado }, { name: 'Baixa por inatividade', value: indicadores.carteira.baixa_inatividade }]} dataKey="value" nameKey="name" innerRadius="56%" outerRadius="82%" paddingAngle={2}>{['#2E7D32', '#D32F2F', '#FFA000'].map(color => <Cell key={color} fill={color} />)}</Pie><Tooltip formatter={(value) => valueFormatter(Number(value))} /></PieChart></ResponsiveContainer></div>
+                        <div className="w-full space-y-3">{[
+                          ['Pago regular', indicadores.carteira.pago_regular, 'bg-bank-truth-green'], ['Atrasado', indicadores.carteira.atrasado, 'bg-alert-red'], ['Baixa por inatividade', indicadores.carteira.baixa_inatividade, 'bg-pending-amber']
+                        ].map(([label, value, color]) => <div key={String(label)} className="flex items-center justify-between gap-2 text-xs"><span className="flex items-center gap-2 text-secondary"><i className={`h-2.5 w-2.5 rounded-full ${color}`} />{label}</span><strong className="text-on-surface">{valueFormatter(Number(value))}</strong></div>)}</div>
+                      </div> : <p className="py-12 text-center text-xs text-secondary">Sem dados de carteira para este período.</p>}
+                    </article>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+                    {[
+                      ['Liquidez corrente', indicadores.periodo.kpis.liquidez.toFixed(1)],
+                      ['Margem operacional', `${indicadores.periodo.kpis.margem.toFixed(1)}%`],
+                      ['Saldo projetado', valueFormatter(indicadores.periodo.kpis.saldo_projetado)],
+                      ['Realizado · entradas / saídas', `${valueFormatter(indicadores.periodo.kpis.realizado_entrada)} / ${valueFormatter(indicadores.periodo.kpis.realizado_saida)}`]
+                    ].map(([label, value]) => <div key={label} className="bg-white dark:bg-surface p-4 rounded-xl border border-surface-border shadow-sm"><p className="text-[10px] font-bold uppercase tracking-wider text-secondary">{label}</p><p className="mt-2 text-lg font-bold text-on-surface">{value}</p></div>)}
+                  </div>
+
+                  <article className="bg-white dark:bg-surface p-6 rounded-xl border border-surface-border shadow-sm">
+                    <div className="flex items-center justify-between mb-4"><h3 className="text-sm font-bold uppercase tracking-wider text-on-surface">Fluxo de Caixa Diário · Realizado × Projetado</h3><Activity className="w-5 h-5 text-primary" /></div>
+                    {indicadores.periodo.fluxo_diario.length ? <div className="h-72 w-full"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={indicadores.periodo.fluxo_diario} margin={{ top: 8, right: 12, left: 8, bottom: 4 }}><CartesianGrid strokeDasharray="3 3" stroke="var(--surface-border)" /><XAxis dataKey="data" tickFormatter={value => new Date(`${value}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} tick={{ fontSize: 10 }} /><YAxis tickFormatter={value => new Intl.NumberFormat('pt-BR', { notation: 'compact' }).format(value)} tick={{ fontSize: 10 }} /><Tooltip labelFormatter={label => new Date(`${label}T12:00:00`).toLocaleDateString('pt-BR')} formatter={(value, name) => [valueFormatter(Number(value)), name === 'realizado' ? 'Realizado' : 'Projetado']} /><Line type="monotone" dataKey="realizado" name="realizado" stroke="#2E7D32" strokeWidth={2} dot={false} /><Line type="monotone" dataKey="previsto" name="previsto" stroke="#795900" strokeWidth={2} strokeDasharray="5 4" dot={false} /></ComposedChart></ResponsiveContainer></div> : <p className="py-12 text-center text-xs text-secondary">Sem movimentação diária para este período.</p>}
+                  </article>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <article className="bg-white dark:bg-surface p-6 rounded-xl border border-surface-border shadow-sm"><div className="flex items-center justify-between mb-4"><h3 className="text-sm font-bold uppercase tracking-wider text-on-surface">Saídas por Categoria</h3><Wallet className="w-5 h-5 text-alert-red" /></div>
+                      <div className="max-h-64 overflow-y-auto">{indicadores.periodo.saidas_por_categoria.length ? indicadores.periodo.saidas_por_categoria.map(item => <div key={item.categoria} className="flex justify-between gap-4 border-b border-surface-border/60 py-3 last:border-0"><span className="text-sm text-secondary">{item.categoria}</span><strong className="text-sm text-on-surface">{valueFormatter(item.valor)}</strong></div>) : <p className="py-10 text-center text-xs text-secondary">Sem saídas por categoria neste período.</p>}</div>
+                    </article>
+                    <article className="bg-white dark:bg-surface p-6 rounded-xl border border-surface-border shadow-sm"><div className="flex items-center justify-between mb-4"><h3 className="text-sm font-bold uppercase tracking-wider text-on-surface">Concentração de Receita · Top 5 Clientes</h3><Users className="w-5 h-5 text-bank-truth-green" /></div>
+                      <div className="max-h-64 overflow-y-auto">{indicadores.periodo.receita_por_cliente.length ? indicadores.periodo.receita_por_cliente.slice(0, 5).map((item, index) => <div key={`${item.cliente}-${index}`} className="flex justify-between gap-4 border-b border-surface-border/60 py-3 last:border-0"><span className="truncate text-sm text-secondary">{index + 1}. {item.cliente}</span><strong className="shrink-0 text-sm text-on-surface">{valueFormatter(item.valor)}</strong></div>) : <p className="py-10 text-center text-xs text-secondary">Sem receitas por cliente neste período.</p>}</div>
+                    </article>
+                  </div>
+
+                  {isMaster && indicadores.centros_custo && <article className="bg-white dark:bg-surface p-6 rounded-xl border border-surface-border shadow-sm">
+                    <div className="flex items-center justify-between mb-4"><h3 className="text-sm font-bold uppercase tracking-wider text-on-surface">Saúde por Centro de Custo</h3><Building2 className="w-5 h-5 text-primary" /></div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5"><div><p className="text-[10px] uppercase text-secondary">Receitas</p><strong>{valueFormatter(indicadores.centros_custo.total_receitas)}</strong></div><div><p className="text-[10px] uppercase text-secondary">Despesas</p><strong>{valueFormatter(indicadores.centros_custo.total_despesas)}</strong></div><div><p className="text-[10px] uppercase text-secondary">Resultado</p><strong>{valueFormatter(indicadores.centros_custo.resultado)}</strong></div></div>
+                    {[['Melhores resultados', indicadores.centros_custo.melhores], ['Centros deficitários', indicadores.centros_custo.deficitarios]].map(([title, centers]) => <div key={String(title)} className="mb-4 last:mb-0"><h4 className="mb-2 text-xs font-bold text-secondary">{title}</h4>{(centers as NonNullable<typeof indicadores.centros_custo>['melhores']).length ? (centers as NonNullable<typeof indicadores.centros_custo>['melhores']).map(center => <div key={center.id} className="grid grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-3 border-b border-surface-border/60 py-2 text-xs"><span className="truncate font-semibold">{center.nome}</span><span>Rec. {valueFormatter(center.receitas)}</span><span>Desp. {valueFormatter(center.despesas)}</span><strong className={center.resultado < 0 ? 'text-alert-red' : 'text-bank-truth-green'}>{valueFormatter(center.resultado)}</strong></div>) : <p className="text-xs text-secondary">Nenhum centro nesta lista.</p>}</div>)}
+                  </article>}
+                </>
+              ) : <div className="rounded-xl border border-surface-border bg-surface p-8 text-center text-sm text-secondary">Não foi possível carregar os indicadores.</div>}
             </section>
           </>
         )}

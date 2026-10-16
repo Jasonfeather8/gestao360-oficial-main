@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
+import { DashboardIndicadores } from '../types';
 import { entidadesService } from '../services/entidadesService';
 import { centrosCustoService } from '../services/centrosCustoService';
 import { categoriasService } from '../services/categoriasService';
@@ -308,4 +309,21 @@ export function useUsuarios() {
 
 export function useAuditoriaLogs() {
   return useQuery({ queryKey: ['auditoriaLogs'], queryFn: auditoriaService.getAll });
+}
+
+export function useDashboardIndicadores(inicio?: string | null, fim?: string | null) {
+  const { user } = useAuth();
+
+  return useQuery({
+    queryKey: ['dashboardIndicadores', user?.id, inicio ?? null, fim ?? null],
+    queryFn: async (): Promise<DashboardIndicadores> => {
+      const { data, error } = await supabase.rpc('get_dashboard_indicadores', {
+        p_inicio: inicio ?? null,
+        p_fim: fim ?? null,
+      });
+      if (error) throw error;
+      return data as DashboardIndicadores;
+    },
+    enabled: !!user?.id,
+  });
 }

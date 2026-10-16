@@ -33,7 +33,6 @@ import Conciliacao from './pages/Conciliacao';
 import Recorrencias from './pages/Recorrencias';
 import CRM from './pages/CRM';
 import Cadastros from './pages/Cadastros';
-import Relatorios from './pages/Relatorios';
 import Configuracoes from './pages/Configuracoes';
 import Notificacoes from './pages/Notificacoes';
 import Pagar from './pages/Pagar';
@@ -250,11 +249,13 @@ function AppContent() {
                       <Route path="/conciliacao" element={<MasterRoute><Conciliacao /></MasterRoute>} />
                       <Route path="/recorrencias" element={RECORRENCIAS_HABILITADA ? <Recorrencias /> : <Navigate to="/dashboard" replace />} />
                       <Route path="/cadastros" element={<Cadastros />} />
-                      <Route path="/relatorios" element={<Relatorios />} />
 
                       {/* Rotas exclusivas do Master */}
                       <Route path="/configuracoes" element={<Configuracoes />} />
                       <Route path="/notificacoes" element={<Notificacoes />} />
+
+                      {/* Rota desconhecida cai no painel, evitando área vazia em links antigos. */}
+                      <Route path="*" element={<Navigate to="/dashboard" replace />} />
                     </Routes>
                   </div>
                 </main>
