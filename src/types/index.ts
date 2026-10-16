@@ -171,12 +171,13 @@ export interface LinhaIgnorada {
 }
 
 export interface ProgressoLeituraExtrato {
-  etapa: 'preparando' | 'enviando' | 'lendo';
+  etapa: 'preparando' | 'enviando' | 'lendo' | 'comparando';
   loteAtual: number;
   totalLotes: number;
   paginaInicio: number | null;
   paginaFim: number | null;
   totalPaginas: number | null;
+  linhasLidas?: number;
 }
 
 export interface LinhaExtrato {

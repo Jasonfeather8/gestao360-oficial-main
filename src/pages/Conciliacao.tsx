@@ -12,7 +12,6 @@ import {
   FileText,
   HelpCircle,
   Landmark,
-  Loader2,
   PenLine,
   PlusCircle,
   Sparkles,
@@ -24,6 +23,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useContas, useLancamentosDaConta } from '../hooks/useData';
 import { useUIStore } from '../store/uiStore';
 import SeletorAVRModal from '../components/Conciliacao/SeletorAVRModal';
+import ProgressoExtrato from '../components/Conciliacao/ProgressoExtrato';
 import { compararExtrato, dataReferenciaLancamento, direcaoLancamento, valorPrevistoParaConciliar } from '../services/extrato/comparacao';
 import { lerExtrato } from '../services/extrato/motorLeitura';
 import type { ExtratoLido, ItemComparacao, LancamentoFinanceiro, ProgressoLeituraExtrato } from '../types';
@@ -84,15 +84,32 @@ export default function Conciliacao() {
     setProcessando(true);
     try {
       const extratoLido = await lerExtrato(file, setProgresso);
+      setProgresso((prev) => prev
+        ? { ...prev, etapa: 'comparando', linhasLidas: extratoLido.linhas.length }
+        : {
+            etapa: 'comparando',
+            loteAtual: 0,
+            totalLotes: 0,
+            paginaInicio: null,
+            paginaFim: null,
+            totalPaginas: null,
+            linhasLidas: extratoLido.linhas.length,
+          });
       setExtrato(extratoLido);
-      setIsImportOpen(false);
     } catch (error) {
       setErro(error instanceof Error ? error.message : 'Não foi possível ler o extrato.');
-    } finally {
       setProgresso(null);
       setProcessando(false);
     }
   };
+
+  useEffect(() => {
+    if (progresso?.etapa === 'comparando' && !carregandoLancamentos) {
+      setProgresso(null);
+      setProcessando(false);
+      setIsImportOpen(false);
+    }
+  }, [progresso?.etapa, carregandoLancamentos]);
 
   const selecionarArquivo = (file?: File) => {
     if (file && contaId) void handleArquivo(file);
@@ -501,23 +518,9 @@ export default function Conciliacao() {
                 onDrop={(event) => { event.preventDefault(); setArrastando(false); selecionarArquivo(event.dataTransfer.files[0]); }}
                 className={`flex min-h-48 w-full flex-col items-center justify-center rounded-2xl border-2 border-dashed px-6 py-8 text-center transition ${arrastando ? 'border-primary bg-primary/5' : 'border-surface-border hover:border-primary/60'} disabled:cursor-not-allowed disabled:opacity-60`}
               >
-                {processando ? (
-                  <>
-                    <Loader2 className="mb-3 h-8 w-8 animate-spin text-primary" />
-                    <span className="text-sm font-semibold text-on-surface">
-                      {progresso?.etapa === 'enviando'
-                        ? 'Enviando o PDF com segurança...'
-                        : progresso?.etapa === 'lendo'
-                          ? `Lendo páginas ${progresso.paginaInicio ?? '?'}–${progresso.paginaFim ?? '?'} de ${progresso.totalPaginas ?? '?'} · lote ${progresso.loteAtual} de ${progresso.totalLotes}`
-                          : 'Preparando o arquivo...'}
-                    </span>
-                    {progresso?.totalPaginas && (
-                      <div className="mt-4 h-2 w-full max-w-xs overflow-hidden rounded-full bg-surface-container-low">
-                        <div className="h-full bg-primary transition-all" style={{ width: `${Math.min(100, Math.round(((progresso.paginaFim ?? 0) / progresso.totalPaginas) * 100))}%` }} />
-                      </div>
-                    )}
-                  </>
-                ) : <><Upload className="mb-3 h-8 w-8 text-secondary" /><span className="font-bold text-on-surface">Arraste o PDF para cá ou clique para selecionar</span><span className="mt-2 text-xs text-on-surface-variant">Apenas arquivos PDF</span></>}
+                {processando
+                  ? <ProgressoExtrato progresso={progresso} />
+                  : <><Upload className="mb-3 h-8 w-8 text-secondary" /><span className="font-bold text-on-surface">Arraste o PDF para cá ou clique para selecionar</span><span className="mt-2 text-xs text-on-surface-variant">Apenas arquivos PDF</span></>}
               </button>
               {!processando && <div className="flex items-start gap-3 rounded-xl border border-surface-border bg-surface-container-low p-3 text-xs text-on-surface-variant"><Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-secondary" /><p>A leitura é feita por IA (OpenAI). O PDF é enviado temporariamente e apagado do servidor ao final do processamento.</p></div>}
               {erro && <p role="alert" className="rounded-xl bg-alert-red/10 p-3 text-sm text-alert-red">{erro}</p>}

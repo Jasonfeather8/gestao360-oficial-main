@@ -15,8 +15,14 @@ import { contarPaginas } from './pdfDocumento';
 
 const LIMITE_ARQUIVO = 20 * 1024 * 1024;
 const LIMITE_PAGINAS = 60;
-const PAGINAS_POR_LOTE = 10;
 const PREFIXO = '[motorIA]';
+
+function calcularPaginasPorLote(totalPaginas: number): number {
+  if (totalPaginas <= 6) return 1;
+  if (totalPaginas <= 12) return 2;
+  if (totalPaginas <= 30) return 5;
+  return 10;
+}
 
 interface RespostaLinha {
   data?: unknown;
@@ -221,7 +227,8 @@ export async function lerExtratoIA(
 
   const nomeBase = arquivo.name.replace(/[^a-zA-Z0-9._-]/g, '').replace(/\.pdf$/i, '').slice(0, 60) || 'extrato';
   const caminho = `extratos/${user.id}/${Date.now()}-${nomeBase}.pdf`;
-  const totalLotes = Math.ceil(totalPaginas / PAGINAS_POR_LOTE);
+  const paginasPorLote = calcularPaginasPorLote(totalPaginas);
+  const totalLotes = Math.ceil(totalPaginas / paginasPorLote);
   const linhas: LinhaExtrato[] = [];
   const naoInterpretadas: LinhaNaoInterpretada[] = [];
   const linhasIgnoradas: LinhaIgnorada[] = [];
@@ -243,10 +250,10 @@ export async function lerExtratoIA(
     uploaded = true;
 
     for (let lote = 0; lote < totalLotes; lote++) {
-      const paginaInicio = lote * PAGINAS_POR_LOTE + 1;
-      const paginaFim = Math.min((lote + 1) * PAGINAS_POR_LOTE, totalPaginas);
+      const paginaInicio = lote * paginasPorLote + 1;
+      const paginaFim = Math.min((lote + 1) * paginasPorLote, totalPaginas);
       const loteAtual = lote + 1;
-      onProgress?.({ etapa: 'lendo', loteAtual, totalLotes, paginaInicio, paginaFim, totalPaginas });
+      onProgress?.({ etapa: 'lendo', loteAtual, totalLotes, paginaInicio, paginaFim, totalPaginas, linhasLidas: linhas.length });
 
       const { data, error } = await supabase.functions.invoke<RespostaExtrato>('ler-extrato', {
         body: {
