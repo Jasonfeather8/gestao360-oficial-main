@@ -220,6 +220,32 @@ export function useConciliarTransferencia() {
   return { conciliarTransferencia: mutation.mutateAsync, isConciliando: mutation.isPending };
 }
 
+export function useDecidirTransferencia() {
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: ({ transferenciaId, aprovado, justificativa }: { transferenciaId: string; aprovado: boolean; justificativa?: string }) =>
+      transferenciasService.decidir(transferenciaId, aprovado, justificativa),
+    onSuccess: () => {
+      ['transferencias', 'lancamentos', 'contasSaldos', 'dashboardStats', 'dashboardIndicadores', 'auditoriaLogs', 'notifications', 'transacoesBanco']
+        .forEach((queryKey) => queryClient.invalidateQueries({ queryKey: [queryKey] }));
+    },
+  });
+  return { decidirTransferencia: mutation.mutateAsync, isDecidindo: mutation.isPending };
+}
+
+export function useEstornarTransferencia() {
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: ({ transferenciaId, motivo }: { transferenciaId: string; motivo: string }) =>
+      transferenciasService.estornar(transferenciaId, motivo),
+    onSuccess: () => {
+      ['transferencias', 'lancamentos', 'contasSaldos', 'dashboardStats', 'dashboardIndicadores', 'auditoriaLogs', 'notifications', 'transacoesBanco']
+        .forEach((queryKey) => queryClient.invalidateQueries({ queryKey: [queryKey] }));
+    },
+  });
+  return { estornarTransferencia: mutation.mutateAsync, isEstornando: mutation.isPending };
+}
+
 export function useIdentificarTransacaoTransferencia() {
   const queryClient = useQueryClient();
   const mutation = useMutation({

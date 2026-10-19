@@ -3,11 +3,14 @@ import { motion } from 'motion/react';
 import { ArrowLeftRight, CheckCircle2, Info, Landmark, LoaderCircle } from 'lucide-react';
 import MoneyInput from '../MoneyInput';
 import ConciliacaoTransferenciaPainel from './ConciliacaoTransferenciaPainel';
-import { useCategorias, useCentrosCusto, useContas, useCriarTransferencia, useTransferencias } from '../../hooks/useData';
+import DecisaoTransferenciaModal from './DecisaoTransferenciaModal';
+import { useCategorias, useCentrosCusto, useContas, useCriarTransferencia, useDecidirTransferencia, useEstornarTransferencia, useTransferencias } from '../../hooks/useData';
+import { useAuth } from '../../hooks/useAuth';
 import type { TransferenciaBancaria, TransferenciaStatus } from '../../types';
 
 const moeda = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const dataFormatada = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
+const dataHoraFormatada = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
 const classeCampo = 'w-full rounded-lg border border-surface-border bg-white px-3 py-2.5 text-sm text-on-surface outline-none transition focus-visible:ring-2 focus-visible:ring-primary dark:bg-surface disabled:cursor-not-allowed disabled:opacity-60';
 const classeRotulo = 'mb-1.5 block text-xs font-black uppercase tracking-widest text-secondary';
 
@@ -35,7 +38,13 @@ function formatarData(data: string): string {
   return dataFormatada.format(new Date(`${data}T00:00:00Z`));
 }
 
-function linhaTransferencia(transferencia: TransferenciaBancaria, expandida: boolean, alternar: () => void) {
+function linhaTransferencia(
+  transferencia: TransferenciaBancaria,
+  expandida: boolean,
+  alternar: () => void,
+  role: string,
+  abrirDecisao: (transferencia: TransferenciaBancaria, modo: 'aprovar' | 'reprovar' | 'estornar') => void,
+) {
   const status = statusTransferencia[transferencia.status];
   return (
     <article key={transferencia.id} className="border-b border-surface-border/70 py-4 last:border-b-0">
@@ -50,13 +59,21 @@ function linhaTransferencia(transferencia: TransferenciaBancaria, expandida: boo
           <p className="mt-1 text-xs text-on-surface-variant">
             Conciliação: origem {transferencia.transacao_origem_id ? 'conciliada' : 'pendente'} · destino {transferencia.transacao_destino_id ? 'conciliada' : 'pendente'}
           </p>
+          {transferencia.status === 'conciliada' && transferencia.aprovado_em && <p className="mt-1 text-xs text-bank-truth-green">Aprovada em {dataHoraFormatada.format(new Date(transferencia.aprovado_em))}</p>}
+          {transferencia.reprovado_em && <p className="mt-1 text-xs text-alert-red">Reprovada em {dataHoraFormatada.format(new Date(transferencia.reprovado_em))}{transferencia.motivo_reprovacao ? ` · ${transferencia.motivo_reprovacao}` : ''}</p>}
+          {transferencia.estornado_em && <p className="mt-1 text-xs text-alert-red">Estornada em {dataHoraFormatada.format(new Date(transferencia.estornado_em))}{transferencia.motivo_estorno ? ` · ${transferencia.motivo_estorno}` : ''}</p>}
         </div>
-        <div className="flex shrink-0 items-center justify-between gap-3 sm:justify-end">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 sm:justify-end">
           <span className="text-sm font-black text-on-surface">{moeda.format(Number(transferencia.valor))}</span>
           <span className={`text-xs font-bold ${status.cor}`}>{status.label}</span>
-          <button type="button" aria-expanded={expandida} aria-label={`${expandida ? 'Fechar' : 'Abrir'} conciliação da transferência`} onClick={alternar} className="rounded-lg border border-surface-border px-3 py-2 text-xs font-bold text-on-surface transition hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
+          {transferencia.status !== 'estornada' && <button type="button" aria-expanded={expandida} aria-label={`${expandida ? 'Fechar' : 'Abrir'} conciliação da transferência`} onClick={alternar} className="rounded-lg border border-surface-border px-3 py-2 text-xs font-bold text-on-surface transition hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
             Conciliar
-          </button>
+          </button>}
+          {role === 'master' && transferencia.status === 'conciliada_pendente_master' && <>
+            <button type="button" onClick={() => abrirDecisao(transferencia, 'aprovar')} className="rounded-lg bg-bank-truth-green px-3 py-2 text-xs font-bold text-white transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">Aprovar</button>
+            <button type="button" onClick={() => abrirDecisao(transferencia, 'reprovar')} className="rounded-lg bg-alert-red px-3 py-2 text-xs font-bold text-white transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">Reprovar</button>
+          </>}
+          {role === 'master' && transferencia.status !== 'estornada' && <button type="button" onClick={() => abrirDecisao(transferencia, 'estornar')} className="rounded-lg border border-alert-red/40 px-3 py-2 text-xs font-bold text-alert-red transition hover:bg-alert-red/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">Estornar</button>}
         </div>
       </div>
       {expandida && <ConciliacaoTransferenciaPainel transferencia={transferencia} />}
@@ -65,11 +82,14 @@ function linhaTransferencia(transferencia: TransferenciaBancaria, expandida: boo
 }
 
 export default function TransferenciasBancarias() {
+  const { role } = useAuth();
   const { data: contasData = [] } = useContas();
   const { data: categoriasData = [] } = useCategorias();
   const { data: centrosData = [] } = useCentrosCusto();
   const { data: transferencias = [], isLoading, isError } = useTransferencias();
   const { criarTransferencia, isCreating } = useCriarTransferencia();
+  const { decidirTransferencia, isDecidindo } = useDecidirTransferencia();
+  const { estornarTransferencia, isEstornando } = useEstornarTransferencia();
   const contas = useMemo(() => contasData.filter((conta) => !('status' in conta) || conta.status !== 'excluido'), [contasData]);
   const categorias = useMemo(() => categoriasData.filter((categoria) => !('status' in categoria) || categoria.status !== 'excluido'), [categoriasData]);
   const centros = useMemo(() => centrosData.filter((centro) => !('status' in centro) || centro.status !== 'excluido'), [centrosData]);
@@ -84,8 +104,41 @@ export default function TransferenciasBancarias() {
   const [tarifaCentroCustoId, setTarifaCentroCustoId] = useState('');
   const [erro, setErro] = useState('');
   const [confirmacao, setConfirmacao] = useState('');
+  const [transferenciaDecisao, setTransferenciaDecisao] = useState<TransferenciaBancaria | null>(null);
+  const [modoDecisao, setModoDecisao] = useState<'aprovar' | 'reprovar' | 'estornar' | null>(null);
+  const [erroDecisao, setErroDecisao] = useState('');
   const [transferenciaExpandidaId, setTransferenciaExpandidaId] = useState<string | null>(null);
   const tarifaCentavos = emCentavos(tarifa);
+
+  const abrirDecisao = (transferencia: TransferenciaBancaria, modo: 'aprovar' | 'reprovar' | 'estornar') => {
+    setTransferenciaDecisao(transferencia);
+    setModoDecisao(modo);
+    setErroDecisao('');
+    setConfirmacao('');
+  };
+
+  const cancelarDecisao = () => {
+    setModoDecisao(null);
+    setTransferenciaDecisao(null);
+    setErroDecisao('');
+  };
+
+  const confirmarDecisao = async (justificativa: string) => {
+    if (!transferenciaDecisao || !modoDecisao) return;
+    setErroDecisao('');
+    try {
+      if (modoDecisao === 'estornar') {
+        await estornarTransferencia({ transferenciaId: transferenciaDecisao.id, motivo: justificativa });
+      } else {
+        await decidirTransferencia({ transferenciaId: transferenciaDecisao.id, aprovado: modoDecisao === 'aprovar', justificativa });
+      }
+      setErro('');
+      setConfirmacao(modoDecisao === 'aprovar' ? 'Transferência aprovada.' : modoDecisao === 'reprovar' ? 'Transferência reprovada.' : 'Transferência estornada.');
+      cancelarDecisao();
+    } catch (error) {
+      setErroDecisao(error instanceof Error ? error.message : 'Não foi possível concluir a ação na transferência.');
+    }
+  };
 
   const limparFormulario = () => {
     setContaOrigemId('');
@@ -229,8 +282,18 @@ export default function TransferenciasBancarias() {
                 transferencia,
                 transferenciaExpandidaId === transferencia.id,
                 () => setTransferenciaExpandidaId((atual) => atual === transferencia.id ? null : transferencia.id),
+                role,
+                abrirDecisao,
               ))}</div>}
       </section>
+      <DecisaoTransferenciaModal
+        modo={modoDecisao}
+        transferencia={transferenciaDecisao}
+        processando={isDecidindo || isEstornando}
+        erro={erroDecisao}
+        onCancelar={cancelarDecisao}
+        onConfirmar={(justificativa) => void confirmarDecisao(justificativa)}
+      />
     </div>
   );
 }

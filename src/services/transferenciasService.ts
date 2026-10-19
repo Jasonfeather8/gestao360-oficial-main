@@ -127,6 +127,28 @@ export const transferenciasService = {
     return data as TransferenciaBancaria;
   },
 
+  decidir: async (transferenciaId: string, aprovado: boolean, justificativa?: string): Promise<TransferenciaBancaria> => {
+    const { data, error } = await supabase.rpc('decidir_aprovacao_master', {
+      p_item_id: transferenciaId,
+      p_tipo: 'transferencia_bancaria',
+      p_aprovado: aprovado,
+      p_justificativa: justificativa?.trim() || null,
+    });
+    if (error) throw error;
+    const resposta = data as { bloqueada: boolean; mensagem: string; resultado: TransferenciaBancaria };
+    if (resposta.bloqueada) throw new Error(resposta.mensagem);
+    return resposta.resultado;
+  },
+
+  estornar: async (transferenciaId: string, motivo: string): Promise<TransferenciaBancaria> => {
+    const { data, error } = await supabase.rpc('estornar_transferencia_atomica', {
+      p_transferencia_id: transferenciaId,
+      p_motivo: motivo.trim(),
+    });
+    if (error) throw error;
+    return data as TransferenciaBancaria;
+  },
+
   identificar: async (transacaoId: string, contaRelacionadaId: string): Promise<TransferenciaBancaria> => {
     const { data, error } = await supabase.rpc('identificar_transacao_transferencia_atomica', {
       p_transacao_id: transacaoId,
