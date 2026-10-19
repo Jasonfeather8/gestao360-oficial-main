@@ -89,6 +89,8 @@ export interface LancamentoFinanceiro {
   status_pagamento: StatusPagamento;
   usuario_criador_id: string;
   status_sincronizacao?: boolean;
+  transferencia_id?: string | null;
+  transferencia_lado?: 'origem' | 'destino' | 'tarifa' | null;
  valor_original?: number;
  juros_previstos?: number;
  multa_prevista?: number;
@@ -446,4 +448,30 @@ export interface ImportacaoDados {
   created_at: string;
   desfeita_em: string | null;
   desfeita_por: string | null;
+}
+
+export type TransferenciaStatus = 'aberta' | 'aguardando_destino' | 'conciliada_pendente_master' | 'conciliada' | 'estornada';
+
+export interface TransferenciaBancaria {
+  id: string;
+  conta_origem_id: string;
+  conta_destino_id: string;
+  valor: number;
+  data_transferencia: string;
+  status: TransferenciaStatus;
+  lancamento_saida_id: string | null;
+  lancamento_entrada_id: string | null;
+  tarifa_lancamento_id: string | null;
+  transacao_origem_id: string | null;
+  transacao_destino_id: string | null;
+  criado_por: string;
+  created_at: string;
+  updated_at: string;
+  aprovado_em: string | null;
+  reprovado_em: string | null;
+  motivo_reprovacao: string | null;
+  estornado_em: string | null;
+  motivo_estorno: string | null;
+  conta_origem?: { nome: string } | null;
+  conta_destino?: { nome: string } | null;
 }

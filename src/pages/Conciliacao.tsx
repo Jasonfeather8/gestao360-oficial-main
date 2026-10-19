@@ -25,6 +25,7 @@ import { useUIStore } from '../store/uiStore';
 import SeletorAVRModal from '../components/Conciliacao/SeletorAVRModal';
 import ProgressoExtrato from '../components/Conciliacao/ProgressoExtrato';
 import MigracaoDados from '../components/Migracao/MigracaoDados';
+import TransferenciasBancarias from '../components/Transferencias/TransferenciasBancarias';
 import { compararExtrato, dataReferenciaLancamento, direcaoLancamento, valorPrevistoParaConciliar } from '../services/extrato/comparacao';
 import { lerExtrato } from '../services/extrato/motorLeitura';
 import type { ExtratoLido, ItemComparacao, LancamentoFinanceiro, ProgressoLeituraExtrato } from '../types';
@@ -53,7 +54,7 @@ export default function Conciliacao() {
     setAvrPreset,
   } = useUIStore();
   const podeAgirNaConciliacao = hasRole(['master']);
-  const [abaAtiva, setAbaAtiva] = useState<'conciliacao' | 'migracao'>('conciliacao');
+  const [abaAtiva, setAbaAtiva] = useState<'conciliacao' | 'migracao' | 'transferencias'>('conciliacao');
   const [contaId, setContaId] = useState('');
   const [extrato, setExtrato] = useState<ExtratoLido | null>(null);
   const [processando, setProcessando] = useState(false);
@@ -290,6 +291,7 @@ export default function Conciliacao() {
       <nav aria-label="Abas de conciliação" className="flex gap-2 border-b border-surface-border">
         <button type="button" aria-current={abaAtiva === 'conciliacao' ? 'page' : undefined} onClick={() => setAbaAtiva('conciliacao')} className={`border-b-2 px-4 py-3 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${abaAtiva === 'conciliacao' ? 'border-primary text-primary' : 'border-transparent text-on-surface-variant hover:text-on-surface'}`}>Conciliação Bancária</button>
         <button type="button" aria-current={abaAtiva === 'migracao' ? 'page' : undefined} onClick={() => setAbaAtiva('migracao')} className={`border-b-2 px-4 py-3 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${abaAtiva === 'migracao' ? 'border-primary text-primary' : 'border-transparent text-on-surface-variant hover:text-on-surface'}`}>Migração de Dados</button>
+        <button type="button" aria-current={abaAtiva === 'transferencias' ? 'page' : undefined} onClick={() => setAbaAtiva('transferencias')} className={`border-b-2 px-4 py-3 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${abaAtiva === 'transferencias' ? 'border-primary text-primary' : 'border-transparent text-on-surface-variant hover:text-on-surface'}`}>Transferências</button>
       </nav>
       <section hidden={abaAtiva !== 'conciliacao'}>
       <div className="space-y-6 pb-8 text-on-surface">
@@ -554,6 +556,7 @@ export default function Conciliacao() {
       </div>
       </section>
       <section hidden={abaAtiva !== 'migracao'}><MigracaoDados /></section>
+      <section hidden={abaAtiva !== 'transferencias'}><TransferenciasBancarias /></section>
     </div>
   );
 }

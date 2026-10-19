@@ -8,9 +8,11 @@ interface MoneyInputProps {
   required?: boolean;
   autoFocus?: boolean;
   disabled?: boolean;
+  id?: string;
+  'aria-label'?: string;
 }
 
-export default function MoneyInput({ value, onChange, className, placeholder, required, autoFocus, disabled }: MoneyInputProps) {
+export default function MoneyInput({ value, onChange, className, placeholder, required, autoFocus, disabled, id, 'aria-label': ariaLabel }: MoneyInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const formatValue = (val: string) => {
@@ -47,6 +49,8 @@ export default function MoneyInput({ value, onChange, className, placeholder, re
   return (
     <input
       ref={inputRef}
+      id={id}
+      aria-label={ariaLabel}
       type="text"
       value={value}
       onChange={handleChange}

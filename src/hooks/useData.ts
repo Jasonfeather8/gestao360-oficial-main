@@ -3,6 +3,8 @@ import { useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
 import { DashboardIndicadores, ImportacaoDados } from '../types';
+import type { CriarTransferenciaParams } from '../services/transferenciasService';
+import { transferenciasService } from '../services/transferenciasService';
 import { desfazerImportacao } from '../services/migracao';
 import { entidadesService } from '../services/entidadesService';
 import { centrosCustoService } from '../services/centrosCustoService';
@@ -173,6 +175,23 @@ export function useContas() {
   const deleteMutation = useMutation({ mutationFn: (id: string) => contasService.delete(id), onSuccess: () => queryClient.invalidateQueries({ queryKey: ['contas'] }) });
 
   return { ...query, createAccount: createMutation.mutateAsync, updateAccount: updateMutation.mutateAsync, deleteAccount: deleteMutation.mutateAsync, isCreating: createMutation.isPending };
+}
+
+export function useTransferencias() {
+  return useQuery({ queryKey: ['transferencias'], queryFn: transferenciasService.listar });
+}
+
+export function useCriarTransferencia() {
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: (params: CriarTransferenciaParams) => transferenciasService.criar(params),
+    onSuccess: () => {
+      ['transferencias', 'lancamentos', 'contasSaldos', 'dashboardStats', 'dashboardIndicadores', 'auditoriaLogs', 'notifications']
+        .forEach((queryKey) => queryClient.invalidateQueries({ queryKey: [queryKey] }));
+    },
+  });
+
+  return { criarTransferencia: mutation.mutateAsync, isCreating: mutation.isPending };
 }
 
 export function useLancamentos(filters?: any) {
