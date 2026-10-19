@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import { ArrowLeftRight, CheckCircle2, Info, Landmark, LoaderCircle } from 'lucide-react';
 import MoneyInput from '../MoneyInput';
+import ConciliacaoTransferenciaPainel from './ConciliacaoTransferenciaPainel';
 import { useCategorias, useCentrosCusto, useContas, useCriarTransferencia, useTransferencias } from '../../hooks/useData';
 import type { TransferenciaBancaria, TransferenciaStatus } from '../../types';
 
@@ -34,25 +35,31 @@ function formatarData(data: string): string {
   return dataFormatada.format(new Date(`${data}T00:00:00Z`));
 }
 
-function linhaTransferencia(transferencia: TransferenciaBancaria) {
+function linhaTransferencia(transferencia: TransferenciaBancaria, expandida: boolean, alternar: () => void) {
   const status = statusTransferencia[transferencia.status];
   return (
-    <article key={transferencia.id} className="flex flex-col gap-3 border-b border-surface-border/70 py-4 last:border-b-0 sm:flex-row sm:items-center sm:justify-between">
-      <div className="min-w-0">
-        <p className="text-xs font-semibold text-on-surface-variant">{formatarData(transferencia.data_transferencia)}</p>
-        <p className="mt-1 flex flex-wrap items-center gap-2 text-sm font-bold text-on-surface">
-          <span>{transferencia.conta_origem?.nome || 'Conta de origem'}</span>
-          <ArrowLeftRight aria-hidden="true" className="h-4 w-4 shrink-0 text-secondary" />
-          <span>{transferencia.conta_destino?.nome || 'Conta de destino'}</span>
-        </p>
-        <p className="mt-1 text-xs text-on-surface-variant">
-          Conciliação: origem {transferencia.transacao_origem_id ? 'conciliada' : 'pendente'} · destino {transferencia.transacao_destino_id ? 'conciliada' : 'pendente'}
-        </p>
+    <article key={transferencia.id} className="border-b border-surface-border/70 py-4 last:border-b-0">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold text-on-surface-variant">{formatarData(transferencia.data_transferencia)}</p>
+          <p className="mt-1 flex flex-wrap items-center gap-2 text-sm font-bold text-on-surface">
+            <span>{transferencia.conta_origem?.nome || 'Conta de origem'}</span>
+            <ArrowLeftRight aria-hidden="true" className="h-4 w-4 shrink-0 text-secondary" />
+            <span>{transferencia.conta_destino?.nome || 'Conta de destino'}</span>
+          </p>
+          <p className="mt-1 text-xs text-on-surface-variant">
+            Conciliação: origem {transferencia.transacao_origem_id ? 'conciliada' : 'pendente'} · destino {transferencia.transacao_destino_id ? 'conciliada' : 'pendente'}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center justify-between gap-3 sm:justify-end">
+          <span className="text-sm font-black text-on-surface">{moeda.format(Number(transferencia.valor))}</span>
+          <span className={`text-xs font-bold ${status.cor}`}>{status.label}</span>
+          <button type="button" aria-expanded={expandida} aria-label={`${expandida ? 'Fechar' : 'Abrir'} conciliação da transferência`} onClick={alternar} className="rounded-lg border border-surface-border px-3 py-2 text-xs font-bold text-on-surface transition hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
+            Conciliar
+          </button>
+        </div>
       </div>
-      <div className="flex shrink-0 items-center justify-between gap-3 sm:flex-col sm:items-end sm:justify-center">
-        <span className="text-sm font-black text-on-surface">{moeda.format(Number(transferencia.valor))}</span>
-        <span className={`text-xs font-bold ${status.cor}`}>{status.label}</span>
-      </div>
+      {expandida && <ConciliacaoTransferenciaPainel transferencia={transferencia} />}
     </article>
   );
 }
@@ -77,6 +84,7 @@ export default function TransferenciasBancarias() {
   const [tarifaCentroCustoId, setTarifaCentroCustoId] = useState('');
   const [erro, setErro] = useState('');
   const [confirmacao, setConfirmacao] = useState('');
+  const [transferenciaExpandidaId, setTransferenciaExpandidaId] = useState<string | null>(null);
   const tarifaCentavos = emCentavos(tarifa);
 
   const limparFormulario = () => {
@@ -217,7 +225,11 @@ export default function TransferenciasBancarias() {
         {isLoading ? <p role="status" className="py-5 text-sm text-on-surface-variant">Carregando transferências…</p>
           : isError ? <p role="alert" className="py-5 text-sm text-alert-red">Não foi possível carregar o histórico de transferências.</p>
             : transferencias.length === 0 ? <p className="py-5 text-sm text-on-surface-variant">Nenhuma transferência registrada</p>
-              : <div>{transferencias.map(linhaTransferencia)}</div>}
+              : <div>{transferencias.map((transferencia) => linhaTransferencia(
+                transferencia,
+                transferenciaExpandidaId === transferencia.id,
+                () => setTransferenciaExpandidaId((atual) => atual === transferencia.id ? null : transferencia.id),
+              ))}</div>}
       </section>
     </div>
   );

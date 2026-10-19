@@ -53,6 +53,7 @@ export interface ContaBancaria {
   saldo_inicial: number;
   data_abertura: string;
   logo_url?: string;
+  status?: string;
 }
 
 export type StatusAprovacao = 'pendente_digital' | 'digital' | 'confirmado_master' | 'reprovado';
@@ -135,8 +136,7 @@ export interface ResumoSaldo {
 }
 
 // ===========================================================================
-// Módulo de Extrato — leitura do arquivo e comparação (somente leitura)
-// Nada aqui é persistido: a comparação existe apenas na memória da tela.
+// Módulo de Extrato — leitura, comparação em memória e proveniência persistida.
 // ===========================================================================
 
 export type DirecaoExtrato = 'entrada' | 'saida';
@@ -194,6 +194,53 @@ export interface LinhaExtrato {
   textoOriginal: string;
   confianca?: ConfiancaLinha;
   documento?: string;
+  /** Só existe depois que a linha foi persistida no banco. */
+  transacaoBancoId?: string;
+}
+
+export interface TransacaoBanco {
+  id: string;
+  conta_bancaria_id: string;
+  extrato_lote_id: string;
+  data_transacao: string;
+  valor: number;
+  valor_centavos: number;
+  tipo_movimento: 'credito' | 'debito';
+  descricao_banco: string;
+  status_conciliacao: boolean;
+  pagina_origem: number;
+  linha_origem: number;
+  hash_transacao: string;
+  confianca_extracao: number;
+  estado_revisao: string;
+}
+
+export interface TransacaoBancoCandidata {
+  id: string;
+  data_transacao: string;
+  valor: number;
+  valor_centavos: number;
+  tipo_movimento: 'credito' | 'debito' | null;
+  descricao_banco: string;
+  provenienciaCompleta: boolean;
+  pendencias: string[];
+}
+
+export interface LoteExtrato {
+  id: string;
+  conta_bancaria_id: string;
+  arquivo_nome: string;
+  arquivo_tamanho: number;
+  arquivo_mime_type: string;
+  arquivo_hash: string;
+  storage_path: string;
+  formato_arquivo: string;
+  origem_extracao: string;
+  status: string;
+  paginas: number | null;
+  total_transacoes: number | null;
+  data_inicio: string | null;
+  data_fim: string | null;
 }
 
 export type MotivoNaoInterpretada =
@@ -474,4 +521,6 @@ export interface TransferenciaBancaria {
   motivo_estorno: string | null;
   conta_origem?: { nome: string } | null;
   conta_destino?: { nome: string } | null;
+  transacao_origem?: { data_transacao: string; descricao_banco: string; valor: number } | null;
+  transacao_destino?: { data_transacao: string; descricao_banco: string; valor: number } | null;
 }

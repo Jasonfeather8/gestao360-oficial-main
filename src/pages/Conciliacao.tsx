@@ -12,6 +12,7 @@ import {
   FileText,
   HelpCircle,
   Landmark,
+  Loader2,
   PenLine,
   PlusCircle,
   Sparkles,
@@ -20,9 +21,10 @@ import {
   X,
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
-import { useContas, useLancamentosDaConta } from '../hooks/useData';
+import { useContas, useLancamentosDaConta, usePersistirExtrato } from '../hooks/useData';
 import { useUIStore } from '../store/uiStore';
 import SeletorAVRModal from '../components/Conciliacao/SeletorAVRModal';
+import IdentificarTransferenciaModal from '../components/Conciliacao/IdentificarTransferenciaModal';
 import ProgressoExtrato from '../components/Conciliacao/ProgressoExtrato';
 import MigracaoDados from '../components/Migracao/MigracaoDados';
 import TransferenciasBancarias from '../components/Transferencias/TransferenciasBancarias';
@@ -57,14 +59,20 @@ export default function Conciliacao() {
   const [abaAtiva, setAbaAtiva] = useState<'conciliacao' | 'migracao' | 'transferencias'>('conciliacao');
   const [contaId, setContaId] = useState('');
   const [extrato, setExtrato] = useState<ExtratoLido | null>(null);
+  const [arquivo, setArquivo] = useState<File | null>(null);
+  const [persistido, setPersistido] = useState<number | null>(null);
+  const [erroPersistencia, setErroPersistencia] = useState<string | null>(null);
   const [processando, setProcessando] = useState(false);
   const [progresso, setProgresso] = useState<ProgressoLeituraExtrato | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [isImportOpen, setIsImportOpen] = useState(false);
+  const { persistir: persistirExtrato, isPersisting } = usePersistirExtrato();
   const [arrastando, setArrastando] = useState(false);
   const [mostrarNaoInterpretadas, setMostrarNaoInterpretadas] = useState(false);
   const [mostrarIgnoradas, setMostrarIgnoradas] = useState(false);
   const [seletorAVR, setSeletorAVR] = useState<ItemComparacao | null>(null);
+  const [identificarTransferencia, setIdentificarTransferencia] = useState<ItemComparacao | null>(null);
+  const [transferenciasIdentificadas, setTransferenciasIdentificadas] = useState<Record<string, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -81,6 +89,9 @@ export default function Conciliacao() {
     () => (extrato ? compararExtrato(extrato, lancamentos) : null),
     [extrato, lancamentos],
   );
+  const linhasNaoPersistiveis = extrato
+    ? extrato.linhas.filter((linha) => linha.confianca === 'baixa' || linha.pagina === null).length
+    : 0;
 
   const handleArquivo = async (file: File) => {
     setErro(null);
@@ -98,6 +109,9 @@ export default function Conciliacao() {
             totalPaginas: null,
             linhasLidas: extratoLido.linhas.length,
           });
+      setArquivo(file);
+      setPersistido(null);
+      setErroPersistencia(null);
       setExtrato(extratoLido);
     } catch (error) {
       setErro(error instanceof Error ? error.message : 'Não foi possível ler o extrato.');
@@ -118,11 +132,30 @@ export default function Conciliacao() {
     if (file && contaId) void handleArquivo(file);
   };
 
+  const importarParaConciliacao = async () => {
+    if (!arquivo || !extrato || !contaId) return;
+    setErroPersistencia(null);
+    try {
+      const resultadoPersistencia = await persistirExtrato({ arquivo, contaId, extrato });
+      setExtrato((atual) => atual ? {
+        ...atual,
+        linhas: atual.linhas.map((linha) => {
+          const hash = resultadoPersistencia.hashesPorLinha.get(linha.id);
+          const transacaoBancoId = hash ? resultadoPersistencia.transacoesPorHash.get(hash) : undefined;
+          return transacaoBancoId ? { ...linha, transacaoBancoId } : linha;
+        }),
+      } : atual);
+      setPersistido(resultadoPersistencia.transacoesPorHash.size);
+    } catch (error) {
+      setErroPersistencia(error instanceof Error ? error.message : 'Não foi possível persistir o extrato.');
+    }
+  };
+
   const formatarValorInput = (valor: number) =>
     valor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  // Abre o Novo Lançamento já preenchido com a linha do extrato. A tela de
-  // conciliação não grava nada: quem grava é o fluxo existente do drawer.
+  // Abre o Novo Lançamento já preenchido com a linha do extrato; a gravação
+  // do lançamento continua no fluxo existente do drawer.
   const abrirLancamentoDoExtrato = (item: ItemComparacao) => {
     const linha = item.linhaExtrato;
     if (!linha || !contaId) return;
@@ -235,24 +268,34 @@ export default function Conciliacao() {
           <p className={`text-sm font-bold ${item.direcao === 'entrada' ? 'text-bank-truth-green' : 'text-alert-red'}`}>
             {moeda.format(valorPrincipal)}
           </p>
-          {podeAgirNaConciliacao && (item.status === 'pendente_banco' || item.status === 'divergente') && (
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => abrirLancamentoDoExtrato(item)}
-                title="Criar um novo lançamento no ERP com os dados desta linha do extrato"
-                className="inline-flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-primary transition hover:bg-primary/20"
-              >
-                <PlusCircle className="h-3.5 w-3.5" />Lançar
-              </button>
-              <button
-                type="button"
-                onClick={() => abrirSeletorAVR(item)}
-                title="Ajustar (AVR) um lançamento do ERP do mesmo dia com o valor desta linha"
-                className="inline-flex items-center gap-1 rounded-lg border border-surface-border px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-on-surface-variant transition hover:bg-surface"
-              >
-                <PenLine className="h-3.5 w-3.5" />AVR
-              </button>
+          {podeAgirNaConciliacao && ((item.status === 'pendente_banco' || item.status === 'divergente') || item.linhaExtrato?.transacaoBancoId) && (
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {(item.status === 'pendente_banco' || item.status === 'divergente') && <>
+                <button
+                  type="button"
+                  onClick={() => abrirLancamentoDoExtrato(item)}
+                  title="Criar um novo lançamento no ERP com os dados desta linha do extrato"
+                  className="inline-flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-primary transition hover:bg-primary/20"
+                >
+                  <PlusCircle className="h-3.5 w-3.5" />Lançar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => abrirSeletorAVR(item)}
+                  title="Ajustar (AVR) um lançamento do ERP do mesmo dia com o valor desta linha"
+                  className="inline-flex items-center gap-1 rounded-lg border border-surface-border px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-on-surface-variant transition hover:bg-surface"
+                >
+                  <PenLine className="h-3.5 w-3.5" />AVR
+                </button>
+              </>}
+              {item.linhaExtrato?.transacaoBancoId && (transferenciasIdentificadas[item.linhaExtrato.transacaoBancoId]
+                ? <span role="status" aria-label={`Marcada como transferência; status resultante: ${transferenciasIdentificadas[item.linhaExtrato.transacaoBancoId]}`} title={`Status da transferência: ${transferenciasIdentificadas[item.linhaExtrato.transacaoBancoId]}`} className="rounded-full bg-bank-truth-green/10 px-2.5 py-1 text-[10px] font-bold text-bank-truth-green">Marcada como transferência</span>
+                : <button
+                    type="button"
+                    aria-label="Marcar transação como transferência"
+                    onClick={() => setIdentificarTransferencia(item)}
+                    className="inline-flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-primary transition hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  >Transferência</button>)}
             </div>
           )}
         </div>
@@ -291,7 +334,7 @@ export default function Conciliacao() {
       <nav aria-label="Abas de conciliação" className="flex gap-2 border-b border-surface-border">
         <button type="button" aria-current={abaAtiva === 'conciliacao' ? 'page' : undefined} onClick={() => setAbaAtiva('conciliacao')} className={`border-b-2 px-4 py-3 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${abaAtiva === 'conciliacao' ? 'border-primary text-primary' : 'border-transparent text-on-surface-variant hover:text-on-surface'}`}>Conciliação Bancária</button>
         <button type="button" aria-current={abaAtiva === 'migracao' ? 'page' : undefined} onClick={() => setAbaAtiva('migracao')} className={`border-b-2 px-4 py-3 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${abaAtiva === 'migracao' ? 'border-primary text-primary' : 'border-transparent text-on-surface-variant hover:text-on-surface'}`}>Migração de Dados</button>
-        <button type="button" aria-current={abaAtiva === 'transferencias' ? 'page' : undefined} onClick={() => setAbaAtiva('transferencias')} className={`border-b-2 px-4 py-3 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${abaAtiva === 'transferencias' ? 'border-primary text-primary' : 'border-transparent text-on-surface-variant hover:text-on-surface'}`}>Transferências</button>
+        {podeAgirNaConciliacao && <button type="button" aria-current={abaAtiva === 'transferencias' ? 'page' : undefined} onClick={() => setAbaAtiva('transferencias')} className={`border-b-2 px-4 py-3 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${abaAtiva === 'transferencias' ? 'border-primary text-primary' : 'border-transparent text-on-surface-variant hover:text-on-surface'}`}>Transferências</button>}
       </nav>
       <section hidden={abaAtiva !== 'conciliacao'}>
       <div className="space-y-6 pb-8 text-on-surface">
@@ -379,11 +422,42 @@ export default function Conciliacao() {
                       {[extrato.meta.banco && `Banco ${extrato.meta.banco}`, extrato.meta.agencia && `Agência ${extrato.meta.agencia}`, extrato.meta.conta && `Conta ${extrato.meta.conta}`].filter(Boolean).join(' · ')}
                     </p>
                   )}
+                  <div className="mt-3 space-y-2">
+                    {persistido !== null ? (
+                      <span role="status" className="inline-flex items-center gap-1.5 rounded-full bg-bank-truth-green/10 px-3 py-1.5 text-xs font-bold text-bank-truth-green">
+                        <CheckCircle2 aria-hidden="true" className="h-4 w-4" />Importado para conciliação · {persistido} {persistido === 1 ? 'transação' : 'transações'}
+                      </span>
+                    ) : (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="inline-flex rounded-full bg-surface-container-low px-3 py-1.5 text-xs font-semibold text-secondary">Somente leitura (memória)</span>
+                        {hasRole(['master', 'gerente']) ? (
+                          <button
+                            type="button"
+                            aria-label="Importar extrato para conciliação"
+                            onClick={() => void importarParaConciliacao()}
+                            disabled={!contaId || !arquivo || !extrato || isPersisting}
+                            className="inline-flex items-center gap-2 rounded-xl bg-primary px-3 py-2 text-xs font-bold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {isPersisting && <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />}
+                            {isPersisting ? 'Importando...' : 'Importar para conciliação'}
+                          </button>
+                        ) : (
+                          <p className="text-xs text-secondary">A persistência exige perfil Master ou Gerente.</p>
+                        )}
+                      </div>
+                    )}
+                    {erroPersistencia && <p role="alert" className="text-sm text-alert-red">{erroPersistencia}</p>}
+                    {linhasNaoPersistiveis > 0 && (
+                      <p className="rounded-xl border border-pending-amber/30 bg-pending-amber/10 px-3 py-2 text-xs text-pending-amber">
+                        {linhasNaoPersistiveis} {linhasNaoPersistiveis === 1 ? 'linha não será persistida' : 'linhas não serão persistidas'} por confiança baixa ou por falta de página identificada. Elas continuam visíveis na comparação, mas não fazem parte da conciliação persistida.
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
               <div className="flex shrink-0 gap-2">
                 <button type="button" onClick={() => { setErro(null); setIsImportOpen(true); }} className="rounded-xl border border-surface-border px-4 py-2 text-sm font-semibold text-on-surface hover:bg-surface">Trocar arquivo</button>
-                <button type="button" onClick={() => setExtrato(null)} className="inline-flex items-center gap-2 rounded-xl border border-alert-red/20 px-4 py-2 text-sm font-semibold text-alert-red hover:bg-alert-red/10"><Trash2 className="h-4 w-4" />Remover</button>
+                <button type="button" onClick={() => { setExtrato(null); setArquivo(null); setPersistido(null); setErroPersistencia(null); }} className="inline-flex items-center gap-2 rounded-xl border border-alert-red/20 px-4 py-2 text-sm font-semibold text-alert-red hover:bg-alert-red/10"><Trash2 className="h-4 w-4" />Remover</button>
               </div>
             </section>
 
@@ -556,7 +630,19 @@ export default function Conciliacao() {
       </div>
       </section>
       <section hidden={abaAtiva !== 'migracao'}><MigracaoDados /></section>
-      <section hidden={abaAtiva !== 'transferencias'}><TransferenciasBancarias /></section>
+      {podeAgirNaConciliacao && <section hidden={abaAtiva !== 'transferencias'}><TransferenciasBancarias /></section>}
+      {identificarTransferencia?.linhaExtrato?.transacaoBancoId && (
+        <IdentificarTransferenciaModal
+          linha={identificarTransferencia.linhaExtrato}
+          contaTransacaoId={contaId}
+          contas={contas}
+          onFechar={() => setIdentificarTransferencia(null)}
+          onIdentificada={(transferencia) => setTransferenciasIdentificadas((atuais) => ({
+            ...atuais,
+            [identificarTransferencia.linhaExtrato!.transacaoBancoId!]: transferencia.status,
+          }))}
+        />
+      )}
     </div>
   );
 }

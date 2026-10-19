@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
 import { DashboardIndicadores, ImportacaoDados } from '../types';
+import type { TransferenciaBancaria } from '../types';
 import type { CriarTransferenciaParams } from '../services/transferenciasService';
 import { transferenciasService } from '../services/transferenciasService';
 import { desfazerImportacao } from '../services/migracao';
@@ -16,6 +17,7 @@ import { usuariosService } from '../services/usuariosService';
 import { auditoriaService } from '../services/auditoriaService';
 import { notificationsService } from '../services/notificationsService';
 import { diagnosticLogger } from '../services/diagnosticLogger';
+import { persistirExtrato } from '../services/extrato/persistencia';
 
 export function useNotifications() {
   const queryClient = useQueryClient();
@@ -192,6 +194,51 @@ export function useCriarTransferencia() {
   });
 
   return { criarTransferencia: mutation.mutateAsync, isCreating: mutation.isPending };
+}
+
+export function useTransacoesCandidatas(transferencia: TransferenciaBancaria | null, lado: 'origem' | 'destino') {
+  const pendente = Boolean(transferencia && transferencia.status !== 'estornada' && (
+    lado === 'origem' ? !transferencia.transacao_origem_id : !transferencia.transacao_destino_id
+  ));
+  return useQuery({
+    queryKey: ['transacoesBanco', 'candidatas', transferencia?.id, lado],
+    queryFn: () => transferencia ? transferenciasService.listarCandidatas(transferencia, lado) : Promise.resolve([]),
+    enabled: pendente,
+  });
+}
+
+export function useConciliarTransferencia() {
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: ({ transferenciaId, transacaoId, lado }: { transferenciaId: string; transacaoId: string; lado: 'origem' | 'destino' }) =>
+      transferenciasService.conciliar(transferenciaId, transacaoId, lado),
+    onSuccess: () => {
+      ['transferencias', 'lancamentos', 'contasSaldos', 'dashboardStats', 'dashboardIndicadores', 'auditoriaLogs', 'notifications', 'transacoesBanco']
+        .forEach((queryKey) => queryClient.invalidateQueries({ queryKey: [queryKey] }));
+    },
+  });
+  return { conciliarTransferencia: mutation.mutateAsync, isConciliando: mutation.isPending };
+}
+
+export function useIdentificarTransacaoTransferencia() {
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: ({ transacaoId, contaRelacionadaId }: { transacaoId: string; contaRelacionadaId: string }) =>
+      transferenciasService.identificar(transacaoId, contaRelacionadaId),
+    onSuccess: () => {
+      ['transferencias', 'lancamentos', 'contasSaldos', 'dashboardStats', 'dashboardIndicadores', 'auditoriaLogs', 'notifications', 'transacoesBanco']
+        .forEach((queryKey) => queryClient.invalidateQueries({ queryKey: [queryKey] }));
+    },
+  });
+  return { identificarTransacaoTransferencia: mutation.mutateAsync, isIdentificando: mutation.isPending };
+}
+
+export function useSugerirTransferenciasDestino(transacaoId: string | null) {
+  return useQuery({
+    queryKey: ['transferencias', 'sugestoesDestino', transacaoId],
+    queryFn: () => transacaoId ? transferenciasService.sugerirDestino(transacaoId) : Promise.resolve([]),
+    enabled: !!transacaoId,
+  });
 }
 
 export function useLancamentos(filters?: any) {
@@ -382,4 +429,21 @@ export function useDesfazerImportacao() {
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
     },
   });
+}
+
+export function usePersistirExtrato() {
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: persistirExtrato,
+    onSuccess: () => {
+      ['transacoesBanco', 'transferencias', 'auditoriaLogs', 'notifications'].forEach((queryKey) => {
+        queryClient.invalidateQueries({ queryKey: [queryKey] });
+      });
+    },
+  });
+
+  return {
+    persistir: mutation.mutateAsync,
+    isPersisting: mutation.isPending,
+  };
 }
