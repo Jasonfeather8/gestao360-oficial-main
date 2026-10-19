@@ -59,6 +59,7 @@ function linhaTransferencia(
           <p className="mt-1 text-xs text-on-surface-variant">
             Conciliação: origem {transferencia.transacao_origem_id ? 'conciliada' : 'pendente'} · destino {transferencia.transacao_destino_id ? 'conciliada' : 'pendente'}
           </p>
+          {transferencia.tarifa && <p className="mt-1 text-xs text-on-surface-variant">Tarifa: {moeda.format(Number(transferencia.tarifa.valor_previsto))}</p>}
           {transferencia.status === 'conciliada' && transferencia.aprovado_em && <p className="mt-1 text-xs text-bank-truth-green">Aprovada em {dataHoraFormatada.format(new Date(transferencia.aprovado_em))}</p>}
           {transferencia.reprovado_em && <p className="mt-1 text-xs text-alert-red">Reprovada em {dataHoraFormatada.format(new Date(transferencia.reprovado_em))}{transferencia.motivo_reprovacao ? ` · ${transferencia.motivo_reprovacao}` : ''}</p>}
           {transferencia.estornado_em && <p className="mt-1 text-xs text-alert-red">Estornada em {dataHoraFormatada.format(new Date(transferencia.estornado_em))}{transferencia.motivo_estorno ? ` · ${transferencia.motivo_estorno}` : ''}</p>}

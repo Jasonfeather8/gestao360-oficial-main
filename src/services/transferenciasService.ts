@@ -66,7 +66,7 @@ export const transferenciasService = {
   listar: async (): Promise<TransferenciaBancaria[]> => {
     const { data, error } = await supabase
       .from('transferencias_bancarias')
-      .select('*, conta_origem:contas_bancarias!transferencias_bancarias_conta_origem_id_fkey(nome), conta_destino:contas_bancarias!transferencias_bancarias_conta_destino_id_fkey(nome), transacao_origem:transacoes_banco!transferencias_bancarias_transacao_origem_id_fkey(data_transacao, descricao_banco, valor), transacao_destino:transacoes_banco!transferencias_bancarias_transacao_destino_id_fkey(data_transacao, descricao_banco, valor)')
+      .select('*, conta_origem:contas_bancarias!transferencias_bancarias_conta_origem_id_fkey(nome), conta_destino:contas_bancarias!transferencias_bancarias_conta_destino_id_fkey(nome), transacao_origem:transacoes_banco!transferencias_bancarias_transacao_origem_id_fkey(data_transacao, descricao_banco, valor), transacao_destino:transacoes_banco!transferencias_bancarias_transacao_destino_id_fkey(data_transacao, descricao_banco, valor), tarifa:lancamentos_financeiros!transferencias_tarifa_lancamento_fkey(valor_previsto, categoria_id, centro_custo_id)')
       .order('data_transferencia', { ascending: false })
       .order('created_at', { ascending: false });
     if (error) throw error;

@@ -523,4 +523,5 @@ export interface TransferenciaBancaria {
   conta_destino?: { nome: string } | null;
   transacao_origem?: { data_transacao: string; descricao_banco: string; valor: number } | null;
   transacao_destino?: { data_transacao: string; descricao_banco: string; valor: number } | null;
+  tarifa?: { valor_previsto: number; categoria_id: string | null; centro_custo_id: string | null } | null;
 }

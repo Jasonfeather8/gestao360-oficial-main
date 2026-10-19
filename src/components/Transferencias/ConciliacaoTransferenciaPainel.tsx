@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { CheckCircle2, LoaderCircle, Link2 } from 'lucide-react';
-import { useConciliarTransferencia, useTransacoesCandidatas } from '../../hooks/useData';
+import { useCategorias, useCentrosCusto, useConciliarTransferencia, useTransacoesCandidatas } from '../../hooks/useData';
 import type { TransacaoBancoCandidata, TransferenciaBancaria } from '../../types';
 
 const moeda = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -85,9 +85,17 @@ function LadoTransferencia({ transferencia, lado, conciliada, bloquearAcoes, tra
 }
 
 export default function ConciliacaoTransferenciaPainel({ transferencia }: { transferencia: TransferenciaBancaria }) {
+  const { data: categorias = [] } = useCategorias();
+  const { data: centrosCusto = [] } = useCentrosCusto();
   const apenasProgresso = transferencia.status === 'estornada'
     || transferencia.status === 'conciliada_pendente_master'
     || transferencia.status === 'conciliada';
+  const nomeCategoria = transferencia.tarifa?.categoria_id
+    ? categorias.find((categoria) => categoria.id === transferencia.tarifa?.categoria_id)?.nome || '—'
+    : '—';
+  const nomeCentroCusto = transferencia.tarifa?.centro_custo_id
+    ? centrosCusto.find((centro) => centro.id === transferencia.tarifa?.centro_custo_id)?.nome || '—'
+    : '—';
 
   return (
     <div className="mt-4 space-y-3 border-t border-surface-border pt-4">
@@ -95,6 +103,7 @@ export default function ConciliacaoTransferenciaPainel({ transferencia }: { tran
         <h3 className="text-xs font-black uppercase tracking-widest text-secondary">Conciliação bancária</h3>
         <span className="text-xs font-bold text-on-surface-variant">{rotulosStatus[transferencia.status]}</span>
       </div>
+      {transferencia.tarifa && <p className="rounded-lg bg-surface-container-low p-3 text-xs text-on-surface-variant">Tarifa bancária (despesa da transferência): {moeda.format(Number(transferencia.tarifa.valor_previsto))} · Categoria: {nomeCategoria} · Centro de custo: {nomeCentroCusto}</p>}
       <div className="grid gap-3 md:grid-cols-2">
         <LadoTransferencia transferencia={transferencia} lado="origem" conciliada={!!transferencia.transacao_origem_id} bloquearAcoes={apenasProgresso} transacao={transferencia.transacao_origem} />
         <LadoTransferencia transferencia={transferencia} lado="destino" conciliada={!!transferencia.transacao_destino_id} bloquearAcoes={apenasProgresso} transacao={transferencia.transacao_destino} />
