@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   AlertTriangle,
@@ -56,7 +57,15 @@ export default function Conciliacao() {
     setAvrPreset,
   } = useUIStore();
   const podeAgirNaConciliacao = hasRole(['master']);
-  const [abaAtiva, setAbaAtiva] = useState<'conciliacao' | 'migracao' | 'transferencias'>('conciliacao');
+  const [searchParams] = useSearchParams();
+  const abaDaUrl = searchParams.get('aba');
+  const [abaAtiva, setAbaAtiva] = useState<'conciliacao' | 'migracao' | 'transferencias'>(() => (
+    abaDaUrl === 'migracao'
+      ? 'migracao'
+      : abaDaUrl === 'transferencias' && podeAgirNaConciliacao
+        ? 'transferencias'
+        : 'conciliacao'
+  ));
   const [contaId, setContaId] = useState('');
   const [extrato, setExtrato] = useState<ExtratoLido | null>(null);
   const [arquivo, setArquivo] = useState<File | null>(null);
@@ -74,6 +83,16 @@ export default function Conciliacao() {
   const [identificarTransferencia, setIdentificarTransferencia] = useState<ItemComparacao | null>(null);
   const [transferenciasIdentificadas, setTransferenciasIdentificadas] = useState<Record<string, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setAbaAtiva(
+      abaDaUrl === 'migracao'
+        ? 'migracao'
+        : abaDaUrl === 'transferencias' && podeAgirNaConciliacao
+          ? 'transferencias'
+          : 'conciliacao',
+    );
+  }, [abaDaUrl, podeAgirNaConciliacao]);
 
   useEffect(() => {
     if (contas.length > 0 && !contaId) setContaId(contas[0].id);

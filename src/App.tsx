@@ -247,6 +247,8 @@ function AppContent() {
 
                       {/* Rota exclusiva do Master */}
                       <Route path="/conciliacao" element={<MasterRoute><Conciliacao /></MasterRoute>} />
+                      {/* Destino do deep link de notificação de aprovação do Master. */}
+                      <Route path="/aprovacao-master" element={<Navigate to="/conciliacao?aba=transferencias" replace />} />
                       <Route path="/recorrencias" element={RECORRENCIAS_HABILITADA ? <Recorrencias /> : <Navigate to="/dashboard" replace />} />
                       <Route path="/cadastros" element={<Cadastros />} />
 
