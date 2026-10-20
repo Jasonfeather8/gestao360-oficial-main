@@ -162,6 +162,7 @@ export default function Dashboard() {
      auditado: accountsBalances.reduce((sum, acc) => sum + (acc.auditado || 0), 0)
    };
  }, [accountsBalances]);
+ const cofreLocalAccount = accountsBalances.find(account => account.is_cofre_local);
 
   const costCenterBreakdown = useMemo(() => {
     return centrosCusto.map(cc => {
@@ -363,6 +364,15 @@ export default function Dashboard() {
                   </button>
                 )}
               </div>
+              {cofreLocalAccount && (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-surface-border bg-surface-container-low px-4 py-3">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-on-surface">Cofre Local · {cofreLocalAccount.nome_banco || cofreLocalAccount.nome}</p>
+                    <p className="mt-0.5 text-[9px] font-semibold uppercase tracking-wider text-on-surface-variant">Saldo operacional · já incluído no saldo consolidado</p>
+                  </div>
+                  <span className="font-mono text-sm font-bold text-on-surface">{valueFormatter(cofreLocalAccount.operacional || 0)}</span>
+                </div>
+              )}
               <div ref={dragScrollAccounts.ref} {...dragScrollAccounts.props} className="flex gap-4 overflow-x-auto pb-2 scroll-smooth select-none px-0.5">
                 {/* Card Todas as Contas */}
                 <div
@@ -412,7 +422,10 @@ export default function Dashboard() {
                           (acc.nome || '').substring(0, 2)
                         )}
                       </div>
-                      <span className="text-[10px] font-black uppercase tracking-widest text-secondary truncate">{acc.nome}</span>
+                      <div className="min-w-0">
+                        <span className="block truncate text-[10px] font-black uppercase tracking-widest text-secondary">{acc.nome}</span>
+                        {acc.is_cofre_local && <span className="mt-1 inline-flex rounded-full border border-surface-border bg-surface px-2 py-0.5 text-[8px] font-bold text-primary">Cofre Local</span>}
+                      </div>
                     </div>
                     
                     <div className="space-y-1">

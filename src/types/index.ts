@@ -53,6 +53,7 @@ export interface ContaBancaria {
   saldo_inicial: number;
   data_abertura: string;
   logo_url?: string;
+  is_cofre_local?: boolean;
   status?: string;
 }
 

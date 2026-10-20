@@ -70,6 +70,7 @@ export default function AccountFilterCards({
                     <p className={`text-[10px] font-black uppercase truncate tracking-tighter ${isSelected ? 'text-primary' : 'text-neutral-900'}`}>
                       {acc.nome_banco || acc.nome}
                     </p>
+                    {acc.is_cofre_local && <span className="mt-1 inline-flex rounded-full border border-surface-border bg-surface px-2 py-0.5 text-[8px] font-bold text-primary">Cofre Local</span>}
                   </div>
                 </div>
                 {isSelected && <CheckCircle2 className="w-4 h-4 text-primary shrink-0" />}

@@ -78,6 +78,7 @@ export default function Cadastros() {
   const [bankName, setBankName] = useState('');
   const [bankInitial, setBankInitial] = useState('');
   const [bankLogoUrl, setBankLogoUrl] = useState('');
+  const [isCofreLocal, setIsCofreLocal] = useState(false);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [ccName, setCCName] = useState('');
   const [ccDesc, setCCDesc] = useState('');
@@ -95,6 +96,7 @@ export default function Cadastros() {
     setBankName(c.nome_banco || c.nome);
     setBankInitial(c.saldo_inicial.toFixed(2).replace('.', ','));
     setBankLogoUrl(c.logo_url || '');
+    setIsCofreLocal(!!c.is_cofre_local);
     setIsNewAccountOpen(true);
   };
 
@@ -131,7 +133,8 @@ export default function Cadastros() {
             nome_banco: bankName,
             nome: bankName,
             saldo_inicial: saldo,
-            logo_url: bankLogoUrl
+            logo_url: bankLogoUrl,
+            is_cofre_local: isCofreLocal
           }
         });
       } else {
@@ -142,7 +145,8 @@ export default function Cadastros() {
           conta: '00000-0',
           saldo_inicial: saldo,
           data_abertura: new Date().toISOString(),
-          logo_url: bankLogoUrl
+          logo_url: bankLogoUrl,
+          is_cofre_local: isCofreLocal
         });
       }
       setIsNewAccountOpen(false);
@@ -150,7 +154,18 @@ export default function Cadastros() {
       setBankName('');
       setBankInitial('');
       setBankLogoUrl('');
-    } catch (err) { alert('Erro ao salvar conta'); }
+      setIsCofreLocal(false);
+    } catch (err: any) {
+      const errorMessages = [err?.message, err?.details, err?.hint, err?.cause?.message]
+        .filter((message): message is string => typeof message === 'string')
+        .join(' ');
+      const errorCode = err?.code ?? err?.cause?.code;
+      if (errorCode === '23505' || errorMessages.includes('contas_bancarias_unico_cofre_local')) {
+        alert('Apenas uma conta bancária pode ser o Cofre Local. Desmarque o Cofre Local da conta existente antes de marcar outra.');
+      } else {
+        alert('Erro ao salvar conta');
+      }
+    }
   };
 
   const handleCCSubmit = async (e: React.FormEvent) => {
@@ -257,7 +272,7 @@ export default function Cadastros() {
         <Button
           onClick={() => {
             if (activeSubTab === 'contas') {
-              setEditingAccount(null); setBankName(''); setBankInitial(''); setIsNewAccountOpen(true);
+              setEditingAccount(null); setBankName(''); setBankInitial(''); setIsCofreLocal(false); setIsNewAccountOpen(true);
             } else if (activeSubTab === 'centros') {
               setEditingCC(null); setCCName(''); setCCDesc(''); setIsNewCCOpen(true);
             } else {
@@ -308,7 +323,10 @@ export default function Cadastros() {
                             <Coins className="w-5 h-5" />
                           )}
                         </div>
-                        <p className="text-neutral-900 font-black uppercase tracking-tighter">{c.nome_banco || c.nome}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-neutral-900 font-black uppercase tracking-tighter">{c.nome_banco || c.nome}</p>
+                          {c.is_cofre_local && <span className="rounded-full border border-surface-border bg-surface px-2 py-1 text-[9px] font-bold text-primary">Cofre Local</span>}
+                        </div>
                       </div>
                     </td>
                     <td className="py-4 px-8 font-mono text-neutral-500">{new Date(c.data_abertura).toLocaleDateString()}</td>
@@ -521,6 +539,23 @@ export default function Cadastros() {
                     placeholder="0,00"
                     required
                   />
+                </div>
+                <div className="space-y-2">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Esse Banco é Cofre Local?</span>
+                  <div className="flex gap-2">
+                    {[{ label: 'Sim', value: true }, { label: 'Não', value: false }].map(option => (
+                      <button
+                        key={option.label}
+                        type="button"
+                        aria-pressed={isCofreLocal === option.value}
+                        onClick={() => setIsCofreLocal(option.value)}
+                        className={`flex-1 rounded-xl border px-4 py-2 text-xs font-bold transition-colors ${isCofreLocal === option.value ? 'border-primary bg-primary text-white' : 'border-surface-border bg-surface text-on-surface hover:border-primary'}`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[10px] font-medium text-neutral-500">Conta usada para movimentar dinheiro em espécie.</p>
                 </div>
 
               </div>

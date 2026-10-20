@@ -8,6 +8,7 @@ export type TabType =
   | 'pagar'
   | 'receber'
   | 'conciliacao'
+  | 'cofre-local'
   | 'recorrencias'
   | 'crm'
   | 'cadastros'

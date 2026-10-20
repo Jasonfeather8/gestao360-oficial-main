@@ -18,6 +18,32 @@ import { auditoriaService } from '../services/auditoriaService';
 import { notificationsService } from '../services/notificationsService';
 import { diagnosticLogger } from '../services/diagnosticLogger';
 import { persistirExtrato } from '../services/extrato/persistencia';
+import { cofreLocalService } from '../services/cofreLocalService';
+
+export function useCofreLocalConta() {
+  return useQuery({
+    queryKey: ['cofreLocal', 'conta'],
+    queryFn: cofreLocalService.getConta,
+  });
+}
+
+export function useCofreLocalLancamentos(contaId: string | null, startDate: string | null, endDate: string | null) {
+  const enabled = Boolean(contaId && startDate && endDate);
+  return useQuery({
+    queryKey: ['cofreLocal', 'lancamentos', contaId, startDate, endDate],
+    queryFn: ({ signal }) => cofreLocalService.getLancamentos(contaId as string, startDate as string, endDate as string, signal),
+    enabled,
+  });
+}
+
+export function useCofreLocalTransacoes(contaId: string | null, startDate: string | null, endDate: string | null) {
+  const enabled = Boolean(contaId && startDate && endDate);
+  return useQuery({
+    queryKey: ['cofreLocal', 'transacoesBanco', contaId, startDate, endDate],
+    queryFn: ({ signal }) => cofreLocalService.getTransacoesBanco(contaId as string, startDate as string, endDate as string, signal),
+    enabled,
+  });
+}
 
 export function useNotifications() {
   const queryClient = useQueryClient();
