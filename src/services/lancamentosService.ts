@@ -600,6 +600,7 @@ export const lancamentosService = {
    conta_bancaria_id: string,
    centro_custo_id?: string,
    categoria_id?: string,
+   entidade_id?: string,
    tipo_baixa?: 'financeira' | 'bpi' | 'avr',
    valor_desconto?: number,
    valor_acrescimo?: number,
@@ -748,6 +749,7 @@ export const lancamentosService = {
        ...(data.conta_bancaria_id ? { conta_bancaria_id: data.conta_bancaria_id } : {}),
        ...(data.centro_custo_id ? { centro_custo_id: data.centro_custo_id } : {}),
        ...(data.categoria_id ? { categoria_id: data.categoria_id } : {}),
+       ...(data.entidade_id ? { entidade_id: data.entidade_id } : {}),
        ...(parcelaSelecionadaAVR?.data ? { data_vencimento: parcelaSelecionadaAVR.data } : {}),
        observacoes: (current.observacoes || '') + `\n[AVR - Ajuste Realizado em ${timestampStr}] Valor alterado de R$ ${current.valor_original || current.valor_previsto} para R$ ${valorTotalAVR}. Motivo: ${data.motivo_ajuste || 'Não informado'}`,
      };
@@ -796,6 +798,7 @@ export const lancamentosService = {
            ...(data.conta_bancaria_id ? { conta_bancaria_id: data.conta_bancaria_id } : {}),
            ...(data.centro_custo_id ? { centro_custo_id: data.centro_custo_id } : {}),
            ...(data.categoria_id ? { categoria_id: data.categoria_id } : {}),
+           ...(data.entidade_id ? { entidade_id: data.entidade_id } : {}),
            ...(data.condicao ? { condicao: data.condicao } : {}),
            ...(data.data_competencia ? { data_competencia: data.data_competencia } : {}),
            ...(data.data_emissao ? { data_emissao: data.data_emissao } : {}),

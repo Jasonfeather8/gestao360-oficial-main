@@ -690,6 +690,7 @@ export default function NovoLancamentoDrawer() {
           conta_bancaria_id: lancamentoFormDraft.conta_bancaria_id,
           centro_custo_id: lancamentoFormDraft.centro_custo_id,
           categoria_id: lancamentoFormDraft.categoria_id,
+          entidade_id: lancamentoFormDraft.entidade_id,
           condicao: lancamentoFormDraft.condicao,
           data_competencia: lancamentoFormDraft.data_competencia,
           data_emissao: lancamentoFormDraft.data_emissao,
