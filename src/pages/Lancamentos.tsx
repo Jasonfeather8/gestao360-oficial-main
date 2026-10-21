@@ -523,7 +523,7 @@ export default function Lancamentos({
     { valorPrevisto: 0, desconto: 0, acrescimo: 0, valorPago: 0, liquido: 0, aPagar: 0, entradas: 0, saidas: 0 }
   );
 
-  const mirrorColumnCount = isOperationalView ? 15 : 11;
+  const mirrorColumnCount = isOperationalView ? 15 : 12;
   const hasMeasuredMirrorColumns = columnWidths.length === mirrorColumnCount;
   const mirrorGridWidth = hasMeasuredMirrorColumns
     ? `${columnWidths.reduce((total, width) => total + width, 0)}px`
@@ -638,14 +638,16 @@ export default function Lancamentos({
     const conciliacao = item.conciliacoes?.[0];
     if (!conciliacao) return null;
     const data = conciliacao.data_conciliacao?.slice(0, 10).split('-').reverse().join('/');
+    const label = data ? `Conciliado com o extrato em ${data}` : 'Conciliado com o extrato';
 
     return (
       <span
-        className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded bg-primary/10 text-primary font-black border border-primary/30 text-[9px] uppercase tracking-tighter"
-        title={data ? `Conciliado com o extrato em ${data}` : undefined}
+        className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-primary/10 text-primary border border-primary/30"
+        title={label}
+        role="img"
+        aria-label={label}
       >
-        <Link2 className="w-3 h-3" />
-        Conciliado
+        <Link2 className="w-3 h-3" aria-hidden="true" />
       </span>
     );
   };
@@ -1019,6 +1021,7 @@ export default function Lancamentos({
                     <th className="py-5 px-4">Pagamento</th>
                     <th className="py-5 px-4 text-right">Valor</th>
                     <th className="py-5 px-4 text-center">Aprovação</th>
+                    <th className="py-5 px-4 text-center">Conciliação</th>
                     <th className="py-5 px-4 text-center">Banco</th>
                     <th className="py-5 px-3 text-center">Recibo</th>
                   </>
@@ -1028,11 +1031,11 @@ export default function Lancamentos({
             </thead>
             <tbody className="text-[11px] font-bold">
               {isLoading ? (
-                <tr><td colSpan={isOperationalView ? 15 : 11} className="py-24 text-center"><div className="flex flex-col items-center gap-3 opacity-40"><Clock className="w-10 h-10 animate-spin text-primary" /><p className="font-black uppercase text-[10px] tracking-widest">Sincronizando registros...</p></div></td></tr>
+                <tr><td colSpan={isOperationalView ? 15 : 12} className="py-24 text-center"><div className="flex flex-col items-center gap-3 opacity-40"><Clock className="w-10 h-10 animate-spin text-primary" /><p className="font-black uppercase text-[10px] tracking-widest">Sincronizando registros...</p></div></td></tr>
               ) : isError ? (
-                <tr><td colSpan={isOperationalView ? 15 : 11} className="py-24 text-center"><div className="flex flex-col items-center gap-3 text-alert-red"><AlertTriangle className="w-10 h-10" /><p className="font-black uppercase text-[10px] tracking-widest">Erro ao carregar dados. Tente simplificar a busca.</p></div></td></tr>
+                <tr><td colSpan={isOperationalView ? 15 : 12} className="py-24 text-center"><div className="flex flex-col items-center gap-3 text-alert-red"><AlertTriangle className="w-10 h-10" /><p className="font-black uppercase text-[10px] tracking-widest">Erro ao carregar dados. Tente simplificar a busca.</p></div></td></tr>
               ) : filteredLancamentos.length === 0 ? (
-                <tr><td colSpan={isOperationalView ? 15 : 11} className="py-24 text-center"><div className="flex flex-col items-center gap-3 opacity-20"><Receipt className="w-12 h-12" /><p className="font-black uppercase text-[10px] tracking-widest">Nenhum lançamento localizado</p></div></td></tr>
+                <tr><td colSpan={isOperationalView ? 15 : 12} className="py-24 text-center"><div className="flex flex-col items-center gap-3 opacity-20"><Receipt className="w-12 h-12" /><p className="font-black uppercase text-[10px] tracking-widest">Nenhum lançamento localizado</p></div></td></tr>
               ) : (
                 <>
                   {filteredLancamentos.map((item, idx) => {
@@ -1121,10 +1124,7 @@ export default function Lancamentos({
                             {valueFormatter(getSaldoAPagar(item))}
                           </td>
                           <td className="py-3 px-4 text-center whitespace-nowrap">
-                            <div className="flex items-center justify-center gap-1">
-                              {renderStatusBadge(item)}
-                              {renderConciliadoBadge(item)}
-                            </div>
+                            {renderStatusBadge(item)}
                           </td>
                           {renderBancoCell(item)}
                           <td className="py-3 px-3 text-center" onClick={(e) => e.stopPropagation()}>
@@ -1194,11 +1194,9 @@ export default function Lancamentos({
                             </span>
                           </td>
                           <td className="py-3 px-4 text-center whitespace-nowrap">
-                            <div className="flex items-center justify-center gap-1">
-                              {renderStatusBadge(item)}
-                              {renderConciliadoBadge(item)}
-                            </div>
+                            {renderStatusBadge(item)}
                           </td>
+                          <td className="py-3 px-4 text-center">{renderConciliadoBadge(item)}</td>
                           {renderBancoCell(item)}
                           <td className="py-3 px-3 text-center" onClick={(e) => e.stopPropagation()}>
                             <button
@@ -1322,6 +1320,7 @@ export default function Lancamentos({
                   <div className="py-3 px-4 text-right font-black font-mono text-xs text-neutral-900">
                     {valueFormatter(printTotals.liquido)}
                   </div>
+                  <div className="py-3 px-4" />
                   <div className="py-3 px-4" />
                   <div className="py-3 px-4" />
                   <div className="py-3 px-3" />
