@@ -160,11 +160,21 @@ export default function Conciliacao() {
   }, [progresso?.etapa, carregandoLancamentos]);
 
   const selecionarArquivo = (file?: File) => {
-    if (file && contaId) void handleArquivo(file);
+    if (!file) return;
+    if (!contaId) {
+      setErro('Selecione a conta bancária antes de escolher o arquivo do extrato.');
+      return;
+    }
+    void handleArquivo(file);
   };
 
   const importarParaConciliacao = async () => {
-    if (!arquivo || !extrato || !contaId) return;
+    // A leitura vive só na memória: se a página recarregar, o extrato e o arquivo
+    // somem. Sem este aviso o clique simplesmente não faria nada.
+    if (!arquivo || !extrato || !contaId) {
+      setErroPersistencia('A leitura do extrato foi perdida porque a página recarregou. Escolha o arquivo do extrato novamente e clique em Importar para conciliação.');
+      return;
+    }
     setErroPersistencia(null);
     try {
       const resultadoPersistencia = await persistirExtrato({ arquivo, contaId, extrato });
