@@ -50,6 +50,8 @@ interface ContextoLote {
   conta: string | null;
   periodoInicio: string | null;
   periodoFim: string | null;
+  /** Último dia lido no lote anterior: uma continuação de dia pode cair no lote seguinte. */
+  ultimoDia?: string | null;
 }
 
 function valorTexto(valor: unknown): string | null {
@@ -281,6 +283,13 @@ export async function lerExtratoIA(
       }
 
       linhas.push(...mapearLinhas(data.linhas, loteAtual));
+      // O último dia lido alimenta o contexto do próximo lote, para que uma
+      // continuação de dia sem cabeçalho próprio herde o dia correto.
+      const ultimoDiaDoLote = data.linhas
+        .map((linha) => linha?.data)
+        .filter((valor): valor is string => dataValida(valor))
+        .pop() ?? null;
+      if (contexto) contexto.ultimoDia = ultimoDiaDoLote;
       naoInterpretadas.push(...mapearDuvidosas(data.linhasDuvidosas));
       linhasIgnoradas.push(...mapearIgnoradas(data.linhasIgnoradas));
       tokensEntrada += valorNumero(data.uso?.tokensEntrada) ?? 0;

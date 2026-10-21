@@ -89,6 +89,18 @@ const schema = {
   },
 }
 
+// Regras de data acrescentadas ao prompt. Existem porque a data de uma transação
+// em extrato agrupado por dia não está na linha: está no cabeçalho de dia da seção,
+// que atravessa a quebra de página. Sem isso o modelo tende a usar a data de
+// geração do documento ("Extrato gerado no dia ...") para as linhas de continuação.
+const REGRAS_DE_DATA = `
+Regras de data (têm prioridade sobre a regra 4):
+12. A "data" de uma transação é o DIA A QUE ELA PERTENCE. Quando o extrato agrupa as transações por dia, esse dia vem do cabeçalho de dia da seção (ex.: "14/09/2026", "Data: 14/09/2026", "14/09") e não deve ser procurado na linha de transação, que nesse formato não traz data. Quando cada linha trouxer a própria data, use a data da linha.
+13. A seção de um dia ATRAVESSA a quebra de página. Se a página não repetir o cabeçalho de dia, as linhas dela continuam pertencendo ao último dia informado antes delas — use esse dia. O mesmo vale para o dia informado no contexto do lote anterior. Se não houver nenhum cabeçalho de dia antes da linha e nenhum dia no contexto do lote, coloque a linha em "linhas_duvidosas" com motivo "sem_data" em vez de adivinhar o dia.
+14. NUNCA use como data de transação datas de emissão, geração, impressão ou rodapé do documento (ex.: "Extrato gerado no dia 22/09/2026 às 13:20", "Emitido em ...", "Data de emissão"). Essas linhas são rodapé: vão para "linhas_ignoradas" com motivo "rodape".
+15. Quando a data de uma linha vier por herança, porque a página não repetiu o cabeçalho de dia, marque "confianca": "baixa" para sinalizar conferência humana.
+16. Devolva "linhas" na ordem do documento, de cima para baixo e em ordem crescente de página.`
+
 class HttpError extends Error {
   status: number
 
@@ -314,7 +326,7 @@ serve(async (req) => {
 
     const contexto = isRecord(body.contexto) ? body.contexto : null
     const contextoPrompt = contexto
-      ? `\nMetadados já identificados no início do documento: banco=${contexto.banco ?? null}, conta=${contexto.conta ?? null}, período de ${contexto.periodoInicio ?? null} a ${contexto.periodoFim ?? null}. Use-os para completar o ano de datas abreviadas.`
+      ? `\nMetadados já identificados no início do documento: banco=${contexto.banco ?? null}, conta=${contexto.conta ?? null}, período de ${contexto.periodoInicio ?? null} a ${contexto.periodoFim ?? null}. Use-os para completar o ano de datas abreviadas.\nO lote anterior terminou no dia ${contexto.ultimoDia ?? 'não informado'}; se este lote começar com uma continuação sem cabeçalho de dia, use esse dia.`
       : ''
     const prompt = `Você é um extrator de dados de extratos bancários brasileiros. Converta o PDF recebido em JSON conforme o schema fornecido.\n\nContexto deste lote: páginas ${inicio} a ${fim} de um total de ${total} páginas do documento.${contextoPrompt}\n\nRegras obrigatórias:\n1. Uma linha de transação do extrato = um item em "linhas". Nunca agrupe, resuma ou some lançamentos.\n2. "valor" é SEMPRE positivo, em reais, com duas casas decimais. A natureza do lançamento vai em "direcao": "entrada" (crédito, depósito, transferência recebida, estorno a favor) ou "saida" (débito, pagamento, tarifa, saque, transferência enviada).\n3. Determine a direção pelo sinal negativo, pelo marcador de débito/crédito (D, C, Débito, Crédito), pelo texto do histórico e, quando disponível, pela variação do saldo entre linhas consecutivas.\n4. "data" SEMPRE no formato yyyy-mm-dd. Se a linha trouxer apenas dia/mês (ex.: "05/03"), use o ano do período do extrato.\n5. Valores no padrão brasileiro: "1.234,56" equivale a 1234.56; "(75,50)" e "-75,50" indicam saída de 75.50. Nunca trate o ponto como separador decimal quando houver vírgula.\n6. "texto_original" deve conter a linha inteira exatamente como aparece no PDF, sem tradução, resumo ou correção. Isso é obrigatório para conferência humana.\n7. Linhas de saldo, totalizadores, cabeçalhos e rodapés NÃO são transações: vão para "linhas_ignoradas" com o motivo adequado. O saldo inicial e o saldo final do período vão em "saldo_inicial" e "saldo_final".\n8. Se uma linha parecer transação mas faltar data, valor legível ou a direção não puder ser determinada, coloque-a em "linhas_duvidosas" com o motivo. NUNCA invente valores, datas ou descrições.\n9. "confianca" reflete sua certeza sobre a linha: "alta", "media" ou "baixa".\n10. Não inclua lançamentos que não estejam no PDF e não repita linhas.\n11. Preencha "banco", "agencia", "conta", "periodo_inicio" e "periodo_fim" com o que estiver no documento; use null quando a informação não existir.`
 
@@ -335,7 +347,7 @@ serve(async (req) => {
           max_output_tokens: 32000,
           input: [{ role: 'user', content: [
             { type: 'input_file', filename: 'extrato.pdf', file_data: `data:application/pdf;base64,${pdfBase64}` },
-            { type: 'input_text', text: prompt },
+            { type: 'input_text', text: prompt + REGRAS_DE_DATA },
           ] }],
           text: { format: { type: 'json_schema', name: 'extrato_bancario', strict: true, schema } },
         }),
