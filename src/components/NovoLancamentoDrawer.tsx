@@ -444,6 +444,12 @@ export default function NovoLancamentoDrawer() {
     const novasParcelas = [];
     let currentDate = new Date(lancamentoFormDraft.data_vencimento + 'T00:00:00');
 
+    // Sem data de vencimento válida não há como projetar as parcelas.
+    if (Number.isNaN(currentDate.getTime())) {
+      setParcelasManuais([]);
+      return;
+    }
+
     const valorPorParcela = isRepeat
       ? valorTotal
       : valorTotal / totalParcelas;
@@ -603,6 +609,11 @@ export default function NovoLancamentoDrawer() {
     const amount = parseMoney(lancamentoFormDraft.valor_previsto) / total;
     const nextParcels = [];
     let currentDate = new Date(`${avrWithEntry ? lancamentoFormDraft.data_emissao : lancamentoFormDraft.data_vencimento}T00:00:00`);
+
+    if (Number.isNaN(currentDate.getTime())) {
+      showToast('Informe uma data válida antes de gerar as parcelas do AVR.', 'warning');
+      return;
+    }
 
     for (let index = 0; index < total; index += 1) {
       const existing = avrParcels[index];
