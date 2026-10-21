@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowDownLeft, ArrowUpRight, Wallet } from 'lucide-react';
 import { useCofreLocalConta, useCofreLocalLancamentos, useCofreLocalTransacoes, useContasSaldos } from '../hooks/useData';
+import { useAuth } from '../hooks/useAuth';
 
 const moeda = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const dataFormatada = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
@@ -30,25 +31,31 @@ function EstadoConsulta({ carregando, erro }: { carregando: boolean; erro: boole
 export default function CofreLocal() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [mes, setMes] = useState(mesAtual);
+  const { hasRole, isLoading: carregandoPermissao } = useAuth();
+  // As transações importadas do extrato são restritas por RLS a master/gerente,
+  // então a aba só existe para quem pode lê-las.
+  const podeVerConciliacao = hasRole(['master', 'gerente']);
   const abaDaUrl = searchParams.get('aba');
-  const abaAtiva = abaDaUrl === 'conciliacao' ? 'conciliacao' : 'movimentacoes';
+  const abaAtiva = abaDaUrl === 'conciliacao' && podeVerConciliacao ? 'conciliacao' : 'movimentacoes';
   const { inicio, fim } = obterPeriodo(mes);
 
   useEffect(() => {
-    if (abaDaUrl !== 'movimentacoes' && abaDaUrl !== 'conciliacao') {
+    if (carregandoPermissao) return;
+    const abaValida = abaDaUrl === 'movimentacoes' || (abaDaUrl === 'conciliacao' && podeVerConciliacao);
+    if (!abaValida) {
       setSearchParams((params) => {
         params.set('aba', 'movimentacoes');
         return params;
       }, { replace: true });
     }
-  }, [abaDaUrl, setSearchParams]);
+  }, [abaDaUrl, carregandoPermissao, podeVerConciliacao, setSearchParams]);
 
   const contaQuery = useCofreLocalConta();
   const conta = contaQuery.data;
   const contaId = conta?.id ?? null;
   const { data: saldos = [] } = useContasSaldos();
   const lancamentosQuery = useCofreLocalLancamentos(contaId, inicio, fim);
-  const transacoesQuery = useCofreLocalTransacoes(contaId, inicio, fim);
+  const transacoesQuery = useCofreLocalTransacoes(contaId, inicio, fim, podeVerConciliacao && abaAtiva === 'conciliacao');
 
   const alterarAba = (aba: 'movimentacoes' | 'conciliacao') => {
     setSearchParams((params) => {
@@ -105,7 +112,9 @@ export default function CofreLocal() {
         </label>
         <div className="flex w-full gap-2 sm:w-auto" role="tablist" aria-label="Movimentações do Cofre Local">
           <button type="button" role="tab" aria-selected={abaAtiva === 'movimentacoes'} onClick={() => alterarAba('movimentacoes')} className={`flex-1 rounded-lg px-4 py-2.5 text-xs font-bold transition-colors sm:flex-none ${abaAtiva === 'movimentacoes' ? 'bg-primary-container text-primary' : 'text-on-surface-variant hover:bg-surface-container'}`}>Movimentações do Cofre</button>
-          <button type="button" role="tab" aria-selected={abaAtiva === 'conciliacao'} onClick={() => alterarAba('conciliacao')} className={`flex-1 rounded-lg px-4 py-2.5 text-xs font-bold transition-colors sm:flex-none ${abaAtiva === 'conciliacao' ? 'bg-primary-container text-primary' : 'text-on-surface-variant hover:bg-surface-container'}`}>Movimentações da Conciliação</button>
+          {podeVerConciliacao && (
+            <button type="button" role="tab" aria-selected={abaAtiva === 'conciliacao'} onClick={() => alterarAba('conciliacao')} className={`flex-1 rounded-lg px-4 py-2.5 text-xs font-bold transition-colors sm:flex-none ${abaAtiva === 'conciliacao' ? 'bg-primary-container text-primary' : 'text-on-surface-variant hover:bg-surface-container'}`}>Movimentações da Conciliação</button>
+          )}
         </div>
       </section>
 

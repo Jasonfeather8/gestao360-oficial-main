@@ -37,8 +37,8 @@ export function useCofreLocalLancamentos(contaId: string | null, startDate: stri
   });
 }
 
-export function useCofreLocalTransacoes(contaId: string | null, startDate: string | null, endDate: string | null) {
-  const enabled = Boolean(contaId && startDate && endDate);
+export function useCofreLocalTransacoes(contaId: string | null, startDate: string | null, endDate: string | null, ativo = true) {
+  const enabled = ativo && Boolean(contaId && startDate && endDate);
   return useQuery({
     queryKey: ['cofreLocal', 'transacoesBanco', contaId, startDate, endDate],
     queryFn: ({ signal }) => cofreLocalService.getTransacoesBanco(contaId as string, startDate as string, endDate as string, signal),
