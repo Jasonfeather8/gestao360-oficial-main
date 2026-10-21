@@ -98,7 +98,7 @@ Regras de data (têm prioridade sobre a regra 4):
 12. A "data" de uma transação é o DIA A QUE ELA PERTENCE. Quando o extrato agrupa as transações por dia, esse dia vem do cabeçalho de dia da seção (ex.: "14/09/2026", "Data: 14/09/2026", "14/09") e não deve ser procurado na linha de transação, que nesse formato não traz data. Quando cada linha trouxer a própria data, use a data da linha.
 13. A seção de um dia ATRAVESSA a quebra de página. Se a página não repetir o cabeçalho de dia, as linhas dela continuam pertencendo ao último dia informado antes delas — use esse dia. O mesmo vale para o dia informado no contexto do lote anterior. Se não houver nenhum cabeçalho de dia antes da linha e nenhum dia no contexto do lote, coloque a linha em "linhas_duvidosas" com motivo "sem_data" em vez de adivinhar o dia.
 14. NUNCA use como data de transação datas de emissão, geração, impressão ou rodapé do documento (ex.: "Extrato gerado no dia 22/09/2026 às 13:20", "Emitido em ...", "Data de emissão"). Essas linhas são rodapé: vão para "linhas_ignoradas" com motivo "rodape".
-15. Quando a data de uma linha vier por herança, porque a página não repetiu o cabeçalho de dia, marque "confianca": "baixa" para sinalizar conferência humana.
+15. A data herdada do cabeçalho de dia é uma informação do documento e NÃO reduz a confiança da linha: use "alta" ou "media" conforme a legibilidade da linha. Reserve "confianca": "baixa" para linhas realmente duvidosas (valor ilegível, texto ambíguo, direção incerta).
 16. Devolva "linhas" na ordem do documento, de cima para baixo e em ordem crescente de página.`
 
 class HttpError extends Error {

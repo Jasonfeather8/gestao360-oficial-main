@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { CheckCircle2, LoaderCircle, Link2 } from 'lucide-react';
 import { useCategorias, useCentrosCusto, useConciliarTransferencia, useTransacoesCandidatas } from '../../hooks/useData';
+import { mensagemDoErro } from '../../services/erros';
 import type { TransacaoBancoCandidata, TransferenciaBancaria } from '../../types';
 
 const moeda = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -36,7 +37,7 @@ function LadoTransferencia({ transferencia, lado, conciliada, bloquearAcoes, tra
     try {
       await conciliarTransferencia({ transferenciaId: transferencia.id, transacaoId: candidata.id, lado });
     } catch (error) {
-      setErro(error instanceof Error ? error.message : 'Não foi possível conciliar esta transação.');
+      setErro(mensagemDoErro(error, 'Não foi possível conciliar esta transação.'));
     }
   };
 

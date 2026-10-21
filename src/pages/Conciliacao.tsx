@@ -30,6 +30,7 @@ import MigracaoDados from '../components/Migracao/MigracaoDados';
 import TransferenciasBancarias from '../components/Transferencias/TransferenciasBancarias';
 import { compararExtrato, valorPrevistoParaConciliar } from '../services/extrato/comparacao';
 import { lerExtrato } from '../services/extrato/motorLeitura';
+import { mensagemDoErro } from '../services/erros';
 import type { ExtratoLido, ItemComparacao, LancamentoFinanceiro, ProgressoLeituraExtrato } from '../types';
 
 const moeda = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -177,7 +178,7 @@ export default function Conciliacao() {
       } : atual);
       setPersistido(resultadoPersistencia.transacoesPorHash.size);
     } catch (error) {
-      setErroPersistencia(error instanceof Error ? error.message : 'Não foi possível persistir o extrato.');
+      setErroPersistencia(mensagemDoErro(error, 'Não foi possível persistir o extrato.'));
     }
   };
 

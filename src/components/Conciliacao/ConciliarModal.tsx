@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import { ArrowDownLeft, ArrowUpRight, CheckCircle2, Loader2, PenLine, X } from 'lucide-react';
 import { dataReferenciaLancamento, direcaoLancamento, valorEfetivoLancamento } from '../../services/extrato/comparacao';
+import { mensagemDoErro } from '../../services/erros';
 import type { ItemComparacao, LancamentoFinanceiro } from '../../types';
 
 const moeda = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -92,7 +93,7 @@ export default function ConciliarModal({
     try {
       await onConfirmar(lancamentoSelecionado);
     } catch (error) {
-      setErro(error instanceof Error ? error.message : 'Não foi possível conciliar a transação.');
+      setErro(mensagemDoErro(error, 'Não foi possível conciliar a transação.'));
     }
   };
 
