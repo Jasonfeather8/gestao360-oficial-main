@@ -168,7 +168,7 @@ export const lancamentosService = {
 
     let query = supabase
       .from('lancamentos_financeiros')
-      .select('*, entidades_negocio!inner(nome_razao_social)', { count: 'exact' });
+      .select('*, entidades_negocio!inner(nome_razao_social), conciliacoes(id, data_conciliacao)', { count: 'exact' });
 
     if (filters?.docCode !== undefined) {
       query = query

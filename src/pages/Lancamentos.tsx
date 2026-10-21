@@ -29,7 +29,8 @@ import {
   CreditCard,
   Layers,
   Repeat,
-  Paperclip
+  Paperclip,
+  Link2
 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { useLancamentos, useContas, useEntidades, useCategorias, useUsuarios, useCentrosCusto, useCategoriasAjuste, useContasSaldos } from '../hooks/useData';
@@ -633,6 +634,22 @@ export default function Lancamentos({
    }
  };
 
+  const renderConciliadoBadge = (item: LancamentoFinanceiro) => {
+    const conciliacao = item.conciliacoes?.[0];
+    if (!conciliacao) return null;
+    const data = conciliacao.data_conciliacao?.slice(0, 10).split('-').reverse().join('/');
+
+    return (
+      <span
+        className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded bg-primary/10 text-primary font-black border border-primary/30 text-[9px] uppercase tracking-tighter"
+        title={data ? `Conciliado com o extrato em ${data}` : undefined}
+      >
+        <Link2 className="w-3 h-3" />
+        Conciliado
+      </span>
+    );
+  };
+
   const renderBancoCell = (item: LancamentoFinanceiro) => {
     const conta = activeContas.find(account => account.id === item.conta_bancaria_id);
     const bankName = conta?.nome_banco || conta?.nome || 'Conta bancária não identificada';
@@ -1104,7 +1121,10 @@ export default function Lancamentos({
                             {valueFormatter(getSaldoAPagar(item))}
                           </td>
                           <td className="py-3 px-4 text-center whitespace-nowrap">
-                            {renderStatusBadge(item)}
+                            <div className="flex items-center justify-center gap-1">
+                              {renderStatusBadge(item)}
+                              {renderConciliadoBadge(item)}
+                            </div>
                           </td>
                           {renderBancoCell(item)}
                           <td className="py-3 px-3 text-center" onClick={(e) => e.stopPropagation()}>
@@ -1174,7 +1194,10 @@ export default function Lancamentos({
                             </span>
                           </td>
                           <td className="py-3 px-4 text-center whitespace-nowrap">
-                            {renderStatusBadge(item)}
+                            <div className="flex items-center justify-center gap-1">
+                              {renderStatusBadge(item)}
+                              {renderConciliadoBadge(item)}
+                            </div>
                           </td>
                           {renderBancoCell(item)}
                           <td className="py-3 px-3 text-center" onClick={(e) => e.stopPropagation()}>

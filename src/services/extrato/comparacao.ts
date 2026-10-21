@@ -204,17 +204,38 @@ export function compararExtrato(
         bancoDisponivel.splice(bancoDisponivel.indexOf(linha), 1);
       }
 
-      // 2) Sobras dos dois lados no mesmo dia e mesma natureza: divergência de valor.
-      const quantidadeDivergente = Math.min(bancoDisponivel.length, erpDisponivel.length);
-      for (let i = 0; i < quantidadeDivergente; i++) {
-        itens.push(itemDivergente(bancoDisponivel[i], erpDisponivel[i].lancamento));
+      // 2) Sobras dos dois lados no mesmo dia e mesma natureza: divergência dentro da tolerância.
+      const candidatos: Array<{ bancoIndex: number; erpIndex: number; diferenca: number }> = [];
+      for (let bancoIndex = 0; bancoIndex < bancoDisponivel.length; bancoIndex++) {
+        const valorBanco = centavos(bancoDisponivel[bancoIndex].valor);
+        for (let erpIndex = 0; erpIndex < erpDisponivel.length; erpIndex++) {
+          const valorErp = centavos(valorEfetivoLancamento(erpDisponivel[erpIndex].lancamento));
+          const diferenca = Math.abs(valorBanco - valorErp);
+          const toleranciaPercentual = Math.round(Math.max(valorBanco, valorErp) * 0.05);
+          if (diferenca <= 2000 || diferenca <= toleranciaPercentual) {
+            candidatos.push({ bancoIndex, erpIndex, diferenca });
+          }
+        }
       }
 
-      for (const linha of bancoDisponivel.slice(quantidadeDivergente)) {
-        itens.push(itemPendenteBanco(linha));
+      candidatos.sort((a, b) => a.diferenca - b.diferenca || a.bancoIndex - b.bancoIndex || a.erpIndex - b.erpIndex);
+      const bancoPareado = new Set<number>();
+      const erpPareado = new Set<number>();
+      for (const candidato of candidatos) {
+        if (bancoPareado.has(candidato.bancoIndex) || erpPareado.has(candidato.erpIndex)) continue;
+        itens.push(itemDivergente(
+          bancoDisponivel[candidato.bancoIndex],
+          erpDisponivel[candidato.erpIndex].lancamento,
+        ));
+        bancoPareado.add(candidato.bancoIndex);
+        erpPareado.add(candidato.erpIndex);
       }
-      for (const item of erpDisponivel.slice(quantidadeDivergente)) {
-        itens.push(itemPendenteErp(item.lancamento, data));
+
+      for (let i = 0; i < bancoDisponivel.length; i++) {
+        if (!bancoPareado.has(i)) itens.push(itemPendenteBanco(bancoDisponivel[i]));
+      }
+      for (let i = 0; i < erpDisponivel.length; i++) {
+        if (!erpPareado.has(i)) itens.push(itemPendenteErp(erpDisponivel[i].lancamento, data));
       }
 
       const ordenados = ordenarItens(itens);

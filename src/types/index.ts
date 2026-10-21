@@ -94,6 +94,7 @@ export interface LancamentoFinanceiro {
   transferencia_id?: string | null;
   transferencia_lado?: 'origem' | 'destino' | 'tarifa' | null;
   entidades_negocio?: { nome_razao_social: string } | null;
+  conciliacoes?: Array<{ id: string; data_conciliacao: string | null }> | null;
  valor_original?: number;
  juros_previstos?: number;
  multa_prevista?: number;
