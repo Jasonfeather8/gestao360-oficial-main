@@ -93,6 +93,7 @@ export interface LancamentoFinanceiro {
   status_sincronizacao?: boolean;
   transferencia_id?: string | null;
   transferencia_lado?: 'origem' | 'destino' | 'tarifa' | null;
+  entidades_negocio?: { nome_razao_social: string } | null;
  valor_original?: number;
  juros_previstos?: number;
  multa_prevista?: number;

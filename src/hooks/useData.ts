@@ -18,6 +18,7 @@ import { auditoriaService } from '../services/auditoriaService';
 import { notificationsService } from '../services/notificationsService';
 import { diagnosticLogger } from '../services/diagnosticLogger';
 import { persistirExtrato } from '../services/extrato/persistencia';
+import { conciliacaoService } from '../services/conciliacaoService';
 import { cofreLocalService } from '../services/cofreLocalService';
 
 export function useCofreLocalConta() {
@@ -498,4 +499,44 @@ export function usePersistirExtrato() {
     persistir: mutation.mutateAsync,
     isPersisting: mutation.isPending,
   };
+}
+
+export function useConciliarTransacao() {
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: conciliacaoService.conciliar,
+    onSuccess: () => {
+      [
+        'lancamentos',
+        'lancamento',
+        'contasSaldos',
+        'auditoriaLogs',
+        'notifications',
+        'dashboardStats',
+        'dashboardIndicadores',
+        'financialSummary',
+        'transferencias',
+        'transacoesBanco',
+        'conciliacoes',
+      ].forEach((queryKey) => queryClient.invalidateQueries({ queryKey: [queryKey] }));
+    },
+  });
+
+  return { conciliar: mutation.mutateAsync, isConciliando: mutation.isPending };
+}
+
+export function useStatusConciliacaoTransacoes(transacaoIds: string[], enabled: boolean) {
+  return useQuery<Record<string, boolean>>({
+    queryKey: ['transacoesBanco', 'statusConciliacao', [...transacaoIds].sort()],
+    queryFn: () => transacaoIds.length > 0 ? conciliacaoService.listarStatusConciliacao(transacaoIds) : Promise.resolve({}),
+    enabled: enabled && transacaoIds.length > 0,
+  });
+}
+
+export function useLancamentosConciliados(lancamentoIds: string[], enabled: boolean) {
+  return useQuery<Set<string>>({
+    queryKey: ['conciliacoes', 'porLancamento', [...lancamentoIds].sort()],
+    queryFn: () => conciliacaoService.listarLancamentosConciliados(lancamentoIds),
+    enabled: enabled && lancamentoIds.length > 0,
+  });
 }

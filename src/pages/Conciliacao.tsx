@@ -14,7 +14,6 @@ import {
   HelpCircle,
   Landmark,
   Loader2,
-  PenLine,
   PlusCircle,
   Sparkles,
   Trash2,
@@ -22,14 +21,14 @@ import {
   X,
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
-import { useContas, useLancamentosDaConta, usePersistirExtrato } from '../hooks/useData';
+import { useContas, useLancamentosDaConta, usePersistirExtrato, useConciliarTransacao, useStatusConciliacaoTransacoes, useLancamentosConciliados } from '../hooks/useData';
 import { useUIStore } from '../store/uiStore';
-import SeletorAVRModal from '../components/Conciliacao/SeletorAVRModal';
+import ConciliarModal from '../components/Conciliacao/ConciliarModal';
 import IdentificarTransferenciaModal from '../components/Conciliacao/IdentificarTransferenciaModal';
 import ProgressoExtrato from '../components/Conciliacao/ProgressoExtrato';
 import MigracaoDados from '../components/Migracao/MigracaoDados';
 import TransferenciasBancarias from '../components/Transferencias/TransferenciasBancarias';
-import { compararExtrato, dataReferenciaLancamento, direcaoLancamento, valorPrevistoParaConciliar } from '../services/extrato/comparacao';
+import { compararExtrato, valorPrevistoParaConciliar } from '../services/extrato/comparacao';
 import { lerExtrato } from '../services/extrato/motorLeitura';
 import type { ExtratoLido, ItemComparacao, LancamentoFinanceiro, ProgressoLeituraExtrato } from '../types';
 
@@ -76,10 +75,12 @@ export default function Conciliacao() {
   const [erro, setErro] = useState<string | null>(null);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const { persistir: persistirExtrato, isPersisting } = usePersistirExtrato();
+  const { conciliar, isConciliando } = useConciliarTransacao();
   const [arrastando, setArrastando] = useState(false);
   const [mostrarNaoInterpretadas, setMostrarNaoInterpretadas] = useState(false);
   const [mostrarIgnoradas, setMostrarIgnoradas] = useState(false);
-  const [seletorAVR, setSeletorAVR] = useState<ItemComparacao | null>(null);
+  const [conciliarItem, setConciliarItem] = useState<ItemComparacao | null>(null);
+  const [toasts, setToasts] = useState<Array<{ id: number; message: string; type: 'success' | 'error' }>>([]);
   const [identificarTransferencia, setIdentificarTransferencia] = useState<ItemComparacao | null>(null);
   const [transferenciasIdentificadas, setTransferenciasIdentificadas] = useState<Record<string, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -103,6 +104,16 @@ export default function Conciliacao() {
     totalCount,
     isLoading: carregandoLancamentos,
   } = useLancamentosDaConta(contaId || null, extrato?.dataInicio ?? null, extrato?.dataFim ?? null);
+  const transacaoBancoIds = useMemo(
+    () => Array.from(new Set((extrato?.linhas ?? []).map((linha) => linha.transacaoBancoId).filter((id): id is string => Boolean(id)))),
+    [extrato],
+  );
+  const { data: statusConciliacao = {} } = useStatusConciliacaoTransacoes(transacaoBancoIds, podeAgirNaConciliacao);
+  const lancamentoIds = useMemo(() => lancamentos.map((lancamento) => lancamento.id), [lancamentos]);
+  const { data: lancamentosConciliados = new Set<string>(), isLoading: carregandoLancamentosConciliados } = useLancamentosConciliados(
+    lancamentoIds,
+    Boolean(conciliarItem && podeAgirNaConciliacao),
+  );
 
   const resultado = useMemo(
     () => (extrato ? compararExtrato(extrato, lancamentos) : null),
@@ -173,6 +184,12 @@ export default function Conciliacao() {
   const formatarValorInput = (valor: number) =>
     valor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    const id = Date.now();
+    setToasts((current) => [...current, { id, message, type }]);
+    window.setTimeout(() => setToasts((current) => current.filter((toast) => toast.id !== id)), 4500);
+  };
+
   // Abre o Novo Lançamento já preenchido com a linha do extrato; a gravação
   // do lançamento continua no fluxo existente do drawer.
   const abrirLancamentoDoExtrato = (item: ItemComparacao) => {
@@ -207,49 +224,41 @@ export default function Conciliacao() {
       motivo_acrescimo_id: '',
       valor_recebido: '0,00',
     });
-    setLancamentoPreset({ dataExtrato: linha.data });
+    setLancamentoPreset({ dataExtrato: linha.data, transacaoBancoId: linha.transacaoBancoId });
     setSelectedLancamentoIdForModal(null);
     setSelectedRecorrenciaAction(null);
     setModalOpen('isNovoLancamentoOpen', true);
   };
 
-  const candidatosAVR = useMemo(() => {
-    if (!seletorAVR) return [];
-    return lancamentos.filter((lancamento) =>
-      direcaoLancamento(lancamento) === seletorAVR.direcao &&
-      dataReferenciaLancamento(lancamento) === seletorAVR.data &&
-      lancamento.status_pagamento === 'aberto' &&
-      Number(lancamento.valor_recebido ?? 0) === 0
-    );
-  }, [seletorAVR, lancamentos]);
-
-  const abrirSeletorAVR = (item: ItemComparacao) => {
-    if (item.valorExtrato === null) return;
-    setSeletorAVR(item);
-  };
-
-  // O AVR em si continua sendo o fluxo existente do drawer: aqui só escolhemos
-  // o lançamento alvo e o valor que faz o efetivo bater com o extrato.
   const aplicarAVR = (lancamento: LancamentoFinanceiro) => {
-    const valorExtrato = seletorAVR?.valorExtrato ?? 0;
+    const valorExtrato = conciliarItem?.valorExtrato ?? 0;
     setAvrPreset({
       lancamentoId: lancamento.id,
       valor: formatarValorInput(valorPrevistoParaConciliar(lancamento, valorExtrato)),
     });
-    setSeletorAVR(null);
+    setConciliarItem(null);
     setSelectedLancamentoIdForModal(lancamento.id);
     setSelectedRecorrenciaAction(null);
     setModalOpen('isNovoLancamentoOpen', true);
   };
 
+  const confirmarConciliacao = async (lancamento: LancamentoFinanceiro) => {
+    const transacaoBancoId = conciliarItem?.linhaExtrato?.transacaoBancoId;
+    if (!transacaoBancoId) throw new Error('Importe o extrato para conciliação antes de conciliar.');
+    await conciliar({ transacaoBancoId, lancamentoIds: [lancamento.id] });
+    setConciliarItem(null);
+    showToast('Transação conciliada com sucesso.');
+  };
+
   const renderItem = (item: ItemComparacao) => {
     const status = {
-      conciliado: { label: 'Conciliado', icon: CheckCircle2, className: 'bg-bank-truth-green/10 text-bank-truth-green' },
+      conciliado: { label: 'Par sugerido', icon: CheckCircle2, className: 'bg-bank-truth-green/10 text-bank-truth-green' },
       divergente: { label: 'Valor divergente', icon: AlertTriangle, className: 'bg-alert-red/10 text-alert-red' },
       pendente_banco: { label: 'Falta no ERP', icon: AlertTriangle, className: 'bg-pending-amber/10 text-pending-amber' },
       pendente_erp: { label: 'Falta no extrato', icon: AlertTriangle, className: 'bg-bpi-blue/10 text-bpi-blue' },
     }[item.status];
-    const StatusIcon = status.icon;
+    const conciliadaDeVerdade = Boolean(item.linhaExtrato?.transacaoBancoId && statusConciliacao[item.linhaExtrato.transacaoBancoId]);
+    const StatusIcon = conciliadaDeVerdade ? CheckCircle2 : status.icon;
     const valorPrincipal = item.valorExtrato ?? item.valorErp ?? 0;
 
     return (
@@ -261,8 +270,8 @@ export default function Conciliacao() {
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-on-surface" title={item.linhaExtrato?.textoOriginal || undefined}>{item.descricao || 'Movimentação sem descrição'}</p>
             <div className="mt-1 flex flex-wrap items-center gap-1">
-              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-bold ${status.className}`}>
-                <StatusIcon className="h-3 w-3" />{status.label}
+              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-bold ${conciliadaDeVerdade ? 'bg-bank-truth-green/10 text-bank-truth-green' : status.className}`}>
+                <StatusIcon className="h-3 w-3" />{conciliadaDeVerdade ? 'Conciliado' : status.label}
               </span>
               {item.linhaExtrato?.confianca === 'baixa' && (
                 <span title="A IA teve baixa certeza nesta linha; confira o texto original." className="inline-flex items-center rounded-full bg-pending-amber/10 px-2 py-1 text-[10px] font-bold text-pending-amber">confiança baixa</span>
@@ -287,27 +296,26 @@ export default function Conciliacao() {
           <p className={`text-sm font-bold ${item.direcao === 'entrada' ? 'text-bank-truth-green' : 'text-alert-red'}`}>
             {moeda.format(valorPrincipal)}
           </p>
-          {podeAgirNaConciliacao && ((item.status === 'pendente_banco' || item.status === 'divergente') || item.linhaExtrato?.transacaoBancoId) && (
+          {podeAgirNaConciliacao && item.linhaExtrato && !conciliadaDeVerdade && (
             <div className="flex flex-wrap items-center justify-end gap-2">
-              {(item.status === 'pendente_banco' || item.status === 'divergente') && <>
-                <button
-                  type="button"
-                  onClick={() => abrirLancamentoDoExtrato(item)}
-                  title="Criar um novo lançamento no ERP com os dados desta linha do extrato"
-                  className="inline-flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-primary transition hover:bg-primary/20"
-                >
-                  <PlusCircle className="h-3.5 w-3.5" />Lançar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => abrirSeletorAVR(item)}
-                  title="Ajustar (AVR) um lançamento do ERP do mesmo dia com o valor desta linha"
-                  className="inline-flex items-center gap-1 rounded-lg border border-surface-border px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-on-surface-variant transition hover:bg-surface"
-                >
-                  <PenLine className="h-3.5 w-3.5" />AVR
-                </button>
-              </>}
-              {item.linhaExtrato?.transacaoBancoId && (transferenciasIdentificadas[item.linhaExtrato.transacaoBancoId]
+              <button
+                type="button"
+                onClick={() => setConciliarItem(item)}
+                disabled={!item.linhaExtrato.transacaoBancoId}
+                title={!item.linhaExtrato.transacaoBancoId ? 'Importe o extrato para conciliação antes de conciliar' : 'Vincular esta transação bancária a um lançamento do ERP'}
+                className="inline-flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-primary transition hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <CheckCircle2 className="h-3.5 w-3.5" />Conciliar
+              </button>
+              {(item.status === 'pendente_banco' || item.status === 'divergente') && <button
+                type="button"
+                onClick={() => abrirLancamentoDoExtrato(item)}
+                title="Criar um novo lançamento no ERP com os dados desta linha do extrato"
+                className="inline-flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-primary transition hover:bg-primary/20"
+              >
+                <PlusCircle className="h-3.5 w-3.5" />Lançar
+              </button>}
+              {item.linhaExtrato.transacaoBancoId && (transferenciasIdentificadas[item.linhaExtrato.transacaoBancoId]
                 ? <span role="status" aria-label={`Marcada como transferência; status resultante: ${transferenciasIdentificadas[item.linhaExtrato.transacaoBancoId]}`} title={`Status da transferência: ${transferenciasIdentificadas[item.linhaExtrato.transacaoBancoId]}`} className="rounded-full bg-bank-truth-green/10 px-2.5 py-1 text-[10px] font-bold text-bank-truth-green">Marcada como transferência</span>
                 : <button
                     type="button"
@@ -633,18 +641,6 @@ export default function Conciliacao() {
             </div>
           </motion.section>
         </motion.div>}
-        {seletorAVR && (
-          <SeletorAVRModal
-            key="conciliacao-seletor-avr"
-            aberto
-            data={seletorAVR.data}
-            direcao={seletorAVR.direcao}
-            valorExtrato={seletorAVR.valorExtrato ?? 0}
-            candidatos={candidatosAVR}
-            onFechar={() => setSeletorAVR(null)}
-            onSelecionar={aplicarAVR}
-          />
-        )}
       </AnimatePresence>
       </div>
       </section>
@@ -662,6 +658,27 @@ export default function Conciliacao() {
           }))}
         />
       )}
+      <ConciliarModal
+        aberto={Boolean(conciliarItem)}
+        item={conciliarItem}
+        lancamentos={lancamentos}
+        lancamentosConciliados={lancamentosConciliados}
+        carregandoLancamentosConciliados={carregandoLancamentosConciliados}
+        podeConciliar={Boolean(conciliarItem?.linhaExtrato?.transacaoBancoId)}
+        onFechar={() => setConciliarItem(null)}
+        onConfirmar={confirmarConciliacao}
+        onFazerAVR={aplicarAVR}
+        isConciliando={isConciliando}
+      />
+      <div aria-live="polite" className="pointer-events-none fixed bottom-4 right-4 z-[500] flex w-full max-w-sm flex-col gap-2">
+        <AnimatePresence>
+          {toasts.map((toast) => (
+            <motion.div key={toast.id} role="status" initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 24 }} className={`rounded-2xl border bg-white p-4 text-sm font-bold shadow-xl dark:bg-surface ${toast.type === 'success' ? 'border-bank-truth-green/30 text-bank-truth-green' : 'border-alert-red/30 text-alert-red'}`}>
+              {toast.message}
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }
