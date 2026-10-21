@@ -24,7 +24,6 @@ import { useAuth } from '../hooks/useAuth';
 import { useContas, useLancamentosDaConta, usePersistirExtrato, useConciliarTransacao, useStatusConciliacaoTransacoes, useLancamentosConciliados } from '../hooks/useData';
 import { useUIStore } from '../store/uiStore';
 import ConciliarModal from '../components/Conciliacao/ConciliarModal';
-import IdentificarTransferenciaModal from '../components/Conciliacao/IdentificarTransferenciaModal';
 import ProgressoExtrato from '../components/Conciliacao/ProgressoExtrato';
 import MigracaoDados from '../components/Migracao/MigracaoDados';
 import TransferenciasBancarias from '../components/Transferencias/TransferenciasBancarias';
@@ -82,8 +81,6 @@ export default function Conciliacao() {
   const [mostrarIgnoradas, setMostrarIgnoradas] = useState(false);
   const [conciliarItem, setConciliarItem] = useState<ItemComparacao | null>(null);
   const [toasts, setToasts] = useState<Array<{ id: number; message: string; type: 'success' | 'error' }>>([]);
-  const [identificarTransferencia, setIdentificarTransferencia] = useState<ItemComparacao | null>(null);
-  const [transferenciasIdentificadas, setTransferenciasIdentificadas] = useState<Record<string, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -326,14 +323,6 @@ export default function Conciliacao() {
               >
                 <PlusCircle className="h-3.5 w-3.5" />Lançar
               </button>}
-              {item.linhaExtrato.transacaoBancoId && (transferenciasIdentificadas[item.linhaExtrato.transacaoBancoId]
-                ? <span role="status" aria-label={`Marcada como transferência; status resultante: ${transferenciasIdentificadas[item.linhaExtrato.transacaoBancoId]}`} title={`Status da transferência: ${transferenciasIdentificadas[item.linhaExtrato.transacaoBancoId]}`} className="rounded-full bg-bank-truth-green/10 px-2.5 py-1 text-[10px] font-bold text-bank-truth-green">Marcada como transferência</span>
-                : <button
-                    type="button"
-                    aria-label="Marcar transação como transferência"
-                    onClick={() => setIdentificarTransferencia(item)}
-                    className="inline-flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-primary transition hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                  >Transferência</button>)}
             </div>
           )}
         </div>
@@ -657,18 +646,6 @@ export default function Conciliacao() {
       </section>
       <section hidden={abaAtiva !== 'migracao'}><MigracaoDados /></section>
       {podeAgirNaConciliacao && <section hidden={abaAtiva !== 'transferencias'}><TransferenciasBancarias /></section>}
-      {identificarTransferencia?.linhaExtrato?.transacaoBancoId && (
-        <IdentificarTransferenciaModal
-          linha={identificarTransferencia.linhaExtrato}
-          contaTransacaoId={contaId}
-          contas={contas}
-          onFechar={() => setIdentificarTransferencia(null)}
-          onIdentificada={(transferencia) => setTransferenciasIdentificadas((atuais) => ({
-            ...atuais,
-            [identificarTransferencia.linhaExtrato!.transacaoBancoId!]: transferencia.status,
-          }))}
-        />
-      )}
       <ConciliarModal
         aberto={Boolean(conciliarItem)}
         item={conciliarItem}

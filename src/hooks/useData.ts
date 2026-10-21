@@ -273,27 +273,6 @@ export function useEstornarTransferencia() {
   return { estornarTransferencia: mutation.mutateAsync, isEstornando: mutation.isPending };
 }
 
-export function useIdentificarTransacaoTransferencia() {
-  const queryClient = useQueryClient();
-  const mutation = useMutation({
-    mutationFn: ({ transacaoId, contaRelacionadaId }: { transacaoId: string; contaRelacionadaId: string }) =>
-      transferenciasService.identificar(transacaoId, contaRelacionadaId),
-    onSuccess: () => {
-      ['transferencias', 'lancamentos', 'contasSaldos', 'dashboardStats', 'dashboardIndicadores', 'auditoriaLogs', 'notifications', 'transacoesBanco']
-        .forEach((queryKey) => queryClient.invalidateQueries({ queryKey: [queryKey] }));
-    },
-  });
-  return { identificarTransacaoTransferencia: mutation.mutateAsync, isIdentificando: mutation.isPending };
-}
-
-export function useSugerirTransferenciasDestino(transacaoId: string | null) {
-  return useQuery({
-    queryKey: ['transferencias', 'sugestoesDestino', transacaoId],
-    queryFn: () => transacaoId ? transferenciasService.sugerirDestino(transacaoId) : Promise.resolve([]),
-    enabled: !!transacaoId,
-  });
-}
-
 export function useLancamentos(filters?: any) {
   const queryClient = useQueryClient();
   const { role } = useAuth();
