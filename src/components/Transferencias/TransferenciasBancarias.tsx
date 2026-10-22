@@ -33,6 +33,7 @@ const statusTransferencia: Record<TransferenciaStatus, { label: string; cor: str
   conciliada: { label: 'Concluída', cor: 'text-bank-truth-green' },
   estornada: { label: 'Estornada', cor: 'text-alert-red' },
 };
+const statusPendentesMaster: TransferenciaStatus[] = ['aberta', 'aguardando_destino', 'conciliada_pendente_master'];
 
 function formatarData(data: string): string {
   return dataFormatada.format(new Date(`${data}T00:00:00Z`));
@@ -59,7 +60,7 @@ function linhaTransferencia(
           <p className="mt-1 text-xs text-on-surface-variant">
             Conciliação: origem {transferencia.transacao_origem_id ? 'conciliada' : 'pendente'} · destino {transferencia.transacao_destino_id ? 'conciliada' : 'pendente'}
           </p>
-          {(transferencia.status === 'aberta' || transferencia.status === 'aguardando_destino') && <p className="mt-1 text-xs text-primary">Aprovação pendente do Master · a conciliação do extrato é opcional e pode ser feita depois.</p>}
+          {(transferencia.status === 'aberta' || transferencia.status === 'aguardando_destino') && <p className="mt-1 text-xs text-primary">Aprovação pendente do Master · a conciliação do extrato é opcional e pode ser feita depois · os saldos das contas são ajustados na aprovação.</p>}
           {transferencia.status === 'conciliada_pendente_master' && <p className="mt-1 text-xs text-primary">Os dois lados estão conciliados e aguardam aprovação do Master.</p>}
           {transferencia.tarifa && <p className="mt-1 text-xs text-on-surface-variant">Tarifa: {moeda.format(Number(transferencia.tarifa.valor_previsto))}</p>}
           {transferencia.status === 'conciliada' && transferencia.aprovado_em && <p className="mt-1 text-xs text-bank-truth-green">Aprovada em {dataHoraFormatada.format(new Date(transferencia.aprovado_em))}</p>}
@@ -72,7 +73,7 @@ function linhaTransferencia(
           {transferencia.status !== 'estornada' && <button type="button" aria-expanded={expandida} aria-label={`${expandida ? 'Fechar' : 'Abrir'} conciliação da transferência`} onClick={alternar} className="rounded-lg border border-surface-border px-3 py-2 text-xs font-bold text-on-surface transition hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
             Conciliar
           </button>}
-          {role === 'master' && ['aberta', 'aguardando_destino', 'conciliada_pendente_master'].includes(transferencia.status) && <>
+          {role === 'master' && statusPendentesMaster.includes(transferencia.status) && <>
             <button type="button" onClick={() => abrirDecisao(transferencia, 'aprovar')} className="rounded-lg bg-bank-truth-green px-3 py-2 text-xs font-bold text-white transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">Aprovar</button>
             <button type="button" onClick={() => abrirDecisao(transferencia, 'reprovar')} className="rounded-lg bg-alert-red px-3 py-2 text-xs font-bold text-white transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">Reprovar</button>
           </>}
@@ -90,6 +91,7 @@ export default function TransferenciasBancarias() {
   const { data: categoriasData = [] } = useCategorias();
   const { data: centrosData = [] } = useCentrosCusto();
   const { data: transferencias = [], isLoading, isError } = useTransferencias();
+  const transferenciasPendentesMaster = transferencias.filter((transferencia) => statusPendentesMaster.includes(transferencia.status)).length;
   const { criarTransferencia, isCreating } = useCriarTransferencia();
   const { decidirTransferencia, isDecidindo } = useDecidirTransferencia();
   const { estornarTransferencia, isEstornando } = useEstornarTransferencia();
@@ -276,7 +278,10 @@ export default function TransferenciasBancarias() {
       <section className="rounded-xl border border-surface-border bg-white p-5 dark:bg-surface">
         <header className="mb-2 flex items-center justify-between gap-3">
           <h2 className="text-xs font-black uppercase tracking-widest text-secondary">Transferências registradas</h2>
-          <span className="text-xs text-on-surface-variant">{transferencias.length}</span>
+          <div className="flex items-center gap-2">
+            {role === 'master' && transferenciasPendentesMaster > 0 && <span className="rounded-full border border-amber-100 bg-amber-50 px-2 py-1 text-[10px] font-black text-amber-700">{transferenciasPendentesMaster} aguardando decisão do Master</span>}
+            <span className="text-xs text-on-surface-variant">{transferencias.length}</span>
+          </div>
         </header>
         {isLoading ? <p role="status" className="py-5 text-sm text-on-surface-variant">Carregando transferências…</p>
           : isError ? <p role="alert" className="py-5 text-sm text-alert-red">Não foi possível carregar o histórico de transferências.</p>

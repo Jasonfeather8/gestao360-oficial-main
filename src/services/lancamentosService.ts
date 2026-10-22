@@ -220,6 +220,8 @@ export const lancamentosService = {
         query = query.in('status_pagamento', ['aberto', 'pago_parcial', 'quitação_pendente']);
         orGroups.push(['saldo_aberto.gt.0', 'status_pagamento.eq.aberto']);
         orGroups.push(['status_aprovacao.neq.confirmado_master', 'status_aprovacao.is.null']);
+        // Transferências entre contas não são títulos; a tarifa permanece visível por ser despesa real.
+        orGroups.push(['transferencia_id.is.null', 'transferencia_lado.eq.tarifa']);
       }
 
       if (filters.isFinanceiroView) {

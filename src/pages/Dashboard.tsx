@@ -348,6 +348,26 @@ export default function Dashboard() {
                       </span>
                     </div>
                   </div>
+
+                  {isMaster && (
+                    <>
+                      <div className="h-px bg-surface-border/50 w-full"></div>
+                      <div
+                        onClick={() => navigate('/conciliacao?aba=transferencias')}
+                        className="flex items-center justify-between cursor-pointer hover:bg-neutral-50 p-2 -mx-2 rounded-lg transition-colors group"
+                      >
+                        <div className="flex flex-col">
+                          <span className="text-[9px] font-black text-[#FFA000] uppercase">Transferências aguardando Master</span>
+                          <span className="text-lg font-bold font-mono text-on-surface group-hover:text-primary">{valueFormatter(stats?.transferencias_pendentes_valor || 0)}</span>
+                        </div>
+                        <div className="text-right">
+                          <span className="bg-amber-50 text-amber-700 text-[10px] font-black px-2 py-1 rounded-lg border border-amber-100">
+                            {stats?.transferencias_pendentes_count || 0} Itens
+                          </span>
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             </section>
