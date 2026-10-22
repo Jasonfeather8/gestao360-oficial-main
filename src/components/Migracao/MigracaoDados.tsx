@@ -3,7 +3,9 @@ import { useQueryClient } from '@tanstack/react-query';
 import { motion } from 'motion/react';
 import { CheckCircle2, Clock3, FileSpreadsheet, LoaderCircle, RotateCcw, Upload } from 'lucide-react';
 import { useCategorias, useCentrosCusto, useContas, useDesfazerImportacao, useEntidades, useImportacoesDados } from '../../hooks/useData';
+import { useAuth } from '../../hooks/useAuth';
 import { chavesRepetidas, detectarColunas, importarLinhas, lerPlanilha, recalcularLinha, remontarLinhas } from '../../services/migracao';
+import type { MigracaoEscolhasManuais } from '../../services/migracao';
 import type { MigracaoCadastros, MigracaoCampo, MigracaoColunas, MigracaoLinha, PlanilhaMigracao } from '../../types';
 
 const moeda = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -14,10 +16,14 @@ const campos: { campo: MigracaoCampo; rotulo: string }[] = [
   { campo: 'ref', rotulo: 'Ref.' }, { campo: 'anotacoes', rotulo: 'Anotações' }, { campo: 'recebido', rotulo: 'Recebido' },
 ];
 const classeCampo = 'rounded-lg border border-surface-border bg-white px-2 py-1.5 text-xs text-on-surface outline-none transition focus-visible:ring-2 focus-visible:ring-primary dark:bg-surface';
+type CampoManual = keyof MigracaoEscolhasManuais;
+type CadastroRapido = { linhaId: string; campo: 'cliente' | 'categoria'; nome: string; tipo: 'entrada' | 'saida' | null; erro: string; carregando: boolean };
 
 export default function MigracaoDados() {
   const inputRef = useRef<HTMLInputElement>(null);
   const nomesOriginais = useRef<Record<string, string>>({});
+  const escolhasManuais = useRef(new Map<string, string>());
+  const [cadastroRapido, setCadastroRapido] = useState<CadastroRapido | null>(null);
   const [planilha, setPlanilha] = useState<PlanilhaMigracao | null>(null);
   const [aba, setAba] = useState('');
   const [linhaCabecalho, setLinhaCabecalho] = useState(0);
@@ -34,11 +40,12 @@ export default function MigracaoDados() {
   const [resultado, setResultado] = useState<Awaited<ReturnType<typeof importarLinhas>> | null>(null);
   const [remapeando, setRemapeando] = useState(false);
   const { data: contas = [] } = useContas();
-  const { data: categorias = [] } = useCategorias();
+  const { data: categorias = [], createCategory } = useCategorias();
   const { data: centrosCusto = [] } = useCentrosCusto();
-  const { data: entidades = [] } = useEntidades();
+  const { data: entidades = [], createEntity } = useEntidades();
   const { data: lotes = [], isLoading: carregandoLotes } = useImportacoesDados();
   const desfazer = useDesfazerImportacao();
+  const { user, hasRole } = useAuth();
   const queryClient = useQueryClient();
 
   const cadastros = useMemo<MigracaoCadastros>(() => ({
@@ -62,6 +69,15 @@ export default function MigracaoDados() {
     };
   }, [linhas]);
 
+  const escolhasDaLinha = (linha: MigracaoLinha): MigracaoEscolhasManuais => {
+    const escolhas: MigracaoEscolhasManuais = {};
+    (['tipo', 'cliente', 'conta', 'categoria', 'centroCusto'] as CampoManual[]).forEach((campo) => {
+      const escolha = escolhasManuais.current.get(`${linha.linhaOrigem}:${campo}`);
+      if (escolha) escolhas[campo] = escolha;
+    });
+    return escolhas;
+  };
+
   const montar = async (raw: PlanilhaMigracao, nomeAba: string, header?: number, mapa?: MigracaoColunas) => {
     const selecionada = raw.abas.find((item) => item.nome === nomeAba) ?? raw.abas[0];
     if (!selecionada) return;
@@ -73,12 +89,21 @@ export default function MigracaoDados() {
     setNaoReconhecidas(deteccao.naoReconhecidas);
     setRemapeando(true);
     try {
-      const reconstruidas = await remontarLinhas({ linhas: selecionada.linhas, linhaCabecalho: cabecalho, colunas: mapaColunas, cadastros });
+      const reconstruidas = await remontarLinhas({
+        linhas: selecionada.linhas, linhaCabecalho: cabecalho, colunas: mapaColunas, cadastros,
+        nomesTipo: [selecionada.nome, raw.nome],
+      });
       nomesOriginais.current = Object.fromEntries(reconstruidas.linhas.flatMap((linha) => [
         [`${linha.id}:cliente`, linha.clienteNome], [`${linha.id}:conta`, linha.contaNome],
         [`${linha.id}:categoria`, linha.categoriaNome], [`${linha.id}:centroCusto`, linha.centroCustoNome],
       ]));
-      setLinhas(reconstruidas.linhas);
+      const repetidas = chavesRepetidas(reconstruidas.linhas);
+      const linhasComEscolhas = reconstruidas.linhas.map((linha) => {
+        const escolhas = escolhasDaLinha(linha);
+        if (Object.keys(escolhas).length === 0) return linha;
+        return recalcularLinha(linha, cadastros, reconstruidas.duplicados, repetidas, escolhas);
+      });
+      setLinhas(linhasComEscolhas);
       setDuplicadosBanco(reconstruidas.duplicados);
     } catch (cause) {
       setErro(cause instanceof Error ? cause.message : 'Não foi possível montar as linhas da planilha.');
@@ -115,12 +140,18 @@ export default function MigracaoDados() {
     }
   };
 
+  const registrarEscolha = (linha: MigracaoLinha, campo: CampoManual, valor: string) => {
+    const chave = `${linha.linhaOrigem}:${campo}`;
+    if (valor) escolhasManuais.current.set(chave, valor);
+    else escolhasManuais.current.delete(chave);
+  };
+
   const atualizarLinha = (id: string, alteracoes: Partial<MigracaoLinha>) => {
     setLinhas((atuais) => {
       const repetidas = chavesRepetidas(atuais);
       const original = atuais.find((linha) => linha.id === id);
       if (!original) return atuais;
-      const atualizada = recalcularLinha({ ...original, ...alteracoes }, cadastros, duplicadosBanco, repetidas);
+      const atualizada = recalcularLinha({ ...original, ...alteracoes }, cadastros, duplicadosBanco, repetidas, escolhasDaLinha(original));
       return atuais.map((linha) => linha.id === id ? atualizada : linha);
     });
   };
@@ -139,22 +170,53 @@ export default function MigracaoDados() {
     if (planilha) await montar(planilha, nomeAba);
   };
 
-  const aplicarGrupo = (linha: MigracaoLinha, field: 'cliente' | 'conta' | 'categoria' | 'centroCusto', id: string) => {
+  const aplicarGrupo = (linha: MigracaoLinha, field: 'cliente' | 'conta' | 'categoria' | 'centroCusto', id: string, selecionadoExterno?: { id: string; nome: string }) => {
     const nomeOriginal = nomesOriginais.current[`${linha.id}:${field}`];
     const cadastrosDoCampo = field === 'cliente' ? cadastros.clientes : field === 'conta' ? cadastros.contas : field === 'categoria' ? cadastros.categorias : cadastros.centrosCusto;
-    const selecionado = cadastrosDoCampo.find((item) => item.id === id);
+    const selecionado = selecionadoExterno ?? cadastrosDoCampo.find((item) => item.id === id);
     setLinhas((atuais) => {
       const repetidas = chavesRepetidas(atuais);
       return atuais.map((item) => {
         const nome = nomesOriginais.current[`${item.id}:${field}`];
         if (nome !== nomeOriginal) return item;
+        escolhasManuais.current.set(`${item.linhaOrigem}:${field}`, id);
         const alteracoes: Partial<MigracaoLinha> = field === 'cliente' ? { clienteId: id, clienteNome: selecionado?.nome ?? '' }
           : field === 'conta' ? { contaId: id, contaNome: selecionado?.nome ?? '' }
             : field === 'categoria' ? { categoriaId: id, categoriaNome: selecionado?.nome ?? '' }
               : { centroCustoId: id, centroCustoNome: selecionado?.nome ?? '' };
-        return recalcularLinha({ ...item, ...alteracoes }, cadastros, duplicadosBanco, repetidas);
+        return recalcularLinha({ ...item, ...alteracoes }, cadastros, duplicadosBanco, repetidas, escolhasDaLinha(item));
       });
     });
+  };
+
+  const abrirCadastroRapido = (linha: MigracaoLinha, campo: 'cliente' | 'categoria') => {
+    const nomeOriginal = nomesOriginais.current[`${linha.id}:${campo}`] ?? '';
+    setCadastroRapido({ linhaId: linha.id, campo, nome: nomeOriginal, tipo: campo === 'categoria' ? linha.tipo : null, erro: '', carregando: false });
+  };
+
+  const cadastrarRapido = async (linha: MigracaoLinha) => {
+    if (!cadastroRapido) return;
+    const formulario = cadastroRapido;
+    const nome = formulario.nome.trim();
+    if (!nome) return;
+    if (formulario.campo === 'categoria' && !formulario.tipo) {
+      setCadastroRapido({ ...formulario, erro: 'Selecione Entrada ou Saída.' });
+      return;
+    }
+    setCadastroRapido({ ...formulario, carregando: true, erro: '' });
+    try {
+      if (formulario.campo === 'cliente') {
+        const criado = await createEntity({ tipo: 'cliente', nome_razao_social: nome, documento: null, status_sincronizacao: true, status_base: 'ativo' } as Parameters<typeof createEntity>[0]);
+        aplicarGrupo(linha, 'cliente', criado.id, { id: criado.id, nome: criado.nome_razao_social });
+      } else {
+        const tipo = formulario.tipo as 'entrada' | 'saida';
+        const criado = await createCategory({ nome, tipo });
+        aplicarGrupo(linha, 'categoria', criado.id, { id: criado.id, nome: criado.nome });
+      }
+      setCadastroRapido(null);
+    } catch (cause) {
+      setCadastroRapido({ ...formulario, carregando: false, erro: cause instanceof Error ? cause.message : 'Não foi possível cadastrar.' });
+    }
   };
 
   const importar = async () => {
@@ -210,7 +272,48 @@ export default function MigracaoDados() {
           {remapeando && <p className="flex items-center gap-2 text-xs text-on-surface-variant"><LoaderCircle className="h-4 w-4 animate-spin" />Recalculando linhas…</p>}
           {importando && <div role="status" className="space-y-2 text-xs font-semibold text-on-surface-variant"><div className="flex items-center gap-2"><LoaderCircle className="h-4 w-4 animate-spin text-primary" />Importando linhas selecionadas…</div><div className="h-1.5 overflow-hidden rounded-full bg-surface-container-low"><div className="h-full w-1/3 animate-pulse rounded-full bg-primary" /></div></div>}
           {resultado && <section role="status" className="rounded-xl border border-bank-truth-green/30 bg-bank-truth-green/10 p-4"><div className="flex items-center gap-2 font-bold text-bank-truth-green"><CheckCircle2 className="h-5 w-5" />Importação concluída</div><div className="mt-2 grid gap-2 text-sm text-on-surface sm:grid-cols-2"><p>Importadas: <strong>{resultado.importadas}</strong></p><p>Valor total: <strong>{moeda.format(resultado.valor_total)}</strong></p><p className="sm:col-span-2">ID do lote: <strong className="break-all">{resultado.lote_id}</strong></p></div>{resultado.erros.length > 0 && <div className="mt-3 text-sm text-alert-red"><p className="font-bold">Erros ({resultado.erros.length})</p><ul className="mt-1 list-inside list-disc">{resultado.erros.map((item, index) => <li key={`${item.linha}-${index}`}>Linha {item.linha}: {item.motivo}</li>)}</ul></div>}</section>}
-          <div className="overflow-x-auto rounded-xl border border-surface-border"><table className="min-w-[1500px] w-full border-collapse text-left text-xs"><thead className="bg-surface-container-low"><tr>{['Incluir', 'Linha', 'Situação', 'Valor', 'Entrada/Saída', 'Vencimento', 'Cliente', 'Conta', 'Categoria', 'Centro de Custo', 'Descrição', 'Resultado previsto'].map((title) => <th key={title} className="px-3 py-3 text-[10px] font-black uppercase tracking-widest text-secondary">{title}</th>)}</tr></thead><tbody>{linhasVisiveis.map((linha) => { const pendente = linha.situacao === 'pendente'; return <tr key={linha.id} className={`border-t border-surface-border ${pendente ? 'bg-pending-amber/5' : ''}`}><td className="px-3 py-3"><label className="flex items-center gap-2 text-xs font-semibold text-on-surface"><input aria-label={`Incluir linha ${linha.linhaOrigem}`} type="checkbox" checked={linha.incluir} disabled={['duplicada', 'cancelada', 'erro'].includes(linha.situacao)} onChange={(event) => atualizarLinha(linha.id, { incluir: event.target.checked, incluirManual: true })} className="h-4 w-4 accent-primary focus-visible:ring-2 focus-visible:ring-primary" />Incluir</label></td><td className="px-3 py-3 text-on-surface">{linha.linhaOrigem}</td><td className={`px-3 py-3 font-bold ${corSituacao[linha.situacao]}`}>{labelSituacao[linha.situacao]}</td><td className="px-3 py-3"><input aria-label={`Valor da linha ${linha.linhaOrigem}`} type="number" min="0" step="0.01" value={linha.valor ?? ''} onChange={(event) => { const valor = event.target.value === '' ? null : Math.abs(Number(event.target.value)); atualizarLinha(linha.id, { valor }); }} className={`${classeCampo} w-28 ${pendente && linha.valor === null ? 'border-pending-amber ring-1 ring-pending-amber' : ''}`} /></td><td className="px-3 py-3"><select aria-label={`Entrada ou saída da linha ${linha.linhaOrigem}`} value={linha.tipo ?? ''} onChange={(event) => atualizarLinha(linha.id, { tipo: event.target.value === '' ? null : (event.target.value as 'entrada' | 'saida') })} className={`${classeCampo} w-24 ${pendente && !linha.tipo ? 'border-pending-amber ring-1 ring-pending-amber' : ''}`}><option value="">Definir…</option><option value="entrada">Entrada</option><option value="saida">Saída</option></select></td><td className="px-3 py-3"><input aria-label={`Data de vencimento da linha ${linha.linhaOrigem}`} type="date" value={linha.vencimento ?? ''} onChange={(event) => atualizarLinha(linha.id, { vencimento: event.target.value || null })} className={`${classeCampo} w-36 ${pendente && !linha.vencimento ? 'border-pending-amber ring-1 ring-pending-amber' : ''}`} /></td>{([['cliente', 'clienteId'], ['conta', 'contaId'], ['categoria', 'categoriaId'], ['centroCusto', 'centroCustoId']] as const).map(([field, idField]) => { const options = opcoesCampo(field); const currentId = linha[idField] ?? ''; return <td key={field} className="px-3 py-3"><div className="flex min-w-40 flex-col gap-1"><select aria-label={`${field} da linha ${linha.linhaOrigem}`} value={currentId} onChange={(event) => { const selected = options.find((item) => item.id === event.target.value); const fieldName = field === 'centroCusto' ? 'centroCustoNome' : `${field}Nome` as 'clienteNome' | 'contaNome' | 'categoriaNome'; atualizarLinha(linha.id, { [idField]: event.target.value || null, [fieldName]: selected?.nome ?? (field === 'centroCusto' ? linha.centroCustoNome : '') }); }} className={`${classeCampo} ${pendente && !currentId ? 'border-pending-amber ring-1 ring-pending-amber' : ''}`}><option value="">Selecionar…</option>{options.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select><button type="button" disabled={!currentId} onClick={() => aplicarGrupo(linha, field, currentId)} className="text-left text-[10px] font-bold text-primary underline disabled:opacity-40">Aplicar a linhas com o mesmo nome</button></div></td>; })}<td className="max-w-52 px-3 py-3 text-on-surface-variant">{linha.descricao || '—'}</td><td className={`max-w-64 px-3 py-3 font-semibold ${corSituacao[linha.situacao]}`}>{linha.resultadoPrevisto}</td></tr>; })}</tbody></table>{linhasVisiveis.length === 0 && <p className="p-6 text-center text-sm text-on-surface-variant">{somentePendencias ? 'Nenhuma linha pendente.' : 'Nenhuma linha encontrada na aba selecionada.'}</p>}</div>
+          <div className="overflow-x-auto rounded-xl border border-surface-border">
+            <table className="min-w-[1500px] w-full border-collapse text-left text-xs">
+              <thead className="bg-surface-container-low"><tr>{['Incluir', 'Linha', 'Situação', 'Valor', 'Entrada/Saída', 'Vencimento', 'Cliente', 'Conta', 'Categoria', 'Centro de Custo', 'Descrição', 'Resultado previsto'].map((title) => <th key={title} className="px-3 py-3 text-[10px] font-black uppercase tracking-widest text-secondary">{title}</th>)}</tr></thead>
+              <tbody>{linhasVisiveis.map((linha) => {
+                const pendente = linha.situacao === 'pendente';
+                return <tr key={linha.id} className={`border-t border-surface-border ${pendente ? 'bg-pending-amber/5' : ''}`}>
+                  <td className="px-3 py-3"><label className="flex items-center gap-2 text-xs font-semibold text-on-surface"><input aria-label={`Incluir linha ${linha.linhaOrigem}`} type="checkbox" checked={linha.incluir} disabled={['duplicada', 'cancelada', 'erro'].includes(linha.situacao)} onChange={(event) => atualizarLinha(linha.id, { incluir: event.target.checked, incluirManual: true })} className="h-4 w-4 accent-primary focus-visible:ring-2 focus-visible:ring-primary" />Incluir</label></td>
+                  <td className="px-3 py-3 text-on-surface">{linha.linhaOrigem}</td>
+                  <td className={`px-3 py-3 font-bold ${corSituacao[linha.situacao]}`}>{labelSituacao[linha.situacao]}</td>
+                  <td className="px-3 py-3"><input aria-label={`Valor da linha ${linha.linhaOrigem}`} type="number" min="0" step="0.01" value={linha.valor ?? ''} onChange={(event) => { const valor = event.target.value === '' ? null : Math.abs(Number(event.target.value)); atualizarLinha(linha.id, { valor }); }} className={`${classeCampo} w-28 ${pendente && linha.valor === null ? 'border-pending-amber ring-1 ring-pending-amber' : ''}`} /></td>
+                  <td className="px-3 py-3"><select aria-label={`Entrada ou saída da linha ${linha.linhaOrigem}`} value={linha.tipo ?? ''} onChange={(event) => { const tipo = event.target.value as 'entrada' | 'saida' | ''; registrarEscolha(linha, 'tipo', tipo); atualizarLinha(linha.id, { tipo: tipo || null }); }} className={`${classeCampo} w-24 ${pendente && !linha.tipo ? 'border-pending-amber ring-1 ring-pending-amber' : ''}`}><option value="">Definir…</option><option value="entrada">Entrada</option><option value="saida">Saída</option></select></td>
+                  <td className="px-3 py-3"><input aria-label={`Data de vencimento da linha ${linha.linhaOrigem}`} type="date" value={linha.vencimento ?? ''} onChange={(event) => atualizarLinha(linha.id, { vencimento: event.target.value || null })} className={`${classeCampo} w-36 ${pendente && !linha.vencimento ? 'border-pending-amber ring-1 ring-pending-amber' : ''}`} /></td>
+                  {([['cliente', 'clienteId'], ['conta', 'contaId'], ['categoria', 'categoriaId'], ['centroCusto', 'centroCustoId']] as const).map(([field, idField]) => {
+                    const options = opcoesCampo(field);
+                    const currentId = linha[idField] ?? '';
+                    const nomeOriginal = nomesOriginais.current[`${linha.id}:${field}`] ?? '';
+                    const formularioAberto = cadastroRapido?.linhaId === linha.id && cadastroRapido.campo === field;
+                    const podeCadastrar = nomeOriginal.trim() !== '' && (field === 'cliente' ? !!user : field === 'categoria' ? hasRole(['master', 'gerente']) : false);
+                    return <td key={field} className="px-3 py-3"><div className="flex min-w-40 flex-col gap-1">
+                      <select aria-label={`${field} da linha ${linha.linhaOrigem}`} value={currentId} onChange={(event) => {
+                        registrarEscolha(linha, field, event.target.value);
+                        const selected = options.find((item) => item.id === event.target.value);
+                        const fieldName = field === 'centroCusto' ? 'centroCustoNome' : `${field}Nome` as 'clienteNome' | 'contaNome' | 'categoriaNome';
+                        atualizarLinha(linha.id, { [idField]: event.target.value || null, [fieldName]: selected?.nome ?? (field === 'centroCusto' ? linha.centroCustoNome : '') });
+                      }} className={`${classeCampo} ${pendente && !currentId ? 'border-pending-amber ring-1 ring-pending-amber' : ''}`}><option value="">Selecionar…</option>{options.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select>
+                      <button type="button" disabled={!currentId} onClick={() => aplicarGrupo(linha, field, currentId)} className="text-left text-[10px] font-bold text-primary underline disabled:opacity-40">Aplicar a linhas com o mesmo nome</button>
+                      {podeCadastrar && <button type="button" onClick={() => formularioAberto ? setCadastroRapido(null) : field === 'cliente' || field === 'categoria' ? abrirCadastroRapido(linha, field) : null} className="text-left text-[10px] font-bold text-primary">+ Cadastrar {field === 'cliente' ? 'cliente' : 'categoria'}</button>}
+                      {formularioAberto && <div className="space-y-2 rounded-lg border border-surface-border bg-surface-container-low p-2">
+                        <input aria-label={`Nome do novo ${field}`} value={cadastroRapido.nome} onChange={(event) => setCadastroRapido({ ...cadastroRapido, nome: event.target.value, erro: '' })} className={`${classeCampo} w-full`} />
+                        {field === 'categoria' && !cadastroRapido.tipo && <div className="flex gap-1"><button type="button" onClick={() => setCadastroRapido({ ...cadastroRapido, tipo: 'entrada' })} className="rounded border border-surface-border px-2 py-1 text-[10px] font-bold text-on-surface">Entrada</button><button type="button" onClick={() => setCadastroRapido({ ...cadastroRapido, tipo: 'saida' })} className="rounded border border-surface-border px-2 py-1 text-[10px] font-bold text-on-surface">Saída</button></div>}
+                        {cadastroRapido.erro && <p role="alert" className="text-[10px] text-alert-red">{cadastroRapido.erro}</p>}
+                        <div className="flex gap-2"><button type="button" disabled={cadastroRapido.carregando} onClick={() => void cadastrarRapido(linha)} className="rounded bg-primary px-2 py-1 text-[10px] font-bold text-white disabled:opacity-50">{cadastroRapido.carregando ? 'Cadastrando…' : 'Cadastrar'}</button><button type="button" disabled={cadastroRapido.carregando} onClick={() => setCadastroRapido(null)} className="rounded border border-surface-border px-2 py-1 text-[10px] font-bold text-on-surface">Cancelar</button></div>
+                      </div>}
+                    </div></td>;
+                  })}
+                  <td className="max-w-52 px-3 py-3 text-on-surface-variant">{linha.descricao || '—'}</td>
+                  <td className={`max-w-64 px-3 py-3 font-semibold ${corSituacao[linha.situacao]}`}>{linha.resultadoPrevisto}</td>
+                </tr>;
+              })}</tbody>
+            </table>
+            {linhasVisiveis.length === 0 && <p className="p-6 text-center text-sm text-on-surface-variant">{somentePendencias ? 'Nenhuma linha pendente.' : 'Nenhuma linha encontrada na aba selecionada.'}</p>}
+          </div>
         </div>}
       </motion.section>
       <section className="rounded-xl border border-surface-border bg-white p-5 dark:bg-surface"><header className="mb-4 flex items-center gap-2"><Clock3 className="h-4 w-4 text-secondary" /><h2 className="text-xs font-black uppercase tracking-widest text-secondary">Histórico de lotes</h2></header>{carregandoLotes ? <p className="text-sm text-on-surface-variant">Carregando histórico…</p> : lotes.length === 0 ? <p className="text-sm text-on-surface-variant">Nenhum lote de importação encontrado.</p> : <div className="space-y-2">{lotes.map((lote) => <div key={lote.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-surface-border p-3"><div className="min-w-48 flex-1"><p className="break-all text-sm font-bold text-on-surface">{lote.arquivo_nome ?? 'Arquivo sem nome'}</p><p className="mt-1 text-xs text-on-surface-variant">{new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(lote.created_at))} · {lote.importadas} importadas · {lote.erros} erros · {moeda.format(lote.valor_total)}</p><p className="mt-1 text-xs font-bold text-on-surface-variant">Status: {lote.status}</p></div><button type="button" disabled={lote.status === 'desfeita' || desfazer.isPending} onClick={() => void undo(lote.id)} className="inline-flex items-center gap-2 rounded-lg border border-alert-red/30 px-3 py-2 text-xs font-bold text-alert-red transition hover:bg-alert-red/10 disabled:cursor-not-allowed disabled:opacity-40"><RotateCcw className="h-3.5 w-3.5" />Desfazer</button></div>)}</div>}</section>

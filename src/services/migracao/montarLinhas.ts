@@ -4,10 +4,29 @@ import { normalizarChave, normalizarData, normalizarStatusRecebido, normalizarTe
 
 interface IndicesCadastros {
   contas: Map<string, string>;
+  contasLista: { id: string; nome: string }[];
   clientes: Map<string, string>;
   categorias: Map<string, string>;
   centrosCusto: Map<string, string>;
 }
+
+export function sugerirTipoPorNomes(nomes: (string | null | undefined)[]): 'entrada' | 'saida' | null {
+  const entradas = new Set(['entrada', 'entradas', 'receita', 'receitas', 'recebimento', 'recebimentos', 'credito', 'creditos']);
+  const saidas = new Set(['saida', 'saidas', 'despesa', 'despesas', 'debito', 'debitos']);
+  let encontrouEntrada = false;
+  let encontrouSaida = false;
+
+  for (const nome of nomes) {
+    const tokens = normalizarChave(nome).split(/[^a-z0-9]+/).filter(Boolean);
+    if (tokens.some(token => entradas.has(token))) encontrouEntrada = true;
+    if (tokens.some(token => saidas.has(token))) encontrouSaida = true;
+  }
+
+  if (encontrouEntrada === encontrouSaida) return null;
+  return encontrouEntrada ? 'entrada' : 'saida';
+}
+
+export type MigracaoEscolhasManuais = Partial<Record<'tipo' | 'cliente' | 'conta' | 'categoria' | 'centroCusto', string>>;
 
 export function indexarCadastros(cadastros: MigracaoCadastros): IndicesCadastros {
   const montarIndice = (itens: { id: string; nome: string }[]) => {
@@ -21,10 +40,32 @@ export function indexarCadastros(cadastros: MigracaoCadastros): IndicesCadastros
 
   return {
     contas: montarIndice(cadastros.contas),
+    contasLista: cadastros.contas,
     clientes: montarIndice(cadastros.clientes),
     categorias: montarIndice(cadastros.categorias),
     centrosCusto: montarIndice(cadastros.centrosCusto),
   };
+}
+
+function contaPorContencao(texto: string, contas: { id: string; nome: string }[]): string | null {
+  const tokensTexto = normalizarChave(texto).split(/[^a-z0-9]+/).filter(Boolean);
+  if (!tokensTexto.length) return null;
+  const contemSequencia = (maior: string[], menor: string[]) =>
+    maior.some((_, inicio) => menor.every((token, deslocamento) => maior[inicio + deslocamento] === token));
+  const correspondencias = contas.flatMap(conta => {
+    const nome = normalizarChave(conta.nome);
+    const tokensNome = nome.split(/[^a-z0-9]+/).filter(Boolean);
+    if (nome.length < 3 || !tokensNome.length) return [];
+    const textoContemNome = contemSequencia(tokensTexto, tokensNome);
+    const nomeContemTexto = contemSequencia(tokensNome, tokensTexto);
+    return textoContemNome || nomeContemTexto ? [{ ...conta, tokens: tokensNome.length, tamanho: nome.length }] : [];
+  });
+  if (!correspondencias.length) return null;
+
+  correspondencias.sort((a, b) => b.tokens - a.tokens || b.tamanho - a.tamanho);
+  const melhor = correspondencias[0];
+  const empatadas = correspondencias.filter(item => item.tokens === melhor.tokens && item.tamanho === melhor.tamanho);
+  return new Set(empatadas.map(item => item.id)).size === 1 ? melhor.id : null;
 }
 
 /** Observações gravadas no banco: descrição + anotações, igual à função de importação. */
@@ -67,14 +108,21 @@ function avaliar(
   linha: MigracaoLinha,
   indices: IndicesCadastros,
   duplicados: Set<number>,
-  repetidas: Set<string>
+  repetidas: Set<string>,
+  escolhasManuais: MigracaoEscolhasManuais = {}
 ): MigracaoLinha {
   const atualizada: MigracaoLinha = { ...linha };
 
   atualizada.clienteId = indices.clientes.get(normalizarChave(atualizada.clienteNome)) ?? null;
-  atualizada.contaId = indices.contas.get(normalizarChave(atualizada.contaNome)) ?? null;
+  atualizada.contaId = indices.contas.get(normalizarChave(atualizada.contaNome)) ?? contaPorContencao(atualizada.contaNome, indices.contasLista);
   atualizada.categoriaId = indices.categorias.get(normalizarChave(atualizada.categoriaNome)) ?? null;
   atualizada.centroCustoId = indices.centrosCusto.get(normalizarChave(atualizada.centroCustoNome)) ?? null;
+
+  if (escolhasManuais.tipo) atualizada.tipo = escolhasManuais.tipo as 'entrada' | 'saida';
+  if (escolhasManuais.cliente) atualizada.clienteId = escolhasManuais.cliente;
+  if (escolhasManuais.conta) atualizada.contaId = escolhasManuais.conta;
+  if (escolhasManuais.categoria) atualizada.categoriaId = escolhasManuais.categoria;
+  if (escolhasManuais.centroCusto) atualizada.centroCustoId = escolhasManuais.centroCusto;
 
   const pendencias: string[] = [];
   if (!atualizada.clienteId) pendencias.push('Selecione o cliente');
@@ -114,7 +162,8 @@ function montarLinha(
   colunas: MigracaoColunas,
   indices: IndicesCadastros,
   duplicados: Set<number>,
-  repetidas: Set<string>
+  repetidas: Set<string>,
+  tipoSugerido: 'entrada' | 'saida' | null
 ): MigracaoLinha {
   const ler = (campo: keyof MigracaoColunas): CelulaPlanilha => {
     const indice = colunas[campo];
@@ -132,7 +181,7 @@ function montarLinha(
     statusPlanilha: status.status,
     recebidoTexto: status.texto,
     recebido: status.recebido,
-    tipo: valor === null || valor === 0 ? null : valorBruto !== null && valorBruto < 0 ? 'saida' : 'entrada',
+    tipo: tipoSugerido === 'entrada' && valorBruto !== null && valorBruto < 0 ? null : tipoSugerido,
     valor,
     data: normalizarData(ler('data')),
     competencia: normalizarData(ler('competencia')),
@@ -163,8 +212,10 @@ export function montarLinhas(entrada: {
   linhaCabecalho: number;
   cadastros: MigracaoCadastros;
   duplicados: number[];
+  nomesTipo?: (string | null | undefined)[];
 }): MigracaoLinha[] {
   const { linhas, colunas, linhaCabecalho, cadastros, duplicados } = entrada;
+  const tipoSugerido = sugerirTipoPorNomes(entrada.nomesTipo ?? []);
   const indices = indexarCadastros(cadastros);
   const conjuntoDuplicados = new Set(duplicados);
   const repetidas = new Set<string>();
@@ -174,7 +225,7 @@ export function montarLinhas(entrada: {
     const celulas = linhas[i] ?? [];
     const vazia = celulas.every(celula => celula === null || normalizarTexto(celula) === '');
     if (vazia) continue;
-    resultado.push(montarLinha(celulas, i + 1, colunas, indices, conjuntoDuplicados, repetidas));
+    resultado.push(montarLinha(celulas, i + 1, colunas, indices, conjuntoDuplicados, repetidas, tipoSugerido));
   }
 
   return resultado;
@@ -185,7 +236,8 @@ export function recalcularLinha(
   linha: MigracaoLinha,
   cadastros: MigracaoCadastros,
   duplicados: number[],
-  repetidasArquivo: Set<string> = new Set()
+  repetidasArquivo: Set<string> = new Set(),
+  escolhasManuais: MigracaoEscolhasManuais = {}
 ): MigracaoLinha {
-  return avaliar(linha, indexarCadastros(cadastros), new Set(duplicados), repetidasArquivo);
+  return avaliar(linha, indexarCadastros(cadastros), new Set(duplicados), repetidasArquivo, escolhasManuais);
 }

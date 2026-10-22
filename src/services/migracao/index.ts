@@ -47,6 +47,7 @@ export async function prepararMigracao(
     linhaCabecalho: deteccao.linhaCabecalho,
     cadastros,
     duplicados: [],
+    nomesTipo: [planilha.nome, escolhida.nome],
   });
 
   let duplicados: number[] = [];
@@ -70,6 +71,7 @@ export async function prepararMigracao(
     linhaCabecalho: deteccao.linhaCabecalho,
     cadastros,
     duplicados,
+    nomesTipo: [planilha.nome, escolhida.nome],
   });
 
   const clientesAusentes = new Set(
@@ -107,6 +109,7 @@ export async function remontarLinhas(entrada: {
   linhaCabecalho: number;
   colunas: MigracaoColunas;
   cadastros: MigracaoCadastros;
+  nomesTipo?: (string | null | undefined)[];
 }): Promise<{ linhas: MigracaoLinha[]; duplicados: number[]; avisos: string[] }> {
   const avisos: string[] = [];
   const ausentes = COLUNAS_ESSENCIAIS.filter(item => entrada.colunas[item.campo] === undefined);
@@ -192,5 +195,6 @@ export async function desfazerImportacao(loteId: string): Promise<number> {
 
 export { lerPlanilha } from './leituraPlanilha';
 export { detectarColunas } from './colunas';
-export { montarLinhas, recalcularLinha, chavesRepetidas, montarObservacoes } from './montarLinhas';
+export { montarLinhas, recalcularLinha, chavesRepetidas, montarObservacoes, sugerirTipoPorNomes } from './montarLinhas';
+export type { MigracaoEscolhasManuais } from './montarLinhas';
 export { buscarDuplicatas } from './duplicatas';
