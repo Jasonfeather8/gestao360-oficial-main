@@ -533,7 +533,10 @@ export default function Lancamentos({
     : `repeat(${mirrorColumnCount}, minmax(0, 1fr))`;
 
   const formatPrintDate = (dateStr: string | null | undefined) => dateStr ? dateStr.slice(0, 10).split('-').reverse().join('/') : '-';
-  const isPartialPayment = (item: LancamentoFinanceiro) => item.status_pagamento === 'pago_parcial' || (item.status_pagamento === 'quitação_pendente' && Boolean((item as any).vinculo_residuo_id));
+  const isPartialPayment = (item: LancamentoFinanceiro) =>
+    item.status_pagamento === 'pago_parcial'
+    || (item.status_pagamento === 'quitação_pendente'
+      && (Boolean((item as any).vinculo_residuo_id) || (Number(item.valor_recebido) > 0 && getSaldoAPagar(item) > 0.005)));
   const getPrintStatus = (item: LancamentoFinanceiro) => {
     if (item.status_pagamento === 'pago') return 'Liquidado, Pago';
     if (isPartialPayment(item)) return 'Pago Parcial';

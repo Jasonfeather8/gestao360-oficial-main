@@ -216,7 +216,10 @@ export const lancamentosService = {
       }
 
       if (filters.operationalView) {
-        query = query.in('status_pagamento', ['aberto', 'pago_parcial', 'quitação_pendente']);
+        // Baixa registrada sai das telas de Pagar/Receber: permanece só o título com saldo em aberto (baixa parcial continua).
+        query = query
+          .in('status_pagamento', ['aberto', 'pago_parcial', 'quitação_pendente'])
+          .gt('saldo_aberto', 0);
         orGroups.push(['status_aprovacao.neq.confirmado_master', 'status_aprovacao.is.null']);
       }
 
