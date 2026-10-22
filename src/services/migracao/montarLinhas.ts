@@ -8,6 +8,7 @@ interface IndicesCadastros {
   clientes: Map<string, string>;
   categorias: Map<string, string>;
   centrosCusto: Map<string, string>;
+  centrosCustoLista: { id: string; nome: string }[];
 }
 
 export function sugerirTipoPorNomes(nomes: (string | null | undefined)[]): 'entrada' | 'saida' | null {
@@ -44,6 +45,7 @@ export function indexarCadastros(cadastros: MigracaoCadastros): IndicesCadastros
     clientes: montarIndice(cadastros.clientes),
     categorias: montarIndice(cadastros.categorias),
     centrosCusto: montarIndice(cadastros.centrosCusto),
+    centrosCustoLista: cadastros.centrosCusto,
   };
 }
 
@@ -65,6 +67,32 @@ function contaPorContencao(texto: string, contas: { id: string; nome: string }[]
   correspondencias.sort((a, b) => b.tokens - a.tokens || b.tamanho - a.tamanho);
   const melhor = correspondencias[0];
   const empatadas = correspondencias.filter(item => item.tokens === melhor.tokens && item.tamanho === melhor.tamanho);
+  return new Set(empatadas.map(item => item.id)).size === 1 ? melhor.id : null;
+}
+
+function centroCustoPorSemelhanca(texto: string, lista: { id: string; nome: string }[]): string | null {
+  const nomeTexto = normalizarChave(texto);
+  const tokensTexto = [...new Set(nomeTexto.split(/[^a-z0-9]+/).filter(token => token.length > 1))];
+  if (!tokensTexto.length) return null;
+  const tamanhoTexto = nomeTexto.replace(/\s/g, '').length;
+  const correspondencias = lista.flatMap(centro => {
+    const nome = normalizarChave(centro.nome);
+    const tokensNome = [...new Set(nome.split(/[^a-z0-9]+/).filter(token => token.length > 1))];
+    const tamanhoNome = nome.replace(/\s/g, '').length;
+    if (!tokensNome.length || Math.min(tamanhoTexto, tamanhoNome) < 4) return [];
+    const tokensCurtos = tamanhoTexto <= tamanhoNome ? tokensTexto : tokensNome;
+    const tokensLongos = tamanhoTexto <= tamanhoNome ? tokensNome : tokensTexto;
+    if (!tokensCurtos.every(token => tokensLongos.includes(token))) return [];
+    const intersecao = tokensTexto.filter(token => tokensNome.includes(token)).length;
+    const uniao = new Set([...tokensTexto, ...tokensNome]).size;
+    const jaccard = intersecao / uniao;
+    return jaccard >= 0.5 ? [{ id: centro.id, jaccard, tamanho: nome.length }] : [];
+  });
+  if (!correspondencias.length) return null;
+
+  correspondencias.sort((a, b) => b.jaccard - a.jaccard || b.tamanho - a.tamanho);
+  const melhor = correspondencias[0];
+  const empatadas = correspondencias.filter(item => item.jaccard === melhor.jaccard && item.tamanho === melhor.tamanho);
   return new Set(empatadas.map(item => item.id)).size === 1 ? melhor.id : null;
 }
 
@@ -116,7 +144,8 @@ function avaliar(
   atualizada.clienteId = indices.clientes.get(normalizarChave(atualizada.clienteNome)) ?? null;
   atualizada.contaId = indices.contas.get(normalizarChave(atualizada.contaNome)) ?? contaPorContencao(atualizada.contaNome, indices.contasLista);
   atualizada.categoriaId = indices.categorias.get(normalizarChave(atualizada.categoriaNome)) ?? null;
-  atualizada.centroCustoId = indices.centrosCusto.get(normalizarChave(atualizada.centroCustoNome)) ?? null;
+  atualizada.centroCustoId = indices.centrosCusto.get(normalizarChave(atualizada.centroCustoNome))
+    ?? centroCustoPorSemelhanca(atualizada.centroCustoNome, indices.centrosCustoLista);
 
   if (escolhasManuais.tipo) atualizada.tipo = escolhasManuais.tipo as 'entrada' | 'saida';
   if (escolhasManuais.cliente) atualizada.clienteId = escolhasManuais.cliente;

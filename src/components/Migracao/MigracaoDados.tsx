@@ -17,7 +17,7 @@ const campos: { campo: MigracaoCampo; rotulo: string }[] = [
 ];
 const classeCampo = 'rounded-lg border border-surface-border bg-white px-2 py-1.5 text-xs text-on-surface outline-none transition focus-visible:ring-2 focus-visible:ring-primary dark:bg-surface';
 type CampoManual = keyof MigracaoEscolhasManuais;
-type CadastroRapido = { linhaId: string; campo: 'cliente' | 'categoria'; nome: string; tipo: 'entrada' | 'saida' | null; erro: string; carregando: boolean };
+type CadastroRapido = { linhaId: string; campo: 'cliente' | 'categoria' | 'centroCusto'; nome: string; tipo: 'entrada' | 'saida' | null; erro: string; carregando: boolean };
 
 export default function MigracaoDados() {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -41,7 +41,7 @@ export default function MigracaoDados() {
   const [remapeando, setRemapeando] = useState(false);
   const { data: contas = [] } = useContas();
   const { data: categorias = [], createCategory } = useCategorias();
-  const { data: centrosCusto = [] } = useCentrosCusto();
+  const { data: centrosCusto = [], createCC } = useCentrosCusto();
   const { data: entidades = [], createEntity } = useEntidades();
   const { data: lotes = [], isLoading: carregandoLotes } = useImportacoesDados();
   const desfazer = useDesfazerImportacao();
@@ -189,7 +189,7 @@ export default function MigracaoDados() {
     });
   };
 
-  const abrirCadastroRapido = (linha: MigracaoLinha, campo: 'cliente' | 'categoria') => {
+  const abrirCadastroRapido = (linha: MigracaoLinha, campo: 'cliente' | 'categoria' | 'centroCusto') => {
     const nomeOriginal = nomesOriginais.current[`${linha.id}:${campo}`] ?? '';
     setCadastroRapido({ linhaId: linha.id, campo, nome: nomeOriginal, tipo: campo === 'categoria' ? linha.tipo : null, erro: '', carregando: false });
   };
@@ -208,10 +208,13 @@ export default function MigracaoDados() {
       if (formulario.campo === 'cliente') {
         const criado = await createEntity({ tipo: 'cliente', nome_razao_social: nome, documento: null, status_sincronizacao: true, status_base: 'ativo' } as Parameters<typeof createEntity>[0]);
         aplicarGrupo(linha, 'cliente', criado.id, { id: criado.id, nome: criado.nome_razao_social });
-      } else {
+      } else if (formulario.campo === 'categoria') {
         const tipo = formulario.tipo as 'entrada' | 'saida';
         const criado = await createCategory({ nome, tipo });
         aplicarGrupo(linha, 'categoria', criado.id, { id: criado.id, nome: criado.nome });
+      } else {
+        const criado = await createCC({ nome, descricao: '' });
+        aplicarGrupo(linha, 'centroCusto', criado.id, { id: criado.id, nome: criado.nome });
       }
       setCadastroRapido(null);
     } catch (cause) {
@@ -289,7 +292,8 @@ export default function MigracaoDados() {
                     const currentId = linha[idField] ?? '';
                     const nomeOriginal = nomesOriginais.current[`${linha.id}:${field}`] ?? '';
                     const formularioAberto = cadastroRapido?.linhaId === linha.id && cadastroRapido.campo === field;
-                    const podeCadastrar = nomeOriginal.trim() !== '' && (field === 'cliente' ? !!user : field === 'categoria' ? hasRole(['master', 'gerente']) : false);
+                    const podeCadastrar = nomeOriginal.trim() !== '' && (field === 'cliente' ? !!user : field === 'categoria' || field === 'centroCusto' ? hasRole(['master', 'gerente']) : false);
+                    const rotulosCadastro = { cliente: 'cliente', conta: 'conta', categoria: 'categoria', centroCusto: 'centro de custo' };
                     return <td key={field} className="px-3 py-3"><div className="flex min-w-40 flex-col gap-1">
                       <select aria-label={`${field} da linha ${linha.linhaOrigem}`} value={currentId} onChange={(event) => {
                         registrarEscolha(linha, field, event.target.value);
@@ -298,7 +302,7 @@ export default function MigracaoDados() {
                         atualizarLinha(linha.id, { [idField]: event.target.value || null, [fieldName]: selected?.nome ?? (field === 'centroCusto' ? linha.centroCustoNome : '') });
                       }} className={`${classeCampo} ${pendente && !currentId ? 'border-pending-amber ring-1 ring-pending-amber' : ''}`}><option value="">Selecionar…</option>{options.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select>
                       <button type="button" disabled={!currentId} onClick={() => aplicarGrupo(linha, field, currentId)} className="text-left text-[10px] font-bold text-primary underline disabled:opacity-40">Aplicar a linhas com o mesmo nome</button>
-                      {podeCadastrar && <button type="button" onClick={() => formularioAberto ? setCadastroRapido(null) : field === 'cliente' || field === 'categoria' ? abrirCadastroRapido(linha, field) : null} className="text-left text-[10px] font-bold text-primary">+ Cadastrar {field === 'cliente' ? 'cliente' : 'categoria'}</button>}
+                      {podeCadastrar && field !== 'conta' && <button type="button" onClick={() => formularioAberto ? setCadastroRapido(null) : abrirCadastroRapido(linha, field)} className="text-left text-[10px] font-bold text-primary">+ Cadastrar {rotulosCadastro[field]}</button>}
                       {formularioAberto && <div className="space-y-2 rounded-lg border border-surface-border bg-surface-container-low p-2">
                         <input aria-label={`Nome do novo ${field}`} value={cadastroRapido.nome} onChange={(event) => setCadastroRapido({ ...cadastroRapido, nome: event.target.value, erro: '' })} className={`${classeCampo} w-full`} />
                         {field === 'categoria' && !cadastroRapido.tipo && <div className="flex gap-1"><button type="button" onClick={() => setCadastroRapido({ ...cadastroRapido, tipo: 'entrada' })} className="rounded border border-surface-border px-2 py-1 text-[10px] font-bold text-on-surface">Entrada</button><button type="button" onClick={() => setCadastroRapido({ ...cadastroRapido, tipo: 'saida' })} className="rounded border border-surface-border px-2 py-1 text-[10px] font-bold text-on-surface">Saída</button></div>}
