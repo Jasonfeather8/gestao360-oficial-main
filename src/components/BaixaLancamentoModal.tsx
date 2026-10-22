@@ -77,21 +77,21 @@ export default function BaixaLancamentoModal() {
   const { role } = useAuth();
   const { data: lancamentos = [], baixaLancamento, updateLancamento } = useLancamentos();
   const { data: selectedLancamento } = useLancamento(selectedLancamentoIdForModal);
-  const { data: rawContas = [] } = useContas();
+  const { data: rawContas } = useContas();
 
   const { data: rawCCs = [] } = useCentrosCusto();
-  const { data: contasSaldos = [] } = useContasSaldos();
+  const { data: contasSaldos } = useContasSaldos();
   const { data: entidades = [] } = useEntidades();
   const { data: categorias = [] } = useCategorias();
   const { categoriasAjuste, createCategoriaAjuste } = useCategoriasAjuste();
 
   // Calculate real balance for each account using the RPC data
   const contas = useMemo(() => {
-    return rawContas
+    return (rawContas ?? [])
       .filter((c: any) => c.status !== 'excluido')
       .sort((a: any, b: any) => (a.nome || '').localeCompare(b.nome || ''))
       .map((conta: any) => {
-        const saldoObj = contasSaldos.find(s => s.conta_id === conta.id);
+        const saldoObj = (contasSaldos ?? []).find(s => s.conta_id === conta.id);
         const saldoReal = saldoObj ? Number(saldoObj.saldo_operacional) : (conta.saldo_inicial || 0);
         return { ...conta, saldo_real: saldoReal };
       });
@@ -180,7 +180,12 @@ export default function BaixaLancamentoModal() {
       setAttachments([]);
       setDispensarComprovante(false);
     }
-  }, [lancamento, contas]);
+  }, [lancamento?.id, isBaixaLancamentoOpen, baixaPreset?.lancamentoId, baixaPreset?.dataPagamento]);
+
+  useEffect(() => {
+    if (!isBaixaLancamentoOpen || contaId || contas.length === 0) return;
+    setContaId(contas[0].id);
+  }, [contas, contaId, isBaixaLancamentoOpen]);
 
   useEffect(() => {
     if (!lancamento) return;
