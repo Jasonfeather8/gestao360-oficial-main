@@ -142,7 +142,13 @@ export default function AprovacaoModal() {
                 ) : (
                   <>Você está prestes a aprovar o título de <span className="text-primary font-black">{entName}</span>.</>
                 )}
-                {selectedCount === 1 && <span className="block mt-1 text-bank-truth-green font-black">Isso irá alterar o status para Pago.</span>}
+                {selectedCount === 1 && (
+                  <span className="block mt-1 text-bank-truth-green font-black">
+                    {lancamento?.status_pagamento === 'bpi'
+                      ? 'Isso irá confirmar a baixa por inatividade. O valor não entra no saldo do banco.'
+                      : 'Isso irá alterar o status para Pago.'}
+                  </span>
+                )}
               </p>
 
             </div>

@@ -873,6 +873,25 @@ export const lancamentosService = {
       return;
     }
 
+    if (targetStatus === 'confirmado_master') {
+      // BPI é confirmado sem entrar no saldo: a RPC mantém status_pagamento = 'bpi'.
+      const { data: bpiRows, error: bpiError } = await supabase
+        .from('lancamentos_financeiros')
+        .select('id')
+        .in('id', ids)
+        .eq('status_pagamento', 'bpi');
+      if (bpiError) throw bpiError;
+
+      const bpiIds = (bpiRows || []).map(row => row.id);
+      if (bpiIds.length > 0) {
+        const { error } = await supabase.rpc('confirmar_bpi_master', { p_lancamento_ids: bpiIds });
+        if (error) throw error;
+      }
+
+      ids = ids.filter(id => !bpiIds.includes(id));
+      if (ids.length === 0) return;
+    }
+
     const updatePayload: any = {
       status_aprovacao: targetStatus,
       data_aprovacao: targetStatus === 'confirmado_master' ? new Date().toISOString() : null

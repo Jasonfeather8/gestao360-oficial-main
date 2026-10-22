@@ -427,7 +427,7 @@ export default function Lancamentos({
     if (!isMaster) return;
     const eligibleIds = filteredLancamentos
       .filter(item => selectedLancamentoIdsForBatch.includes(item.id))
-      .filter(item => (item.status_aprovacao !== 'confirmado_master' || item.status_pagamento === 'quitação_pendente') && item.status_pagamento !== 'bpi')
+      .filter(item => item.status_aprovacao !== 'confirmado_master' || item.status_pagamento === 'quitação_pendente')
       .map(item => item.id);
     if (eligibleIds.length === 0) return;
     setSelectedLancamentoIdsForBatch(eligibleIds);
@@ -1043,7 +1043,7 @@ export default function Lancamentos({
                 <>
                   {filteredLancamentos.map((item, idx) => {
                     const isSelected = selectedLancamentoIdsForBatch.includes(item.id);
-                    const isAprovacaoPendente = (item.status_aprovacao !== 'confirmado_master' || item.status_pagamento === 'quitação_pendente') && item.status_pagamento !== 'bpi';
+                    const isAprovacaoPendente = item.status_aprovacao !== 'confirmado_master' || item.status_pagamento === 'quitação_pendente';
                     const days = getDaysOverdue(item.data_vencimento);
 
                     return (
