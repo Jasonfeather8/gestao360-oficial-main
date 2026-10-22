@@ -2,13 +2,23 @@ import type { MigracaoCadastros, MigracaoColunas, MigracaoLinha } from '../../ty
 import type { CelulaPlanilha } from './colunas';
 import { normalizarChave, normalizarData, normalizarStatusRecebido, normalizarTexto, normalizarValor } from './normalizacao';
 
+type CadastroSemelhanca = {
+  id: string;
+  nome: string;
+  nomeNormalizado: string;
+  tokens: string[];
+  tamanhoSemEspacos: number;
+};
+
 interface IndicesCadastros {
   contas: Map<string, string>;
   contasLista: { id: string; nome: string }[];
   clientes: Map<string, string>;
+  clientesLista: CadastroSemelhanca[];
   categorias: Map<string, string>;
+  categoriasLista: CadastroSemelhanca[];
   centrosCusto: Map<string, string>;
-  centrosCustoLista: { id: string; nome: string }[];
+  centrosCustoLista: CadastroSemelhanca[];
 }
 
 export function sugerirTipoPorNomes(nomes: (string | null | undefined)[]): 'entrada' | 'saida' | null {
@@ -38,14 +48,37 @@ export function indexarCadastros(cadastros: MigracaoCadastros): IndicesCadastros
     }
     return mapa;
   };
+  const prepararListaSemelhanca = (itens: { id: string; nome: string }[]): CadastroSemelhanca[] =>
+    itens.map(item => {
+      const nomeNormalizado = normalizarChave(item.nome);
+      return {
+        ...item,
+        nomeNormalizado,
+        tokens: [...new Set(nomeNormalizado.split(/[^a-z0-9]+/).filter(token => token.length > 1))],
+        tamanhoSemEspacos: nomeNormalizado.replace(/\s/g, '').length,
+      };
+    });
+  const montarIndiceNormalizado = (itens: CadastroSemelhanca[]) => {
+    const mapa = new Map<string, string>();
+    for (const item of itens) {
+      if (item.nomeNormalizado && !mapa.has(item.nomeNormalizado)) mapa.set(item.nomeNormalizado, item.id);
+    }
+    return mapa;
+  };
+
+  const clientesLista = prepararListaSemelhanca(cadastros.clientes);
+  const categoriasLista = prepararListaSemelhanca(cadastros.categorias);
+  const centrosCustoLista = prepararListaSemelhanca(cadastros.centrosCusto);
 
   return {
     contas: montarIndice(cadastros.contas),
     contasLista: cadastros.contas,
-    clientes: montarIndice(cadastros.clientes),
-    categorias: montarIndice(cadastros.categorias),
-    centrosCusto: montarIndice(cadastros.centrosCusto),
-    centrosCustoLista: cadastros.centrosCusto,
+    clientes: montarIndiceNormalizado(clientesLista),
+    clientesLista,
+    categorias: montarIndiceNormalizado(categoriasLista),
+    categoriasLista,
+    centrosCusto: montarIndiceNormalizado(centrosCustoLista),
+    centrosCustoLista,
   };
 }
 
@@ -70,15 +103,13 @@ function contaPorContencao(texto: string, contas: { id: string; nome: string }[]
   return new Set(empatadas.map(item => item.id)).size === 1 ? melhor.id : null;
 }
 
-function centroCustoPorSemelhanca(texto: string, lista: { id: string; nome: string }[]): string | null {
+function casarPorSemelhanca(texto: string, lista: CadastroSemelhanca[]): string | null {
   const nomeTexto = normalizarChave(texto);
   const tokensTexto = [...new Set(nomeTexto.split(/[^a-z0-9]+/).filter(token => token.length > 1))];
   if (!tokensTexto.length) return null;
   const tamanhoTexto = nomeTexto.replace(/\s/g, '').length;
-  const correspondencias = lista.flatMap(centro => {
-    const nome = normalizarChave(centro.nome);
-    const tokensNome = [...new Set(nome.split(/[^a-z0-9]+/).filter(token => token.length > 1))];
-    const tamanhoNome = nome.replace(/\s/g, '').length;
+  const correspondencias = lista.flatMap(cadastro => {
+    const { tokens: tokensNome, tamanhoSemEspacos: tamanhoNome, nomeNormalizado } = cadastro;
     if (!tokensNome.length || Math.min(tamanhoTexto, tamanhoNome) < 4) return [];
     const tokensCurtos = tamanhoTexto <= tamanhoNome ? tokensTexto : tokensNome;
     const tokensLongos = tamanhoTexto <= tamanhoNome ? tokensNome : tokensTexto;
@@ -86,7 +117,7 @@ function centroCustoPorSemelhanca(texto: string, lista: { id: string; nome: stri
     const intersecao = tokensTexto.filter(token => tokensNome.includes(token)).length;
     const uniao = new Set([...tokensTexto, ...tokensNome]).size;
     const jaccard = intersecao / uniao;
-    return jaccard >= 0.5 ? [{ id: centro.id, jaccard, tamanho: nome.length }] : [];
+    return jaccard >= 0.5 ? [{ id: cadastro.id, jaccard, tamanho: nomeNormalizado.length }] : [];
   });
   if (!correspondencias.length) return null;
 
@@ -141,11 +172,13 @@ function avaliar(
 ): MigracaoLinha {
   const atualizada: MigracaoLinha = { ...linha };
 
-  atualizada.clienteId = indices.clientes.get(normalizarChave(atualizada.clienteNome)) ?? null;
+  atualizada.clienteId = indices.clientes.get(normalizarChave(atualizada.clienteNome))
+    ?? casarPorSemelhanca(atualizada.clienteNome, indices.clientesLista);
   atualizada.contaId = indices.contas.get(normalizarChave(atualizada.contaNome)) ?? contaPorContencao(atualizada.contaNome, indices.contasLista);
-  atualizada.categoriaId = indices.categorias.get(normalizarChave(atualizada.categoriaNome)) ?? null;
+  atualizada.categoriaId = indices.categorias.get(normalizarChave(atualizada.categoriaNome))
+    ?? casarPorSemelhanca(atualizada.categoriaNome, indices.categoriasLista);
   atualizada.centroCustoId = indices.centrosCusto.get(normalizarChave(atualizada.centroCustoNome))
-    ?? centroCustoPorSemelhanca(atualizada.centroCustoNome, indices.centrosCustoLista);
+    ?? casarPorSemelhanca(atualizada.centroCustoNome, indices.centrosCustoLista);
 
   if (escolhasManuais.tipo) atualizada.tipo = escolhasManuais.tipo as 'entrada' | 'saida';
   if (escolhasManuais.cliente) atualizada.clienteId = escolhasManuais.cliente;
