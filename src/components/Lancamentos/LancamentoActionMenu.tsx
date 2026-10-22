@@ -74,7 +74,7 @@ export default function LancamentoActionMenu({
           </a>
         )}
         
-        {isMaster && (item.status_pagamento === 'pago' || item.status_pagamento === 'pago_parcial' || item.status_pagamento === 'quitação_pendente') && (
+        {isMaster && (item.status_pagamento === 'pago' || item.status_pagamento === 'pago_parcial' || item.status_pagamento === 'quitação_pendente' || item.status_pagamento === 'bpi') && (
           <button
             onClick={() => onEstornar(item.id)}
             className="w-full flex items-center gap-3 px-4 py-3 text-alert-red hover:bg-red-50 rounded-xl transition-all"
