@@ -3,10 +3,13 @@ import { motion } from 'motion/react';
 import { ArrowDownLeft, ArrowUpRight, CheckCircle2, Loader2, PenLine, X } from 'lucide-react';
 import { dataReferenciaLancamento, direcaoLancamento, valorEfetivoLancamento } from '../../services/extrato/comparacao';
 import { mensagemDoErro } from '../../services/erros';
-import type { ItemComparacao, LancamentoFinanceiro } from '../../types';
+import type { ItemComparacao, LancamentoFinanceiro, StatusPagamento } from '../../types';
 
 const moeda = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const dataFormatada = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
+
+/** Títulos que podem receber vínculo bancário: em aberto ou já baixados (inclusive pendentes do gestor). */
+const STATUS_CONCILIAVEIS: readonly StatusPagamento[] = ['aberto', 'pago', 'pago_parcial', 'quitação_pendente'];
 
 function formatarData(data: string | null): string {
   return data ? dataFormatada.format(new Date(`${data}T00:00:00Z`)) : '—';
@@ -15,6 +18,7 @@ function formatarData(data: string | null): string {
 function situacaoLancamento(lancamento: LancamentoFinanceiro, conciliados: Set<string>): string {
   if (conciliados.has(lancamento.id)) return 'Já conciliado';
   if (lancamento.status_pagamento === 'aberto') return 'Em aberto';
+  if (lancamento.status_pagamento === 'quitação_pendente') return 'Pendente do gestor';
   if (lancamento.status_pagamento === 'pago' || lancamento.status_pagamento === 'pago_parcial') return 'Já baixado no ERP';
   return 'Não disponível para conciliação';
 }
@@ -84,7 +88,7 @@ export default function ConciliarModal({
   const diferencaCentavos = valorErpCentavos === null ? null : valorExtratoCentavos - valorErpCentavos;
   const valorBate = diferencaCentavos === 0;
   const selecionadoConciliado = lancamentoSelecionado ? lancamentosConciliados.has(lancamentoSelecionado.id) : false;
-  const statusElegivel = lancamentoSelecionado && ['aberto', 'pago', 'pago_parcial'].includes(lancamentoSelecionado.status_pagamento);
+  const statusElegivel = lancamentoSelecionado && STATUS_CONCILIAVEIS.includes(lancamentoSelecionado.status_pagamento);
   const podeConfirmar = Boolean(podeConciliar && lancamentoSelecionado && valorBate && statusElegivel && !selecionadoConciliado && !carregandoLancamentosConciliados && !isConciliando);
 
   const confirmar = async () => {
@@ -160,7 +164,7 @@ export default function ConciliarModal({
             <ul className="max-h-60 space-y-2 overflow-y-auto">
               {candidatos.map((lancamento) => {
                 const conciliado = lancamentosConciliados.has(lancamento.id);
-                const elegivel = ['aberto', 'pago', 'pago_parcial'].includes(lancamento.status_pagamento);
+                const elegivel = STATUS_CONCILIAVEIS.includes(lancamento.status_pagamento);
                 const desabilitado = conciliado || !elegivel || carregandoLancamentosConciliados;
                 const situacao = carregandoLancamentosConciliados ? 'Verificando vínculo...' : situacaoLancamento(lancamento, lancamentosConciliados);
                 const selecionado = lancamento.id === lancamentoSelecionadoId;

@@ -10,6 +10,9 @@ import type {
 
 const STATUS_BAIXADOS: Array<LancamentoFinanceiro['status_pagamento']> = ['pago', 'pago_parcial'];
 
+/** Status com baixa registrada (inclusive pendente do gestor): o valor recebido é o valor da conciliação. */
+const STATUS_COM_VALOR_RECEBIDO: Array<LancamentoFinanceiro['status_pagamento']> = ['pago', 'pago_parcial', 'quitação_pendente'];
+
 function arredondar(valor: number): number {
   return Math.round(valor * 100) / 100;
 }
@@ -18,10 +21,10 @@ function centavos(valor: number): number {
   return Math.round(valor * 100);
 }
 
-/** Valor efetivo do lançamento: o recebido quando já baixado, senão o previsto ajustado. */
+/** Valor efetivo do lançamento: o recebido quando já existe baixa registrada, senão o previsto ajustado. */
 export function valorEfetivoLancamento(lancamento: LancamentoFinanceiro): number {
   const recebido = Number(lancamento.valor_recebido ?? 0);
-  if (STATUS_BAIXADOS.includes(lancamento.status_pagamento) && recebido > 0) return arredondar(recebido);
+  if (STATUS_COM_VALOR_RECEBIDO.includes(lancamento.status_pagamento) && recebido > 0) return arredondar(recebido);
 
   const previsto = Math.abs(Number(lancamento.valor_previsto ?? 0));
   const desconto = Number(lancamento.desconto_valor ?? 0);
