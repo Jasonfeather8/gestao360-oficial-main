@@ -447,7 +447,7 @@ export default function Lancamentos({
       try {
         await estornarLancamento(id);
         setActiveMenuId(null);
-      } catch (err) { alert('Erro ao estornar'); }
+      } catch (err) { alert(err instanceof Error ? err.message : 'Erro ao estornar'); }
     }
   };
 

@@ -855,39 +855,8 @@ export const lancamentosService = {
  },
 
   estornarLancamento: async (id: string): Promise<void> => {
-    const { data: current, error: getError } = await supabase
-      .from('lancamentos_financeiros')
-      .select('*')
-      .eq('id', id)
-      .single();
-
-    if (getError) throw getError;
-
-    if (current.vinculo_residuo_id) {
-      const { data: original } = await supabase
-        .from('lancamentos_financeiros')
-        .select('valor_previsto')
-        .eq('id', current.vinculo_residuo_id)
-        .single();
-      
-      if (original) {
-        await supabase
-          .from('lancamentos_financeiros')
-          .update({ valor_previsto: original.valor_previsto + current.valor_previsto })
-          .eq('id', current.vinculo_residuo_id);
-      }
-      await supabase.from('lancamentos_financeiros').delete().eq('id', id);
-    } else {
-      await supabase
-        .from('lancamentos_financeiros')
-        .update({
-          status_pagamento: 'aberto',
-          valor_recebido: 0,
-          data_pagamento: null,
-          tipo_baixa: 'financeira'
-        })
-        .eq('id', id);
-    }
+    const { error } = await supabase.rpc('estornar_lancamento_atomico', { p_lancamento_id: id });
+    if (error) throw error;
   },
 
   approveInBatch: async (ids: string[], targetStatus: 'digital' | 'confirmado_master' | 'reprovado'): Promise<void> => {
