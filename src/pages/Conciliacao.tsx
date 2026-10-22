@@ -29,6 +29,7 @@ import MigracaoDados from '../components/Migracao/MigracaoDados';
 import TransferenciasBancarias from '../components/Transferencias/TransferenciasBancarias';
 import { compararExtrato, valorPrevistoParaConciliar } from '../services/extrato/comparacao';
 import { lerExtrato } from '../services/extrato/motorLeitura';
+import { reaproveitarExtratoImportado } from '../services/extrato/persistencia';
 import { mensagemDoErro } from '../services/erros';
 import type { ExtratoLido, ItemComparacao, LancamentoFinanceiro, ProgressoLeituraExtrato } from '../types';
 
@@ -69,6 +70,8 @@ export default function Conciliacao() {
   const [extrato, setExtrato] = useState<ExtratoLido | null>(null);
   const [arquivo, setArquivo] = useState<File | null>(null);
   const [persistido, setPersistido] = useState<number | null>(null);
+  const [reaproveitado, setReaproveitado] = useState(false);
+  const [linhasNaoReconhecidas, setLinhasNaoReconhecidas] = useState(0);
   const [erroPersistencia, setErroPersistencia] = useState<string | null>(null);
   const [processando, setProcessando] = useState(false);
   const [progresso, setProgresso] = useState<ProgressoLeituraExtrato | null>(null);
@@ -82,6 +85,20 @@ export default function Conciliacao() {
   const [conciliarItem, setConciliarItem] = useState<ItemComparacao | null>(null);
   const [toasts, setToasts] = useState<Array<{ id: number; message: string; type: 'success' | 'error' }>>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const aplicarMapeamentoDeTransacoes = (resultado: {
+    transacoesPorHash: Map<string, string>;
+    hashesPorLinha: Map<string, string>;
+  }) => {
+    setExtrato((atual) => atual ? {
+      ...atual,
+      linhas: atual.linhas.map((linha) => {
+        const hash = resultado.hashesPorLinha.get(linha.id);
+        const transacaoBancoId = hash ? resultado.transacoesPorHash.get(hash) : undefined;
+        return transacaoBancoId ? { ...linha, transacaoBancoId } : linha;
+      }),
+    } : atual);
+  };
 
   useEffect(() => {
     setAbaAtiva(
@@ -140,7 +157,22 @@ export default function Conciliacao() {
       setArquivo(file);
       setPersistido(null);
       setErroPersistencia(null);
+      setReaproveitado(false);
+      setLinhasNaoReconhecidas(0);
       setExtrato(extratoLido);
+      if (hasRole(['master', 'gerente']) && contaId) {
+        try {
+          const reuso = await reaproveitarExtratoImportado({ arquivo: file, contaId, extrato: extratoLido });
+          if (reuso) {
+            aplicarMapeamentoDeTransacoes(reuso);
+            setPersistido(reuso.transacoesPorHash.size);
+            setReaproveitado(true);
+            setLinhasNaoReconhecidas(reuso.linhasNaoReconhecidas);
+          }
+        } catch {
+          // Sem reaproveitamento: o extrato segue apenas em memória, como antes.
+        }
+      }
     } catch (error) {
       setErro(error instanceof Error ? error.message : 'Não foi possível ler o extrato.');
       setProgresso(null);
@@ -174,17 +206,30 @@ export default function Conciliacao() {
     }
     setErroPersistencia(null);
     try {
+      const reuso = await reaproveitarExtratoImportado({ arquivo, contaId, extrato });
+      if (reuso) {
+        aplicarMapeamentoDeTransacoes(reuso);
+        setPersistido(reuso.transacoesPorHash.size);
+        setReaproveitado(true);
+        setLinhasNaoReconhecidas(reuso.linhasNaoReconhecidas);
+        return;
+      }
       const resultadoPersistencia = await persistirExtrato({ arquivo, contaId, extrato });
-      setExtrato((atual) => atual ? {
-        ...atual,
-        linhas: atual.linhas.map((linha) => {
-          const hash = resultadoPersistencia.hashesPorLinha.get(linha.id);
-          const transacaoBancoId = hash ? resultadoPersistencia.transacoesPorHash.get(hash) : undefined;
-          return transacaoBancoId ? { ...linha, transacaoBancoId } : linha;
-        }),
-      } : atual);
+      aplicarMapeamentoDeTransacoes(resultadoPersistencia);
       setPersistido(resultadoPersistencia.transacoesPorHash.size);
     } catch (error) {
+      try {
+        const reuso = await reaproveitarExtratoImportado({ arquivo, contaId, extrato });
+        if (reuso) {
+          aplicarMapeamentoDeTransacoes(reuso);
+          setPersistido(reuso.transacoesPorHash.size);
+          setReaproveitado(true);
+          setLinhasNaoReconhecidas(reuso.linhasNaoReconhecidas);
+          return;
+        }
+      } catch {
+        // Mantém a mensagem da falha original quando o reaproveitamento não é possível.
+      }
       setErroPersistencia(mensagemDoErro(error, 'Não foi possível persistir o extrato.'));
     }
   };
@@ -451,9 +496,18 @@ export default function Conciliacao() {
                   )}
                   <div className="mt-3 space-y-2">
                     {persistido !== null ? (
-                      <span role="status" className="inline-flex items-center gap-1.5 rounded-full bg-bank-truth-green/10 px-3 py-1.5 text-xs font-bold text-bank-truth-green">
-                        <CheckCircle2 aria-hidden="true" className="h-4 w-4" />Importado para conciliação · {persistido} {persistido === 1 ? 'transação' : 'transações'}
-                      </span>
+                      <div className="space-y-2">
+                        <span role="status" className="inline-flex items-center gap-1.5 rounded-full bg-bank-truth-green/10 px-3 py-1.5 text-xs font-bold text-bank-truth-green">
+                          <CheckCircle2 aria-hidden="true" className="h-4 w-4" />{reaproveitado
+                            ? `Extrato já importado · ${persistido} transações reaproveitadas para conciliação`
+                            : `Importado para conciliação · ${persistido} ${persistido === 1 ? 'transação' : 'transações'}`}
+                        </span>
+                        {reaproveitado && linhasNaoReconhecidas > 0 && (
+                          <p className="rounded-xl border border-pending-amber/30 bg-pending-amber/10 px-3 py-2 text-xs text-pending-amber">
+                            {linhasNaoReconhecidas} linha(s) do arquivo não foram reconhecidas no extrato já importado e não poderão ser conciliadas por esta tela.
+                          </p>
+                        )}
+                      </div>
                     ) : (
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="inline-flex rounded-full bg-surface-container-low px-3 py-1.5 text-xs font-semibold text-secondary">Somente leitura (memória)</span>
@@ -484,7 +538,7 @@ export default function Conciliacao() {
               </div>
               <div className="flex shrink-0 gap-2">
                 <button type="button" onClick={() => { setErro(null); setIsImportOpen(true); }} className="rounded-xl border border-surface-border px-4 py-2 text-sm font-semibold text-on-surface hover:bg-surface">Trocar arquivo</button>
-                <button type="button" onClick={() => { setExtrato(null); setArquivo(null); setPersistido(null); setErroPersistencia(null); }} className="inline-flex items-center gap-2 rounded-xl border border-alert-red/20 px-4 py-2 text-sm font-semibold text-alert-red hover:bg-alert-red/10"><Trash2 className="h-4 w-4" />Remover</button>
+                <button type="button" onClick={() => { setExtrato(null); setArquivo(null); setPersistido(null); setErroPersistencia(null); setReaproveitado(false); setLinhasNaoReconhecidas(0); }} className="inline-flex items-center gap-2 rounded-xl border border-alert-red/20 px-4 py-2 text-sm font-semibold text-alert-red hover:bg-alert-red/10"><Trash2 className="h-4 w-4" />Remover</button>
               </div>
             </section>
 

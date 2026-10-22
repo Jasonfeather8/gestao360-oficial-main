@@ -36,6 +36,72 @@ function nomeSanitizado(nome: string): string {
   return `${base}.pdf`;
 }
 
+function calcularOrdemLinhaPorPagina(extrato: ExtratoLido): Map<string, number> {
+  const ordemLinhaPorId = new Map<string, number>();
+  const indicePorPagina = new Map<number | null, number>();
+  for (const linha of extrato.linhas) {
+    const linhaOrigem = (indicePorPagina.get(linha.pagina) ?? 0) + 1;
+    indicePorPagina.set(linha.pagina, linhaOrigem);
+    ordemLinhaPorId.set(linha.id, linhaOrigem);
+  }
+  return ordemLinhaPorId;
+}
+
+/**
+ * Reconecta as linhas de um extrato já importado às transações bancárias
+ * gravadas, para permitir conciliar o restante sem reimportar o arquivo.
+ * Retorna null quando o arquivo não está importado para esta conta.
+ */
+export async function reaproveitarExtratoImportado(params: {
+  arquivo: File;
+  contaId: string;
+  extrato: ExtratoLido;
+}): Promise<{
+  transacoesPorHash: Map<string, string>;
+  hashesPorLinha: Map<string, string>;
+  linhasNaoReconhecidas: number;
+} | null> {
+  const { arquivo, contaId, extrato } = params;
+  const arquivoHash = await sha256Hex(arquivo);
+
+  const { data: transacoes, error } = await supabase
+    .from('transacoes_banco')
+    .select('id, hash_transacao, data_transacao, valor_centavos, pagina_origem, linha_origem')
+    .eq('conta_bancaria_id', contaId)
+    .eq('arquivo_hash', arquivoHash);
+  if (error || !transacoes || transacoes.length === 0) return null;
+
+  const porProcedencia = new Map<string, typeof transacoes[number]>();
+  for (const transacao of transacoes) {
+    if (transacao.pagina_origem === null || transacao.linha_origem === null || !transacao.hash_transacao) continue;
+    porProcedencia.set(`${transacao.pagina_origem}:${transacao.linha_origem}`, transacao);
+  }
+
+  const ordemLinhaPorId = calcularOrdemLinhaPorPagina(extrato);
+  const transacoesPorHash = new Map<string, string>();
+  const hashesPorLinha = new Map<string, string>();
+  let linhasNaoReconhecidas = 0;
+
+  for (const linha of extrato.linhas) {
+    if (linha.confianca === 'baixa' || linha.pagina === null) continue;
+    const ordem = ordemLinhaPorId.get(linha.id);
+    const candidata = ordem ? porProcedencia.get(`${linha.pagina}:${ordem}`) : undefined;
+    const valorCentavos = Math.round((linha.direcao === 'entrada' ? linha.valor : -linha.valor) * 100);
+    const confere = candidata
+      && candidata.data_transacao === linha.data
+      && Number(candidata.valor_centavos) === valorCentavos;
+    if (!confere) {
+      linhasNaoReconhecidas += 1;
+      continue;
+    }
+    hashesPorLinha.set(linha.id, candidata.hash_transacao as string);
+    transacoesPorHash.set(candidata.hash_transacao as string, candidata.id);
+  }
+
+  if (transacoesPorHash.size === 0) return null;
+  return { transacoesPorHash, hashesPorLinha, linhasNaoReconhecidas };
+}
+
 export async function persistirExtrato(params: {
   arquivo: File;
   contaId: string;
@@ -68,13 +134,7 @@ export async function persistirExtrato(params: {
   if (linhasParaPersistir.length === 0) {
     throw new Error('Não há linhas persistíveis: linhas de confiança baixa ou sem página identificada não são gravadas.');
   }
-  const ordemLinhaPorId = new Map<string, number>();
-  const indicePorPagina = new Map<number | null, number>();
-  for (const linha of extrato.linhas) {
-    const linhaOrigem = (indicePorPagina.get(linha.pagina) ?? 0) + 1;
-    indicePorPagina.set(linha.pagina, linhaOrigem);
-    ordemLinhaPorId.set(linha.id, linhaOrigem);
-  }
+  const ordemLinhaPorId = calcularOrdemLinhaPorPagina(extrato);
 
   const nomeArquivo = nomeSanitizado(arquivo.name);
   const storagePath = `${user.id}/${crypto.randomUUID()}/${nomeArquivo}`;
