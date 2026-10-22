@@ -216,10 +216,9 @@ export const lancamentosService = {
       }
 
       if (filters.operationalView) {
-        // Baixa registrada sai das telas de Pagar/Receber: permanece só o título com saldo em aberto (baixa parcial continua).
-        query = query
-          .in('status_pagamento', ['aberto', 'pago_parcial', 'quitação_pendente'])
-          .gt('saldo_aberto', 0);
+        // Baixa registrada sai das telas de Pagar/Receber; títulos abertos e baixas parciais permanecem.
+        query = query.in('status_pagamento', ['aberto', 'pago_parcial', 'quitação_pendente']);
+        orGroups.push(['saldo_aberto.gt.0', 'status_pagamento.eq.aberto']);
         orGroups.push(['status_aprovacao.neq.confirmado_master', 'status_aprovacao.is.null']);
       }
 
@@ -899,6 +898,12 @@ export const lancamentosService = {
       throw new Error('Apenas usuários Master podem confirmar saldos.');
     }
 
+    if (targetStatus === 'reprovado') {
+      const { error } = await supabase.rpc('reprovar_lancamentos_master', { p_lancamento_ids: ids });
+      if (error) throw error;
+      return;
+    }
+
     const updatePayload: any = {
       status_aprovacao: targetStatus,
       data_aprovacao: targetStatus === 'confirmado_master' ? new Date().toISOString() : null
@@ -907,9 +912,6 @@ export const lancamentosService = {
     if (targetStatus === 'confirmado_master') {
       updatePayload.status_pagamento = 'pago';
       updatePayload.data_pagamento = new Date().toISOString().split('T')[0];
-    } else if (targetStatus === 'reprovado') {
-      updatePayload.status_pagamento = 'aberto';
-      updatePayload.data_pagamento = null;
     }
 
     if (targetStatus !== 'confirmado_master') {
