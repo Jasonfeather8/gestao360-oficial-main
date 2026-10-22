@@ -234,6 +234,27 @@ export function useTransacoesCandidatas(transferencia: TransferenciaBancaria | n
   });
 }
 
+export function useSugerirTransferenciasDestino(transacaoId: string | null, enabled = true) {
+  return useQuery({
+    queryKey: ['transferencias', 'sugestoesDestino', transacaoId],
+    queryFn: () => transacaoId ? transferenciasService.sugerirTransferenciasDestino(transacaoId) : Promise.resolve([]),
+    enabled: enabled && Boolean(transacaoId),
+  });
+}
+
+export function useIdentificarTransferencia() {
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: ({ transacaoId, contaRelacionadaId }: { transacaoId: string; contaRelacionadaId: string }) =>
+      transferenciasService.identificarTransferencia(transacaoId, contaRelacionadaId),
+    onSuccess: () => {
+      ['transferencias', 'lancamentos', 'contasSaldos', 'dashboardStats', 'dashboardIndicadores', 'auditoriaLogs', 'notifications', 'transacoesBanco']
+        .forEach((queryKey) => queryClient.invalidateQueries({ queryKey: [queryKey] }));
+    },
+  });
+  return { identificarTransferencia: mutation.mutateAsync, isIdentificando: mutation.isPending };
+}
+
 export function useConciliarTransferencia() {
   const queryClient = useQueryClient();
   const mutation = useMutation({

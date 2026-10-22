@@ -59,6 +59,8 @@ function linhaTransferencia(
           <p className="mt-1 text-xs text-on-surface-variant">
             Conciliação: origem {transferencia.transacao_origem_id ? 'conciliada' : 'pendente'} · destino {transferencia.transacao_destino_id ? 'conciliada' : 'pendente'}
           </p>
+          {(transferencia.status === 'aberta' || transferencia.status === 'aguardando_destino') && <p className="mt-1 text-xs text-primary">Aprovação pendente do Master · a conciliação do extrato é opcional e pode ser feita depois.</p>}
+          {transferencia.status === 'conciliada_pendente_master' && <p className="mt-1 text-xs text-primary">Os dois lados estão conciliados e aguardam aprovação do Master.</p>}
           {transferencia.tarifa && <p className="mt-1 text-xs text-on-surface-variant">Tarifa: {moeda.format(Number(transferencia.tarifa.valor_previsto))}</p>}
           {transferencia.status === 'conciliada' && transferencia.aprovado_em && <p className="mt-1 text-xs text-bank-truth-green">Aprovada em {dataHoraFormatada.format(new Date(transferencia.aprovado_em))}</p>}
           {transferencia.reprovado_em && <p className="mt-1 text-xs text-alert-red">Reprovada em {dataHoraFormatada.format(new Date(transferencia.reprovado_em))}{transferencia.motivo_reprovacao ? ` · ${transferencia.motivo_reprovacao}` : ''}</p>}
@@ -70,7 +72,7 @@ function linhaTransferencia(
           {transferencia.status !== 'estornada' && <button type="button" aria-expanded={expandida} aria-label={`${expandida ? 'Fechar' : 'Abrir'} conciliação da transferência`} onClick={alternar} className="rounded-lg border border-surface-border px-3 py-2 text-xs font-bold text-on-surface transition hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
             Conciliar
           </button>}
-          {role === 'master' && transferencia.status === 'conciliada_pendente_master' && <>
+          {role === 'master' && ['aberta', 'aguardando_destino', 'conciliada_pendente_master'].includes(transferencia.status) && <>
             <button type="button" onClick={() => abrirDecisao(transferencia, 'aprovar')} className="rounded-lg bg-bank-truth-green px-3 py-2 text-xs font-bold text-white transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">Aprovar</button>
             <button type="button" onClick={() => abrirDecisao(transferencia, 'reprovar')} className="rounded-lg bg-alert-red px-3 py-2 text-xs font-bold text-white transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">Reprovar</button>
           </>}

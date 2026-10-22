@@ -127,6 +127,23 @@ export const transferenciasService = {
     return data as TransferenciaBancaria;
   },
 
+  identificarTransferencia: async (transacaoId: string, contaRelacionadaId: string): Promise<TransferenciaBancaria> => {
+    const { data, error } = await supabase.rpc('identificar_transacao_transferencia_atomica', {
+      p_transacao_id: transacaoId,
+      p_conta_relacionada_id: contaRelacionadaId,
+    });
+    if (error) throw error;
+    return data as TransferenciaBancaria;
+  },
+
+  sugerirTransferenciasDestino: async (transacaoId: string): Promise<TransferenciaBancaria[]> => {
+    const { data, error } = await supabase.rpc('sugerir_transferencias_destino', {
+      p_transacao_id: transacaoId,
+    });
+    if (error) throw error;
+    return (data || []) as TransferenciaBancaria[];
+  },
+
   decidir: async (transferenciaId: string, aprovado: boolean, justificativa?: string): Promise<TransferenciaBancaria> => {
     const { data, error } = await supabase.rpc('decidir_aprovacao_master', {
       p_item_id: transferenciaId,

@@ -52,8 +52,8 @@ function LadoTransferencia({ transferencia, lado, conciliada, bloquearAcoes, tra
         <div className="mt-3 space-y-2">
           {isLoading ? <p role="status" className="text-xs text-on-surface-variant">Buscando transações candidatas…</p>
             : isError ? <p role="alert" className="text-xs text-alert-red">Não foi possível carregar as transações candidatas.</p>
-              : candidatas.length === 0 ? <p className="text-xs text-on-surface-variant">Nenhuma transação candidata para este lado</p>
-                : candidatas.map((candidata) => (
+              : candidatas.length === 0 ? <p className="text-xs text-on-surface-variant">Nenhuma transação de extrato da conta {lado === 'origem' ? transferencia.conta_origem?.nome || 'de origem' : transferencia.conta_destino?.nome || 'de destino'} com o valor exato e dentro de ±7 dias. Importe o extrato do período para vincular este lado — isso não bloqueia a aprovação.</p>
+              : candidatas.map((candidata) => (
                   <article key={candidata.id} className="rounded-lg bg-surface-container-low p-3">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                       <div className="min-w-0">
@@ -88,9 +88,8 @@ function LadoTransferencia({ transferencia, lado, conciliada, bloquearAcoes, tra
 export default function ConciliacaoTransferenciaPainel({ transferencia }: { transferencia: TransferenciaBancaria }) {
   const { data: categorias = [] } = useCategorias();
   const { data: centrosCusto = [] } = useCentrosCusto();
-  const apenasProgresso = transferencia.status === 'estornada'
-    || transferencia.status === 'conciliada_pendente_master'
-    || transferencia.status === 'conciliada';
+  const bloquearConciliacao = transferencia.status === 'estornada'
+    || transferencia.status === 'conciliada_pendente_master';
   const nomeCategoria = transferencia.tarifa?.categoria_id
     ? categorias.find((categoria) => categoria.id === transferencia.tarifa?.categoria_id)?.nome || '—'
     : '—';
@@ -105,14 +104,15 @@ export default function ConciliacaoTransferenciaPainel({ transferencia }: { tran
         <span className="text-xs font-bold text-on-surface-variant">{rotulosStatus[transferencia.status]}</span>
       </div>
       {transferencia.tarifa && <p className="rounded-lg bg-surface-container-low p-3 text-xs text-on-surface-variant">Tarifa bancária (despesa da transferência): {moeda.format(Number(transferencia.tarifa.valor_previsto))} · Categoria: {nomeCategoria} · Centro de custo: {nomeCentroCusto}</p>}
+      {transferencia.status === 'conciliada' && <p className="rounded-lg bg-bank-truth-green/10 p-3 text-xs text-bank-truth-green">A transferência já foi aprovada. O vínculo com o extrato é retroativo e opcional e não desfaz a aprovação.</p>}
       <div className="grid gap-3 md:grid-cols-2">
-        <LadoTransferencia transferencia={transferencia} lado="origem" conciliada={!!transferencia.transacao_origem_id} bloquearAcoes={apenasProgresso} transacao={transferencia.transacao_origem} />
-        <LadoTransferencia transferencia={transferencia} lado="destino" conciliada={!!transferencia.transacao_destino_id} bloquearAcoes={apenasProgresso} transacao={transferencia.transacao_destino} />
+        <LadoTransferencia transferencia={transferencia} lado="origem" conciliada={!!transferencia.transacao_origem_id} bloquearAcoes={bloquearConciliacao} transacao={transferencia.transacao_origem} />
+        <LadoTransferencia transferencia={transferencia} lado="destino" conciliada={!!transferencia.transacao_destino_id} bloquearAcoes={bloquearConciliacao} transacao={transferencia.transacao_destino} />
       </div>
-      {apenasProgresso && (
+      {bloquearConciliacao && (
         <p className="flex items-center gap-2 text-xs text-on-surface-variant">
-          <CheckCircle2 aria-hidden="true" className="h-4 w-4 text-bank-truth-green" />
-          {transferencia.status === 'estornada' ? 'Esta transferência foi estornada.' : transferencia.status === 'conciliada_pendente_master' ? 'Os dois lados estão conciliados e aguardam aprovação Master.' : 'Os dois lados estão conciliados.'}
+          <CheckCircle2 aria-hidden="true" className={`h-4 w-4 ${transferencia.status === 'estornada' ? 'text-alert-red' : 'text-bank-truth-green'}`} />
+          {transferencia.status === 'estornada' ? 'Esta transferência foi estornada.' : 'Os dois lados estão conciliados e aguardam aprovação Master.'}
         </p>
       )}
     </div>
