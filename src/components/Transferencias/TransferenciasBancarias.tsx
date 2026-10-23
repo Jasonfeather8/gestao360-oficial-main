@@ -3,7 +3,6 @@ import { motion } from 'motion/react';
 import { ArrowLeftRight, CheckCircle2, Info, Landmark, LoaderCircle } from 'lucide-react';
 import MoneyInput from '../MoneyInput';
 import AccountFilterCards from '../Lancamentos/AccountFilterCards';
-import ConciliacaoTransferenciaPainel from './ConciliacaoTransferenciaPainel';
 import DecisaoTransferenciaModal from './DecisaoTransferenciaModal';
 import { useCategorias, useCentrosCusto, useContas, useContasSaldos, useCriarTransferencia, useDecidirTransferencia, useEstornarTransferencia, useTransferencias } from '../../hooks/useData';
 import { useDragScroll } from '../../hooks/useDragScroll';
@@ -49,8 +48,6 @@ function formatarData(data: string): string {
 
 function linhaTransferencia(
   transferencia: TransferenciaBancaria,
-  expandida: boolean,
-  alternar: () => void,
   role: string,
   abrirDecisao: (transferencia: TransferenciaBancaria, modo: 'aprovar' | 'reprovar' | 'estornar') => void,
 ) {
@@ -79,9 +76,6 @@ function linhaTransferencia(
         <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 sm:justify-end">
           <span className="text-sm font-black text-on-surface">{moeda.format(Number(transferencia.valor))}</span>
           <span className={`text-xs font-bold ${status.cor}`}>{status.label}</span>
-          {transferencia.status !== 'estornada' && <button type="button" aria-expanded={expandida} aria-label={`${expandida ? 'Fechar' : 'Abrir'} conciliação da transferência`} onClick={alternar} className="rounded-lg border border-surface-border px-3 py-2 text-xs font-bold text-on-surface transition hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
-            Conciliar
-          </button>}
           {role === 'master' && statusPendentesMaster.includes(transferencia.status) && <>
             <button type="button" onClick={() => abrirDecisao(transferencia, 'aprovar')} className="rounded-lg bg-bank-truth-green px-3 py-2 text-xs font-bold text-white transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">Aprovar</button>
             <button type="button" onClick={() => abrirDecisao(transferencia, 'reprovar')} className="rounded-lg bg-alert-red px-3 py-2 text-xs font-bold text-white transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">Reprovar</button>
@@ -89,7 +83,6 @@ function linhaTransferencia(
           {role === 'master' && transferencia.status !== 'estornada' && <button type="button" onClick={() => abrirDecisao(transferencia, 'estornar')} className="rounded-lg border border-alert-red/40 px-3 py-2 text-xs font-bold text-alert-red transition hover:bg-alert-red/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">Estornar</button>}
         </div>
       </div>
-      {expandida && <ConciliacaoTransferenciaPainel transferencia={transferencia} />}
     </article>
   );
 }
@@ -133,7 +126,6 @@ export default function TransferenciasBancarias() {
   const [transferenciaDecisao, setTransferenciaDecisao] = useState<TransferenciaBancaria | null>(null);
   const [modoDecisao, setModoDecisao] = useState<'aprovar' | 'reprovar' | 'estornar' | null>(null);
   const [erroDecisao, setErroDecisao] = useState('');
-  const [transferenciaExpandidaId, setTransferenciaExpandidaId] = useState<string | null>(null);
   const tarifaCentavos = emCentavos(tarifa);
   const statusesAtivos = useMemo(() => gruposSituacao
     .filter((grupo) => gruposAtivos.includes(grupo.id))
@@ -348,8 +340,6 @@ export default function TransferenciasBancarias() {
               : transferenciasFiltradas.length === 0 ? <p className="py-5 text-sm text-on-surface-variant">Nenhuma transferência corresponde aos filtros selecionados.</p>
                 : <div>{transferenciasFiltradas.map((transferencia) => linhaTransferencia(
                   transferencia,
-                  transferenciaExpandidaId === transferencia.id,
-                  () => setTransferenciaExpandidaId((atual) => atual === transferencia.id ? null : transferencia.id),
                   role,
                   abrirDecisao,
                 ))}</div>}
