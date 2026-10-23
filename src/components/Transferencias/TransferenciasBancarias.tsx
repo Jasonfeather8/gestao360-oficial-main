@@ -2,9 +2,11 @@ import { useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import { ArrowLeftRight, CheckCircle2, Info, Landmark, LoaderCircle } from 'lucide-react';
 import MoneyInput from '../MoneyInput';
+import AccountFilterCards from '../Lancamentos/AccountFilterCards';
 import ConciliacaoTransferenciaPainel from './ConciliacaoTransferenciaPainel';
 import DecisaoTransferenciaModal from './DecisaoTransferenciaModal';
-import { useCategorias, useCentrosCusto, useContas, useCriarTransferencia, useDecidirTransferencia, useEstornarTransferencia, useTransferencias } from '../../hooks/useData';
+import { useCategorias, useCentrosCusto, useContas, useContasSaldos, useCriarTransferencia, useDecidirTransferencia, useEstornarTransferencia, useTransferencias } from '../../hooks/useData';
+import { useDragScroll } from '../../hooks/useDragScroll';
 import { useAuth } from '../../hooks/useAuth';
 import type { TransferenciaBancaria, TransferenciaStatus } from '../../types';
 
@@ -34,6 +36,12 @@ const statusTransferencia: Record<TransferenciaStatus, { label: string; cor: str
   estornada: { label: 'Estornada', cor: 'text-alert-red' },
 };
 const statusPendentesMaster: TransferenciaStatus[] = ['aberta', 'aguardando_destino', 'conciliada_pendente_master'];
+const gruposSituacao = [
+  { id: 'pendentes', label: 'Pendentes de aprovação', statuses: ['aberta', 'aguardando_destino', 'conciliada_pendente_master'] },
+  { id: 'concluidas', label: 'Concluídas', statuses: ['conciliada'] },
+  { id: 'estornadas', label: 'Estornadas', statuses: ['estornada'] },
+] as const;
+type GrupoSituacaoId = typeof gruposSituacao[number]['id'];
 
 function formatarData(data: string): string {
   return dataFormatada.format(new Date(`${data}T00:00:00Z`));
@@ -89,9 +97,11 @@ function linhaTransferencia(
 export default function TransferenciasBancarias() {
   const { role } = useAuth();
   const { data: contasData = [] } = useContas();
+  const { data: contasSaldos = [] } = useContasSaldos();
   const { data: categoriasData = [] } = useCategorias();
   const { data: centrosData = [] } = useCentrosCusto();
   const { data: transferencias = [], isLoading, isError } = useTransferencias();
+  const dragScrollContas = useDragScroll();
   const transferenciasPendentesMaster = transferencias.filter((transferencia) => statusPendentesMaster.includes(transferencia.status)).length;
   const { criarTransferencia, isCreating } = useCriarTransferencia();
   const { decidirTransferencia, isDecidindo } = useDecidirTransferencia();
@@ -99,7 +109,17 @@ export default function TransferenciasBancarias() {
   const contas = useMemo(() => contasData.filter((conta) => !('status' in conta) || conta.status !== 'excluido'), [contasData]);
   const categorias = useMemo(() => categoriasData.filter((categoria) => !('status' in categoria) || categoria.status !== 'excluido'), [categoriasData]);
   const centros = useMemo(() => centrosData.filter((centro) => !('status' in centro) || centro.status !== 'excluido'), [centrosData]);
+  const accountCardsData = useMemo(() => contas.map((conta) => {
+    const saldo = contasSaldos.find((item) => item.conta_id === conta.id);
+    return {
+      ...conta,
+      auditadoBalance: saldo ? Number(saldo.saldo_confirmado) : (conta.saldo_inicial || 0),
+      operacionalBalance: saldo ? Number(saldo.saldo_operacional) : (conta.saldo_inicial || 0),
+    };
+  }), [contas, contasSaldos]);
 
+  const [contasSelecionadas, setContasSelecionadas] = useState<string[]>([]);
+  const [gruposAtivos, setGruposAtivos] = useState<GrupoSituacaoId[]>(() => gruposSituacao.map((grupo) => grupo.id));
   const [contaOrigemId, setContaOrigemId] = useState('');
   const [contaDestinoId, setContaDestinoId] = useState('');
   const [valor, setValor] = useState('');
@@ -115,6 +135,16 @@ export default function TransferenciasBancarias() {
   const [erroDecisao, setErroDecisao] = useState('');
   const [transferenciaExpandidaId, setTransferenciaExpandidaId] = useState<string | null>(null);
   const tarifaCentavos = emCentavos(tarifa);
+  const statusesAtivos = useMemo(() => gruposSituacao
+    .filter((grupo) => gruposAtivos.includes(grupo.id))
+    .flatMap((grupo) => grupo.statuses), [gruposAtivos]);
+  const transferenciasFiltradas = useMemo(() => transferencias.filter((transferencia) => {
+    const correspondeConta = contasSelecionadas.length === 0
+      || contasSelecionadas.includes(transferencia.conta_origem_id)
+      || contasSelecionadas.includes(transferencia.conta_destino_id);
+    return correspondeConta && statusesAtivos.includes(transferencia.status);
+  }), [transferencias, contasSelecionadas, statusesAtivos]);
+  const filtroAtivo = contasSelecionadas.length > 0 || gruposAtivos.length !== gruposSituacao.length;
 
   const abrirDecisao = (transferencia: TransferenciaBancaria, modo: 'aprovar' | 'reprovar' | 'estornar') => {
     setTransferenciaDecisao(transferencia);
@@ -276,24 +306,53 @@ export default function TransferenciasBancarias() {
         </form>
       </motion.section>
 
+      <div className="space-y-4">
+        <AccountFilterCards
+          accounts={accountCardsData}
+          selectedIds={contasSelecionadas}
+          onSelect={setContasSelecionadas}
+          dragScrollProps={dragScrollContas.props}
+          dragScrollRef={dragScrollContas.ref}
+          valueFormatter={(val: number) => moeda.format(val)}
+        />
+        <div className="flex flex-wrap items-center gap-2" aria-label="Filtrar por situação da transferência">
+          <span className="mr-1 text-xs font-bold text-on-surface-variant">Situação:</span>
+          {gruposSituacao.map((grupo) => {
+            const selecionado = gruposAtivos.includes(grupo.id);
+            return <button
+              key={grupo.id}
+              type="button"
+              aria-pressed={selecionado}
+              onClick={() => setGruposAtivos((ativos) => selecionado
+                ? ativos.filter((id) => id !== grupo.id)
+                : [...ativos, grupo.id])}
+              className={`rounded-full border px-3 py-1.5 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${selecionado ? 'border-primary bg-primary/5 text-primary' : 'border-surface-border text-on-surface-variant'}`}
+            >
+              {grupo.label}
+            </button>;
+          })}
+        </div>
+      </div>
+
       <section className="rounded-xl border border-surface-border bg-white p-5 dark:bg-surface">
         <header className="mb-2 flex items-center justify-between gap-3">
           <h2 className="text-xs font-black uppercase tracking-widest text-secondary">Transferências registradas</h2>
           <div className="flex items-center gap-2">
             {role === 'master' && transferenciasPendentesMaster > 0 && <span className="rounded-full border border-amber-100 bg-amber-50 px-2 py-1 text-[10px] font-black text-amber-700">{transferenciasPendentesMaster} aguardando decisão do Master</span>}
-            <span className="text-xs text-on-surface-variant">{transferencias.length}</span>
+            <span className="text-xs text-on-surface-variant">{filtroAtivo ? `${transferenciasFiltradas.length} de ${transferencias.length}` : transferencias.length}</span>
           </div>
         </header>
         {isLoading ? <p role="status" className="py-5 text-sm text-on-surface-variant">Carregando transferências…</p>
           : isError ? <p role="alert" className="py-5 text-sm text-alert-red">Não foi possível carregar o histórico de transferências.</p>
             : transferencias.length === 0 ? <p className="py-5 text-sm text-on-surface-variant">Nenhuma transferência registrada</p>
-              : <div>{transferencias.map((transferencia) => linhaTransferencia(
-                transferencia,
-                transferenciaExpandidaId === transferencia.id,
-                () => setTransferenciaExpandidaId((atual) => atual === transferencia.id ? null : transferencia.id),
-                role,
-                abrirDecisao,
-              ))}</div>}
+              : transferenciasFiltradas.length === 0 ? <p className="py-5 text-sm text-on-surface-variant">Nenhuma transferência corresponde aos filtros selecionados.</p>
+                : <div>{transferenciasFiltradas.map((transferencia) => linhaTransferencia(
+                  transferencia,
+                  transferenciaExpandidaId === transferencia.id,
+                  () => setTransferenciaExpandidaId((atual) => atual === transferencia.id ? null : transferencia.id),
+                  role,
+                  abrirDecisao,
+                ))}</div>}
       </section>
       <DecisaoTransferenciaModal
         modo={modoDecisao}
