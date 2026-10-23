@@ -415,6 +415,15 @@ export default function Lancamentos({
     );
   };
 
+  const getTransferenciaContasLabel = (item: LancamentoFinanceiro): string => {
+    const transferencia = item.transferencia_id ? transferenciasById.get(item.transferencia_id) : undefined;
+    if (transferencia?.conta_origem?.nome && transferencia.conta_destino?.nome) {
+      return `${transferencia.conta_origem.nome} → ${transferencia.conta_destino.nome}`;
+    }
+    const conta = activeContas.find(account => account.id === item.conta_bancaria_id);
+    return conta?.nome || conta?.nome_banco || '';
+  };
+
   const clearFiltersShortcut = () => {
     setSearchTerm('');
     setDocSearchTerm('');
@@ -1223,7 +1232,10 @@ export default function Lancamentos({
                               {isTransferenciaEspelho ? (
                                 <>
                                   <span className="w-fit rounded-md border border-primary/20 bg-primary/5 px-2 py-1 text-[8px] font-black uppercase tracking-widest text-primary">Transferência entre contas</span>
-                                  <span className="mt-1 max-w-[260px] text-[10px] font-bold text-neutral-600">{item.observacoes}</span>
+                                  {getTransferenciaContasLabel(item) && (
+                                    <span className="mt-1 max-w-[260px] truncate text-[10px] font-bold uppercase text-neutral-600">{getTransferenciaContasLabel(item)}</span>
+                                  )}
+                                  {renderObservacoes(item)}
                                 </>
                               ) : (
                                 <>
