@@ -44,7 +44,11 @@ const getValorLiquido = (item: LancamentoFinanceiro): number => {
   return Number(item.valor_previsto) - desconto + acrescimo;
 };
 
-const sumValues = (items: LancamentoFinanceiro[]) => items.reduce((sum, item) => sum + getValorLiquido(item), 0);
+const sumValues = (items: LancamentoFinanceiro[]) => items.reduce((sum, item) => {
+  // Transferências entre contas não são caixa; somente a tarifa é uma despesa real.
+  if (item.transferencia_lado === 'origem' || item.transferencia_lado === 'destino') return sum;
+  return sum + getValorLiquido(item);
+}, 0);
 
 export default function FinanceiroStatusFilter({ value, onChange, filters }: FinanceiroStatusFilterProps) {
   const confirmedQuery = useLancamentos({

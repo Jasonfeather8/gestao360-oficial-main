@@ -24,6 +24,7 @@ export interface LancamentoFilters {
   motivoAcrescimoId?: string;
   isFinanceiroView?: boolean;
   operationalView?: boolean;
+  transferenciasOnly?: boolean;
   page?: number;
   pageSize?: number;
 }
@@ -189,6 +190,10 @@ export const lancamentosService = {
 
     if (filters) {
       const orGroups: string[][] = [];
+
+      if (filters.transferenciasOnly) {
+        query = query.not('transferencia_id', 'is', null);
+      }
 
       if (filters.docCode === undefined) {
         const dateField = filters.isFinanceiroView ? 'data_pagamento' : 'data_vencimento';

@@ -13,6 +13,7 @@ import {
   Clock,
   ArrowUpRight,
   ArrowDownLeft,
+  ArrowLeftRight,
   ChevronDown,
   ChevronRight,
   ShieldCheck,
@@ -32,8 +33,8 @@ import {
   Paperclip,
   Link2
 } from 'lucide-react';
-import { useSearchParams } from 'react-router-dom';
-import { useLancamentos, useContas, useEntidades, useCategorias, useUsuarios, useCentrosCusto, useCategoriasAjuste, useContasSaldos } from '../hooks/useData';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useLancamentos, useContas, useEntidades, useCategorias, useUsuarios, useCentrosCusto, useCategoriasAjuste, useContasSaldos, useTransferencias } from '../hooks/useData';
 import { useAuth } from '../hooks/useAuth';
 import { useUIStore } from '../store/uiStore';
 import { useDragScroll } from '../hooks/useDragScroll';
@@ -80,6 +81,7 @@ export default function Lancamentos({
   const [tableWidth, setTableWidth] = useState(0);
   const [columnWidths, setColumnWidths] = useState<number[]>([]);
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
 
   const isMaster = role === 'master';
   const isColaborador = role === 'colaborador';
@@ -160,6 +162,7 @@ export default function Lancamentos({
   const [approvalStatus, setApprovalStatus] = useState('all');
   const [statusPagamento, setStatusPagamento] = useState<string[]>(defaultStatusPagamento === 'all' ? [] : [defaultStatusPagamento]);
   const [typeFilter, setTypeFilter] = useState<string[]>(defaultTypeFilter === 'all' ? [] : [defaultTypeFilter]);
+  const [transferenciasOnly, setTransferenciasOnly] = useState(false);
 
   // Sincronizar o estado interno com as propriedades da rota ao navegar
   useEffect(() => {
@@ -190,7 +193,7 @@ export default function Lancamentos({
     return normalizedSelection.length !== normalizedDefault.length || normalizedSelection.some((value, index) => value !== normalizedDefault[index]);
   };
 
-  const hasActiveFilters = debouncedSearchTerm !== '' || docSearchTerm !== '' || approvalStatus !== 'all' || selectionDiffersFromDefault(statusPagamento, defaultStatusPagamento) || selectionDiffersFromDefault(typeFilter, defaultTypeFilter) || authorIdFilter.length > 0 || categoryIdFilter.length > 0 || contaIdFilter.length > 0 || centroCustoIdFilter.length > 0 || condicaoFilter !== 'all' || temDescontoFilter !== 'all' || temAcrescimoFilter !== 'all' || motivoDescontoFilter !== 'all' || motivoAcrescimoFilter !== 'all';
+  const hasActiveFilters = debouncedSearchTerm !== '' || docSearchTerm !== '' || approvalStatus !== 'all' || transferenciasOnly || selectionDiffersFromDefault(statusPagamento, defaultStatusPagamento) || selectionDiffersFromDefault(typeFilter, defaultTypeFilter) || authorIdFilter.length > 0 || categoryIdFilter.length > 0 || contaIdFilter.length > 0 || centroCustoIdFilter.length > 0 || condicaoFilter !== 'all' || temDescontoFilter !== 'all' || temAcrescimoFilter !== 'all' || motivoDescontoFilter !== 'all' || motivoAcrescimoFilter !== 'all';
 
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [selectedLogItem, setSelectedLogItem] = useState<LancamentoFinanceiro | null>(null);
@@ -225,6 +228,7 @@ export default function Lancamentos({
     motivoDescontoId: motivoDescontoFilter,
     motivoAcrescimoId: motivoAcrescimoFilter,
     isFinanceiroView,
+    transferenciasOnly: isFinanceiroView && transferenciasOnly,
     page: currentPage,
     pageSize: pageSize === 'all' ? undefined : pageSize
   });
@@ -308,6 +312,36 @@ export default function Lancamentos({
     return allLancamentos.filter(l => selectedAccountIds.length === 0 || selectedAccountIds.includes(l.conta_bancaria_id));
   }, [allLancamentos, selectedAccountIds]);
 
+  const { data: transferencias = [] } = useTransferencias();
+  const transferenciasById = useMemo(() => new Map(transferencias.map(transferencia => [transferencia.id, transferencia])), [transferencias]);
+  const displayedLancamentos = useMemo(() => {
+    const displayed: LancamentoFinanceiro[] = [];
+    const indexesByTransferencia = new Map<string, number>();
+
+    filteredLancamentos.forEach(item => {
+      const isTransferenciaEspelho = Boolean(item.transferencia_id)
+        && (item.transferencia_lado === 'origem' || item.transferencia_lado === 'destino');
+      if (!isTransferenciaEspelho || !item.transferencia_id) {
+        displayed.push(item);
+        return;
+      }
+
+      const existingIndex = indexesByTransferencia.get(item.transferencia_id);
+      if (existingIndex === undefined) {
+        indexesByTransferencia.set(item.transferencia_id, displayed.length);
+        displayed.push(item);
+      } else if (item.transferencia_lado === 'origem' && displayed[existingIndex].transferencia_lado === 'destino') {
+        displayed[existingIndex] = item;
+      }
+    });
+
+    return displayed;
+  }, [filteredLancamentos]);
+  const selectableLancamentos = useMemo(
+    () => filteredLancamentos.filter(item => item.transferencia_lado !== 'origem' && item.transferencia_lado !== 'destino'),
+    [filteredLancamentos]
+  );
+
   const resolvedFinanceiroContaIds = useMemo(() => {
     if (selectedAccountIds.length === 0) return contaIdFilter;
     if (contaIdFilter.length === 0) return selectedAccountIds;
@@ -385,6 +419,7 @@ export default function Lancamentos({
     setSearchTerm('');
     setDocSearchTerm('');
     setApprovalStatus('all');
+    setTransferenciasOnly(false);
     setStatusPagamento(defaultStatusPagamento === 'all' ? [] : [defaultStatusPagamento]);
     setTypeFilter(defaultTypeFilter === 'all' ? [] : [defaultTypeFilter]);
     setAuthorIdIdFilter([]);
@@ -407,10 +442,10 @@ export default function Lancamentos({
 
   const toggleSelectAll = () => {
     if (!isMaster) return;
-    if (selectedLancamentoIdsForBatch.length === filteredLancamentos.length) {
+    if (selectedLancamentoIdsForBatch.length === selectableLancamentos.length) {
       setSelectedLancamentoIdsForBatch([]);
     } else {
-      setSelectedLancamentoIdsForBatch(filteredLancamentos.map(l => l.id));
+      setSelectedLancamentoIdsForBatch(selectableLancamentos.map(l => l.id));
     }
   };
 
@@ -480,7 +515,7 @@ export default function Lancamentos({
     });
   }, [activeContas, contasSaldos]);
 
-  const selectedPrintLancamentos = filteredLancamentos.filter(item => selectedLancamentoIdsForBatch.includes(item.id));
+  const selectedPrintLancamentos = displayedLancamentos.filter(item => selectedLancamentoIdsForBatch.includes(item.id));
   const selectedOperationalLancamentos = isOperationalView ? selectedPrintLancamentos : [];
   const operationalDocumentCodes = new Set<number>();
   const operationalTotals = selectedOperationalLancamentos.reduce(
@@ -505,6 +540,7 @@ export default function Lancamentos({
   );
   const printTotals = selectedPrintLancamentos.reduce(
     (totals, item) => {
+      if (item.transferencia_lado === 'origem' || item.transferencia_lado === 'destino') return totals;
       const desconto = calculateAdjustmentAmount(item.desconto_valor, item.desconto_tipo, item.valor_previsto);
       const acrescimo = calculateAdjustmentAmount(item.acrescimo_valor, item.acrescimo_tipo, item.valor_previsto);
       const valorPago = item.valor_recebido || 0;
@@ -657,17 +693,28 @@ export default function Lancamentos({
 
   const renderBancoCell = (item: LancamentoFinanceiro) => {
     const conta = activeContas.find(account => account.id === item.conta_bancaria_id);
-    const bankName = conta?.nome_banco || conta?.nome || 'Conta bancária não identificada';
+    const isTransferenciaEspelho = Boolean(item.transferencia_id)
+      && (item.transferencia_lado === 'origem' || item.transferencia_lado === 'destino');
+    const transferencia = item.transferencia_id ? transferenciasById.get(item.transferencia_id) : undefined;
+    const bankName = isTransferenciaEspelho
+      ? transferencia?.conta_origem?.nome && transferencia.conta_destino?.nome
+        ? `${transferencia.conta_origem.nome} → ${transferencia.conta_destino.nome}`
+        : conta?.nome || conta?.nome_banco || 'Conta bancária não identificada'
+      : conta?.nome_banco || conta?.nome || 'Conta bancária não identificada';
 
     return (
       <td className="py-3 px-4 text-center" title={bankName} aria-label={bankName}>
-        <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-neutral-100 text-neutral-500" title={bankName} aria-label={bankName}>
-          {conta?.logo_url ? (
-            <img src={conta.logo_url} alt={bankName} title={bankName} className="w-full h-full object-cover rounded-lg" />
-          ) : (
-            <CreditCard className="w-4 h-4" aria-hidden="true" />
-          )}
-        </span>
+        {isTransferenciaEspelho ? (
+          <span className="text-[9px] font-black uppercase tracking-wide text-secondary">{bankName}</span>
+        ) : (
+          <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-neutral-100 text-neutral-500" title={bankName} aria-label={bankName}>
+            {conta?.logo_url ? (
+              <img src={conta.logo_url} alt={bankName} title={bankName} className="w-full h-full object-cover rounded-lg" />
+            ) : (
+              <CreditCard className="w-4 h-4" aria-hidden="true" />
+            )}
+          </span>
+        )}
       </td>
     );
   };
@@ -900,6 +947,24 @@ export default function Lancamentos({
           </div>
         </div>
 
+        {isFinanceiroView && (
+          <button
+            type="button"
+            onClick={() => {
+              setTransferenciasOnly(current => !current);
+              setSelectedLancamentoIdsForBatch([]);
+              setCurrentPage(1);
+            }}
+            className={`px-4 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest border-2 transition-all shrink-0 ${
+              transferenciasOnly
+                ? 'border-primary bg-primary/5 text-primary'
+                : 'border-neutral-100 bg-neutral-50 text-secondary'
+            }`}
+          >
+            Transferências
+          </button>
+        )}
+
         <div className="flex items-center gap-3 w-full lg:w-auto">
           <div className="flex flex-col bg-neutral-100 p-1 rounded-xl h-16 w-16 shrink-0" aria-label="Tempo" title="Tempo">
             <button
@@ -990,10 +1055,10 @@ export default function Lancamentos({
             <thead>
               <tr className="bg-neutral-50/50 text-neutral-400 border-b border-neutral-100 text-[9px] font-black uppercase tracking-widest select-none">
                 <th className="py-5 px-4 w-10 text-center">
-                  {isMaster && (
+                  {isMaster && selectableLancamentos.length > 0 && (
                     <input
                       type="checkbox"
-                      checked={filteredLancamentos.length > 0 && selectedLancamentoIdsForBatch.length === filteredLancamentos.length}
+                      checked={selectedLancamentoIdsForBatch.length === selectableLancamentos.length}
                       onChange={toggleSelectAll}
                       className="rounded-md border-neutral-300 text-primary focus:ring-primary w-4 h-4 transition-all"
                     />
@@ -1037,16 +1102,18 @@ export default function Lancamentos({
                 <tr><td colSpan={isOperationalView ? 15 : 12} className="py-24 text-center"><div className="flex flex-col items-center gap-3 opacity-40"><Clock className="w-10 h-10 animate-spin text-primary" /><p className="font-black uppercase text-[10px] tracking-widest">Sincronizando registros...</p></div></td></tr>
               ) : isError ? (
                 <tr><td colSpan={isOperationalView ? 15 : 12} className="py-24 text-center"><div className="flex flex-col items-center gap-3 text-alert-red"><AlertTriangle className="w-10 h-10" /><p className="font-black uppercase text-[10px] tracking-widest">Erro ao carregar dados. Tente simplificar a busca.</p></div></td></tr>
-              ) : filteredLancamentos.length === 0 ? (
+              ) : displayedLancamentos.length === 0 ? (
                 <tr><td colSpan={isOperationalView ? 15 : 12} className="py-24 text-center"><div className="flex flex-col items-center gap-3 opacity-20"><Receipt className="w-12 h-12" /><p className="font-black uppercase text-[10px] tracking-widest">Nenhum lançamento localizado</p></div></td></tr>
               ) : (
                 <>
-                  {filteredLancamentos.map((item, idx) => {
-                    const isSelected = selectedLancamentoIdsForBatch.includes(item.id);
-                    const isAprovacaoPendente = item.status_aprovacao !== 'confirmado_master' || item.status_pagamento === 'quitação_pendente';
-                    const days = getDaysOverdue(item.data_vencimento);
+                  {displayedLancamentos.map((item, idx) => {
+                  const isSelected = selectedLancamentoIdsForBatch.includes(item.id);
+                  const isTransferenciaEspelho = Boolean(item.transferencia_id)
+                    && (item.transferencia_lado === 'origem' || item.transferencia_lado === 'destino');
+                  const isAprovacaoPendente = item.status_aprovacao !== 'confirmado_master' || item.status_pagamento === 'quitação_pendente';
+                  const days = getDaysOverdue(item.data_vencimento);
 
-                    return (
+                  return (
                     <tr
                       key={`${item.id}-${idx}`}
                       onClick={() => {
@@ -1056,7 +1123,7 @@ export default function Lancamentos({
                       className={`border-b border-neutral-50 hover:bg-neutral-50/50 transition-all cursor-pointer group ${isSelected ? 'bg-primary/5 border-primary/10' : ''}`}
                     >
                       <td className="py-3 px-4 text-center" onClick={(e) => e.stopPropagation()}>
-                        {isMaster && (
+                        {isMaster && !isTransferenciaEspelho && (
                           <input
                             type="checkbox"
                             checked={isSelected}
@@ -1147,16 +1214,25 @@ export default function Lancamentos({
                       ) : (
                         <>
                           <td className="py-3 px-4">
-                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${item.tipo === 'entrada' ? 'bg-emerald-50 text-bank-truth-green' : 'bg-red-50 text-alert-red'}`}>
-                              {item.tipo === 'entrada' ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownLeft className="w-4 h-4" />}
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isTransferenciaEspelho ? 'bg-primary/5 text-primary' : item.tipo === 'entrada' ? 'bg-emerald-50 text-bank-truth-green' : 'bg-red-50 text-alert-red'}`}>
+                              {isTransferenciaEspelho ? <ArrowLeftRight className="w-4 h-4" /> : item.tipo === 'entrada' ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownLeft className="w-4 h-4" />}
                             </div>
                           </td>
                           <td className="py-3 px-4">
                             <div className="flex flex-col">
-                              <div className="flex items-center gap-2">
-                                <span className="text-neutral-900 font-black uppercase tracking-tighter truncate max-w-[200px]">{entidades.find(e => e.id === item.entidade_id)?.nome_razao_social || 'N/A'}</span>
-                              </div>
-                              {renderObservacoes(item)}
+                              {isTransferenciaEspelho ? (
+                                <>
+                                  <span className="w-fit rounded-md border border-primary/20 bg-primary/5 px-2 py-1 text-[8px] font-black uppercase tracking-widest text-primary">Transferência entre contas</span>
+                                  <span className="mt-1 max-w-[260px] text-[10px] font-bold text-neutral-600">{item.observacoes}</span>
+                                </>
+                              ) : (
+                                <>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-neutral-900 font-black uppercase tracking-tighter truncate max-w-[200px]">{entidades.find(e => e.id === item.entidade_id)?.nome_razao_social || 'N/A'}</span>
+                                  </div>
+                                  {renderObservacoes(item)}
+                                </>
+                              )}
                             </div>
                           </td>
                           <td className="py-3 px-4 whitespace-nowrap text-neutral-500 font-mono">{item.data_vencimento.split('-').reverse().join('/')}</td>
@@ -1219,7 +1295,7 @@ export default function Lancamentos({
                       <td className="py-3 px-4 text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-2">
                           <div className="flex items-center gap-1.5 mr-2">
-                            {isFinanceiroView && isMaster && isAprovacaoPendente && (
+                            {isFinanceiroView && isMaster && !isTransferenciaEspelho && isAprovacaoPendente && (
                               <button
                                 type="button"
                                 onClick={() => {
@@ -1242,17 +1318,27 @@ export default function Lancamentos({
                             )}
                           </div>
 
-                          <LancamentoActionMenu
-                            item={item}
-                            isMaster={isMaster}
-                            isActive={activeMenuId === item.id}
-                            isOperationalView={isOperationalView}
-                            onToggle={() => setActiveMenuId(activeMenuId === item.id ? null : item.id)}
-                            onBaixa={handleOpenBaixa}
-                            onEstornar={handleEstornar}
-                            onEdit={handleEdit}
-                            onDelete={handleDelete}
-                          />
+                          {isTransferenciaEspelho ? (
+                            <button
+                              type="button"
+                              onClick={() => navigate('/conciliacao?aba=transferencias')}
+                              className="px-3 py-1.5 rounded-lg border border-primary/20 bg-primary/5 text-[9px] font-black uppercase tracking-widest text-primary hover:bg-primary/10 transition-all"
+                            >
+                              Ver transferência
+                            </button>
+                          ) : (
+                            <LancamentoActionMenu
+                              item={item}
+                              isMaster={isMaster}
+                              isActive={activeMenuId === item.id}
+                              isOperationalView={isOperationalView}
+                              onToggle={() => setActiveMenuId(activeMenuId === item.id ? null : item.id)}
+                              onBaixa={handleOpenBaixa}
+                              onEstornar={handleEstornar}
+                              onEdit={handleEdit}
+                              onDelete={handleDelete}
+                            />
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1339,7 +1425,7 @@ export default function Lancamentos({
         {/* Pagination Bar */}
         <div className="bg-neutral-50/50 px-8 py-4 border-t border-neutral-100 flex items-center justify-between rounded-b-[32px]">
           <span className="text-neutral-400 font-bold text-[9px] uppercase tracking-widest">
-            Exibindo {filteredLancamentos.length} de {totalCount} registros
+            Exibindo {displayedLancamentos.length} de {totalCount} registros
           </span>
 
           <div className="flex items-center gap-2">
