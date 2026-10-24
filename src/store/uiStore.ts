@@ -116,6 +116,8 @@ interface UIState {
   setEntidadeFormDraft: (draft: Partial<UIState['entidadeFormDraft']>) => void;
   setScrollPosition: (key: string, position: number) => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
+  resetLancamentoFormDraft: () => void;
+  resetEntidadeFormDraft: () => void;
   resetAllDrafts: () => void;
 }
 
@@ -228,6 +230,14 @@ export const useUIStore = create<UIState>()(
       })),
 
       setSidebarCollapsed: (isSidebarCollapsed) => set({ isSidebarCollapsed }),
+
+      resetLancamentoFormDraft: () => set({
+        lancamentoFormDraft: { ...initialDrafts.lancamentoFormDraft }
+      }),
+
+      resetEntidadeFormDraft: () => set({
+        entidadeFormDraft: { ...initialDrafts.entidadeFormDraft }
+      }),
 
       resetAllDrafts: () => set({
         lancamentoFormDraft: { ...initialDrafts.lancamentoFormDraft },

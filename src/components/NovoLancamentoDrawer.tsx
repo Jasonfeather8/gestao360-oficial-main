@@ -220,6 +220,7 @@ export default function NovoLancamentoDrawer() {
     avrPreset,
     setAvrPreset,
     setEntidadeFormDraft,
+    resetLancamentoFormDraft,
     resetAllDrafts
   } = useUIStore();
 
@@ -293,6 +294,9 @@ export default function NovoLancamentoDrawer() {
   }, [selectedLancamentoIdForModal, lancamentoSelecionado, lancamentos]);
   const isEditingLoading = isEditing && isLancamentoSelecionadoLoading && !editingItem;
 
+  // O rascunho do painel é preservado ao reabrir "Novo Lançamento" — esse é o
+  // próprio objetivo do draft. As parcelas locais acompanham o rascunho; só a
+  // sessão iniciada por um preset do extrato é que começa do zero.
   useEffect(() => {
     if (!isNovoLancamentoOpen) return;
     if (lancamentoPreset) {
@@ -301,9 +305,7 @@ export default function NovoLancamentoDrawer() {
       return;
     }
     if (!isEditing) {
-      resetAllDrafts();
       setAttachments([]);
-      setParcelasManuais([]);
     }
   }, [isNovoLancamentoOpen]);
 
@@ -596,6 +598,11 @@ export default function NovoLancamentoDrawer() {
   const shouldLockEntity = isAVREdit ? avrHasReceived : shouldLockFields;
 
   const handleClose = () => {
+    // Sessões de edição/preset escrevem dados de um registro existente no
+    // rascunho; ao fechar, esse conteúdo não pode virar o próximo lançamento.
+    if (isEditing || lancamentoPreset || avrPreset) {
+      resetLancamentoFormDraft();
+    }
 
     setModalOpen('isNovoLancamentoOpen', false);
     setSelectedLancamentoIdForModal(null);

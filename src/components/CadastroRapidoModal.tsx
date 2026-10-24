@@ -35,7 +35,7 @@ export default function CadastroRapidoModal() {
     setEntidadeFormDraft,
     lancamentoFormDraft,
     setLancamentoFormDraft,
-    resetAllDrafts
+    resetEntidadeFormDraft
   } = useUIStore();
   
   const { createEntity } = useEntidades();
@@ -162,7 +162,9 @@ export default function CadastroRapidoModal() {
         }
       }
 
-      resetAllDrafts();
+      // Limpa apenas o rascunho da entidade: o rascunho do painel de lançamento
+      // em andamento é preservado (só a nova entidade passa a ser selecionada).
+      resetEntidadeFormDraft();
 
       // Auto-select in the launch form
       if (newEntity) {
