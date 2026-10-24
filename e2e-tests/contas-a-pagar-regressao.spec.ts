@@ -33,10 +33,19 @@ async function pickSearchableOption(page: Page, triggerName: string | RegExp): P
   return label;
 }
 
+// O botão de abertura de cada campo é o filho direto do bloco do rótulo.
+function fieldTrigger(page: Page, label: string) {
+  return page.locator("label", { hasText: label }).locator("xpath=../..").locator("xpath=./button");
+}
+
 async function selectCategoryAndCostCenter(page: Page): Promise<void> {
-  // A Categoria Contábil já vem pré-selecionada pelo app quando existe categoria do tipo escolhido;
-  // o que falta preencher é o Centro de Custo, cujo seletor exibe o placeholder "Selecione...".
-  await pickSearchableOption(page, /^Selecione\.\.\.$/);
+  // O painel nem sempre vem com categoria e centro de custo preenchidos; escolhe os dois pelo rótulo.
+  for (const label of ["Categoria Contábil", "Centro de Custo"]) {
+    await fieldTrigger(page, label).click();
+    const options = page.locator(".max-h-60 button");
+    await expect(options.first()).toBeVisible({ timeout: 15_000 });
+    await options.first().click();
+  }
 }
 
 async function fillLaunch(page: Page, amountDigits: string, type: "Receita / Entrada" | "Despesa / Saída"): Promise<string> {
@@ -57,11 +66,10 @@ async function fillLaunch(page: Page, amountDigits: string, type: "Receita / Ent
 
 async function saveLaunch(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Salvar Registro" }).click();
-  const outcome = page.getByText(/Lançamento cadastrado com sucesso!|Ocorreu um problema:|Por favor,|Selecione|O valor recebido/).last();
-  await expect(outcome).toBeVisible({ timeout: 30_000 });
-  const observedMessage = (await outcome.textContent())?.trim() ?? "";
-  test.info().annotations.push({ type: "Desfecho observado (criação)", description: observedMessage });
-  await expect(page.getByText("Lançamento cadastrado com sucesso!", { exact: true })).toBeVisible();
+  const toast = page.locator("div.fixed.bottom-6.right-6 > div").last();
+  await expect(toast).toBeVisible({ timeout: 30_000 });
+  const observedMessage = (await toast.locator("p").last().innerText()).trim();
+  expect(observedMessage, `Mensagem exibida ao salvar: "${observedMessage}"`).toBe("Lançamento cadastrado com sucesso!");
 }
 
 async function goToPayables(page: Page): Promise<void> {
@@ -83,10 +91,14 @@ test.afterEach(async () => {
 
 test("Contas a Pagar mostra apenas saídas", async ({ page }) => {
   await goToPayables(page);
-  await fillLaunch(page, "70101", "Receita / Entrada");
+  const incomeEntity = await fillLaunch(page, "70101", "Receita / Entrada");
   await saveLaunch(page);
-  const incomeRows = page.getByRole("row").filter({ hasText: "701,01" });
-  await expect(incomeRows).toHaveCount(0);
+
+  const incomeRows = page.getByRole("row").filter({ hasText: "701,01" }).filter({ hasText: incomeEntity });
+  await expect(
+    incomeRows,
+    `A receita de 701,01 (entidade "${incomeEntity}") apareceu em Contas a Pagar`,
+  ).toHaveCount(0);
 
   await fillLaunch(page, "70202", "Despesa / Saída");
   await saveLaunch(page);

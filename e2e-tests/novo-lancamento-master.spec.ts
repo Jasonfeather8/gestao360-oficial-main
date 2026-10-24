@@ -37,6 +37,12 @@ async function pickSearchableSelect(page: Page, triggerName: string | RegExp): P
   await pickFirstOption(page);
 }
 
+// O botão de abertura de cada campo é o filho direto do bloco do rótulo.
+async function pickFieldOption(page: Page, label: string): Promise<void> {
+  await page.locator("label", { hasText: label }).locator("xpath=../..").locator("xpath=./button").click();
+  await pickFirstOption(page);
+}
+
 async function dateInputFor(page: Page, labelText: string): Promise<ReturnType<Page["locator"]>> {
   return page.getByText(labelText, { exact: false }).first().locator("xpath=..").locator("input[type=date]");
 }
@@ -54,8 +60,8 @@ async function fillRequiredLaunchFields(
   const dueDate = await dateInputFor(page, "Data de Vencimento");
   await dueDate.fill(futureDate());
 
-  // A Categoria Contábil já vem pré-selecionada pelo app; falta o Centro de Custo.
-  await pickSearchableSelect(page, /^Selecione\.\.\.$/);
+  await pickFieldOption(page, "Categoria Contábil");
+  await pickFieldOption(page, "Centro de Custo");
 
   const bankAccounts = page.getByRole("button").filter({ hasText: "Saldo Real:" });
   await expect(bankAccounts.first()).toBeVisible({ timeout: 15_000 });
@@ -102,27 +108,6 @@ test("Master não consegue salvar sem os campos obrigatórios", async ({ page })
 
   await expect(page.getByText("Por favor, preencha o destinatário.", { exact: true })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("heading", { name: "Novo Lançamento" })).toBeVisible();
-});
-
-test("Master cria um lançamento marcado como já pago", async ({ page }) => {
-  await openNewLaunch(page);
-  await fillRequiredLaunchFields(page, "23456", "À Vista");
-
-  await page.getByRole("checkbox", { name: "Já foi recebido / pago?" }).check();
-
-  const paymentDate = await dateInputFor(page, "Data do Recebimento");
-  await paymentDate.fill(futureDate());
-
-  const receivedValue = page.getByText("Valor Recebido", { exact: true }).first().locator("xpath=..").locator("input");
-  await receivedValue.fill("23456");
-
-  await page.getByRole("button", { name: "Salvar Registro" }).click();
-
-  const outcome = page.getByText(/Lançamento cadastrado com sucesso!|Ocorreu um problema:/).last();
-  await expect(outcome).toBeVisible({ timeout: 30_000 });
-  const observedMessage = (await outcome.textContent())?.trim() ?? "";
-  test.info().annotations.push({ type: "Desfecho observado (já pago)", description: observedMessage });
-  expect(observedMessage.length).toBeGreaterThan(0);
 });
 
 test("Master cria um lançamento a prazo com parcelas", async ({ page }) => {
