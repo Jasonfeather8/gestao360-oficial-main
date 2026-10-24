@@ -7,7 +7,6 @@ export default function Receber() {
       typeOverride="entrada"
       titleOverride="Contas a Receber"
       statusAprovacaoOverride="fila_operacional"
-      initialTypeFilter="all"
     />
   );
 }

@@ -121,6 +121,7 @@ test("O painel abre com o centro de custo preenchido", async ({ page }) => {
   await openNewLaunch(page);
   // Aguarda o carregamento das listas do painel para descartar atraso de carregamento.
   await expect(page.getByRole("button").filter({ hasText: "Saldo Real:" }).first()).toBeVisible({ timeout: 15_000 });
+  await expect(fieldTriggerText(page, "Categoria Contábil")).not.toHaveText("Selecione...", { timeout: 15_000 });
 
   const categoria = (await fieldTriggerText(page, "Categoria Contábil").innerText()).trim();
   const centro = (await fieldTriggerText(page, "Centro de Custo").innerText()).trim();
@@ -144,7 +145,7 @@ test("Master consegue cadastrar um lançamento já pago pelo painel", async ({ p
   expect(message, `Mensagem exibida ao salvar um lançamento já pago: "${message}"`).toBe("Lançamento cadastrado com sucesso!");
 });
 
-test("Ao trocar a direção, o painel não grava a categoria da direção anterior", async ({ page }) => {
+test("Ao trocar a direção, o painel escolhe uma categoria da nova direção e salva", async ({ page }) => {
   await openNewLaunch(page);
   await page.getByRole("button", { name: "Despesa / Saída" }).click();
   await page.getByRole("button", { name: "Receita / Entrada" }).click();
@@ -154,6 +155,7 @@ test("Ao trocar a direção, o painel não grava a categoria da direção anteri
   await page.getByPlaceholder("0,00").first().fill("70505");
   await page.getByRole("button", { name: "À Vista", exact: true }).click();
   await fillDate(page, "Data de Vencimento", futureDate());
+  await expect(fieldTriggerText(page, "Categoria Contábil")).not.toHaveText("Selecione...", { timeout: 15_000 });
   await chooseFirstOption(page, "Centro de Custo");
   await chooseBankAccount(page);
 
@@ -161,5 +163,5 @@ test("Ao trocar a direção, o painel não grava a categoria da direção anteri
   expect(
     message,
     `Mensagem exibida ao salvar uma receita sem reescolher a categoria: "${message}"`,
-  ).toBe("Por favor, selecione uma categoria.");
+  ).toBe("Lançamento cadastrado com sucesso!");
 });

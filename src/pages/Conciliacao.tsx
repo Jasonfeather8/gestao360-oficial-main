@@ -21,7 +21,7 @@ import {
   X,
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
-import { useContas, useLancamentosDaConta, usePersistirExtrato, useConciliarTransacao, useStatusConciliacaoTransacoes, useLancamentosConciliados, useConciliarTransferencia, useIdentificarTransferencia, useSugerirTransferenciasDestino } from '../hooks/useData';
+import { useContas, useLancamentosDaConta, usePersistirExtrato, useConciliarTransacao, useStatusConciliacaoTransacoes, useLancamentosConciliados } from '../hooks/useData';
 import { useUIStore } from '../store/uiStore';
 import ConciliarModal from '../components/Conciliacao/ConciliarModal';
 import ProgressoExtrato from '../components/Conciliacao/ProgressoExtrato';
@@ -31,7 +31,7 @@ import { compararExtrato, valorPrevistoParaConciliar } from '../services/extrato
 import { lerExtrato } from '../services/extrato/motorLeitura';
 import { reaproveitarExtratoImportado } from '../services/extrato/persistencia';
 import { mensagemDoErro } from '../services/erros';
-import type { ExtratoLido, ItemComparacao, LancamentoFinanceiro, ProgressoLeituraExtrato, TransferenciaBancaria } from '../types';
+import type { ExtratoLido, ItemComparacao, LancamentoFinanceiro, ProgressoLeituraExtrato } from '../types';
 
 const moeda = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const dataFormatada = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
@@ -83,15 +83,7 @@ export default function Conciliacao() {
   const [mostrarNaoInterpretadas, setMostrarNaoInterpretadas] = useState(false);
   const [mostrarIgnoradas, setMostrarIgnoradas] = useState(false);
   const [conciliarItem, setConciliarItem] = useState<ItemComparacao | null>(null);
-  const [transferenciaItem, setTransferenciaItem] = useState<ItemComparacao | null>(null);
-  const [contaRelacionadaId, setContaRelacionadaId] = useState('');
-  const [erroIdentificacao, setErroIdentificacao] = useState('');
-  const [transacaoSugestoesId, setTransacaoSugestoesId] = useState<string | null>(null);
   const [toasts, setToasts] = useState<Array<{ id: number; message: string; type: 'success' | 'error' }>>([]);
-  const { identificarTransferencia, isIdentificando } = useIdentificarTransferencia();
-  const { conciliarTransferencia, isConciliando: isConciliandoTransferencia } = useConciliarTransferencia();
-  const { data: transferenciasSugeridas = [], isLoading: carregandoSugestoes, isError: erroSugestoes } = useSugerirTransferenciasDestino(transacaoSugestoesId, Boolean(transacaoSugestoesId));
-  const contasAtivas = useMemo(() => contas.filter((conta) => !('status' in conta) || conta.status !== 'excluido'), [contas]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const aplicarMapeamentoDeTransacoes = (resultado: {
@@ -311,30 +303,6 @@ export default function Conciliacao() {
     showToast('Transação conciliada com sucesso.');
   };
 
-  const confirmarIdentificacaoTransferencia = async () => {
-    const transacaoId = transferenciaItem?.linhaExtrato?.transacaoBancoId;
-    if (!transacaoId || !contaRelacionadaId) return;
-    setErroIdentificacao('');
-    try {
-      await identificarTransferencia({ transacaoId, contaRelacionadaId });
-      setTransferenciaItem(null);
-      setContaRelacionadaId('');
-      showToast('Transferência identificada e vinculada com sucesso.');
-    } catch (error) {
-      setErroIdentificacao(mensagemDoErro(error, 'Não foi possível identificar esta transferência.'));
-    }
-  };
-
-  const vincularSugestaoDestino = async (transferencia: TransferenciaBancaria, transacaoId: string) => {
-    try {
-      await conciliarTransferencia({ transferenciaId: transferencia.id, transacaoId, lado: 'destino' });
-      setTransacaoSugestoesId(null);
-      showToast('Transação vinculada à transferência.');
-    } catch (error) {
-      showToast(mensagemDoErro(error, 'Não foi possível vincular esta transação.'), 'error');
-    }
-  };
-
   const renderItem = (item: ItemComparacao) => {
     const status = {
       conciliado: { label: 'Par sugerido', icon: CheckCircle2, className: 'bg-bank-truth-green/10 text-bank-truth-green' },
@@ -344,13 +312,12 @@ export default function Conciliacao() {
     }[item.status];
     const transacaoId = item.linhaExtrato?.transacaoBancoId;
     const conciliadaDeVerdade = Boolean(transacaoId && statusConciliacao[transacaoId]);
-    const transacaoPendenteExtrato = Boolean(transacaoId && statusConciliacao[transacaoId] === false);
     const StatusIcon = conciliadaDeVerdade ? CheckCircle2 : status.icon;
     const valorPrincipal = item.valorExtrato ?? item.valorErp ?? 0;
 
     return (
-      <div key={item.id} className="flex items-start justify-between gap-3 border-b border-surface-border/70 py-3 last:border-b-0">
-        <div className="flex min-w-0 items-start gap-3">
+      <div key={item.id} className="flex items-start justify-between gap-4 border-b border-surface-border/70 py-4 last:border-b-0">
+        <div className="flex min-w-0 flex-1 items-start gap-3">
           {item.direcao === 'entrada'
             ? <ArrowUpRight className="mt-0.5 h-4 w-4 shrink-0 text-bank-truth-green" />
             : <ArrowDownLeft className="mt-0.5 h-4 w-4 shrink-0 text-alert-red" />}
@@ -402,42 +369,6 @@ export default function Conciliacao() {
               >
                 <PlusCircle className="h-3.5 w-3.5" />Lançar
               </button>}
-              {transacaoPendenteExtrato && <button
-                type="button"
-                onClick={() => {
-                  setTransferenciaItem(item);
-                  setContaRelacionadaId('');
-                  setErroIdentificacao('');
-                }}
-                className="inline-flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-primary transition hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-              >
-                É transferência entre contas
-              </button>}
-              {transacaoPendenteExtrato && item.direcao === 'entrada' && transacaoId && <button
-                type="button"
-                aria-expanded={transacaoSugestoesId === transacaoId}
-                onClick={() => setTransacaoSugestoesId((atual) => atual === transacaoId ? null : transacaoId)}
-                className="inline-flex items-center gap-1 rounded-lg border border-surface-border px-2.5 py-1 text-[10px] font-bold text-on-surface-variant transition hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-              >
-                {transacaoSugestoesId === transacaoId ? 'Ocultar sugestões' : 'Ver transferências sugeridas'}
-              </button>}
-            </div>
-          )}
-          {transacaoPendenteExtrato && item.direcao === 'entrada' && transacaoSugestoesId === transacaoId && (
-            <div className="w-full max-w-sm space-y-2 rounded-lg border border-surface-border p-3 text-left">
-              <p className="text-xs font-bold text-on-surface">Transferências sugeridas para vincular</p>
-              {carregandoSugestoes ? <p role="status" className="text-xs text-on-surface-variant">Buscando transferências…</p>
-                : erroSugestoes ? <p role="alert" className="text-xs text-alert-red">Não foi possível carregar as transferências sugeridas.</p>
-                  : transferenciasSugeridas.length === 0 ? <p className="text-xs text-on-surface-variant">Nenhuma transferência compatível para vincular.</p>
-                    : transferenciasSugeridas.map((transferencia) => (
-                      <div key={transferencia.id} className="flex items-center justify-between gap-2 rounded-md bg-surface-container-low p-2">
-                        <div className="min-w-0 text-xs">
-                          <p className="truncate font-semibold text-on-surface">{contas.find((conta) => conta.id === transferencia.conta_origem_id)?.nome || 'Conta de origem'} → {contas.find((conta) => conta.id === transferencia.conta_destino_id)?.nome || 'Conta de destino'}</p>
-                          <p className="text-on-surface-variant">{formatarData(transferencia.data_transferencia)} · {moeda.format(Number(transferencia.valor))}</p>
-                        </div>
-                        <button type="button" disabled={isConciliandoTransferencia} onClick={() => void vincularSugestaoDestino(transferencia, transacaoId as string)} className="shrink-0 rounded-md bg-primary px-2 py-1 text-xs font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50">Vincular</button>
-                      </div>
-                    ))}
             </div>
           )}
         </div>
@@ -714,7 +645,7 @@ export default function Conciliacao() {
                       const itens = dia[direcao];
                       return (
                         <div key={direcao} className="p-5">
-                          <h4 className={`mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-wider ${direcao === 'entradas' ? 'text-bank-truth-green' : 'text-alert-red'}`}>
+                          <h4 className={`mb-4 flex items-center gap-2 text-xs font-black uppercase tracking-wider ${direcao === 'entradas' ? 'text-bank-truth-green' : 'text-alert-red'}`}>
                             {direcao === 'entradas' ? <ArrowUpRight className="h-4 w-4" /> : <ArrowDownLeft className="h-4 w-4" />}
                             {direcao === 'entradas' ? 'Entradas' : 'Saídas'}
                           </h4>
@@ -782,31 +713,6 @@ export default function Conciliacao() {
         onFazerAVR={aplicarAVR}
         isConciliando={isConciliando}
       />
-      <AnimatePresence>
-        {transferenciaItem && <motion.div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-          <motion.section role="dialog" aria-modal="true" aria-labelledby="identificar-transferencia-titulo" className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl dark:bg-surface" initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }}>
-            <header className="mb-4 flex items-start justify-between gap-3">
-              <div>
-                <h2 id="identificar-transferencia-titulo" className="text-lg font-black text-on-surface">É transferência entre contas</h2>
-                <p className="mt-1 text-sm text-on-surface-variant">Selecione a conta relacionada a esta transação do extrato.</p>
-              </div>
-              <button type="button" aria-label="Fechar identificação da transferência" onClick={() => setTransferenciaItem(null)} className="rounded-lg p-2 text-on-surface-variant hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"><X aria-hidden="true" className="h-4 w-4" /></button>
-            </header>
-            <div className="space-y-4">
-              <label htmlFor="conta-relacionada-transferencia" className="block text-xs font-black uppercase tracking-widest text-secondary">Conta relacionada</label>
-              <select id="conta-relacionada-transferencia" value={contaRelacionadaId} onChange={(event) => setContaRelacionadaId(event.target.value)} className="-mt-3 w-full rounded-lg border border-surface-border bg-white px-3 py-2.5 text-sm text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:bg-surface">
-                <option value="">Selecione a conta</option>
-                {contasAtivas.filter((conta) => conta.id !== contaId).map((conta) => <option key={conta.id} value={conta.id}>{conta.nome}</option>)}
-              </select>
-              {erroIdentificacao && <p role="alert" className="rounded-lg bg-alert-red/10 p-3 text-sm font-semibold text-alert-red">{erroIdentificacao}</p>}
-              <footer className="flex justify-end gap-2">
-                <button type="button" onClick={() => setTransferenciaItem(null)} className="rounded-lg border border-surface-border px-4 py-2 text-sm font-bold text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">Cancelar</button>
-                <button type="button" disabled={!contaRelacionadaId || isIdentificando} onClick={() => void confirmarIdentificacaoTransferencia()} className="rounded-lg bg-primary px-4 py-2 text-sm font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50">{isIdentificando ? 'Identificando…' : 'Confirmar'}</button>
-              </footer>
-            </div>
-          </motion.section>
-        </motion.div>}
-      </AnimatePresence>
       <div aria-live="polite" className="pointer-events-none fixed bottom-4 right-4 z-[500] flex w-full max-w-sm flex-col gap-2">
         <AnimatePresence>
           {toasts.map((toast) => (

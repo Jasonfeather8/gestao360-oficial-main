@@ -393,7 +393,7 @@ export default function NovoLancamentoDrawer() {
     if (centros.length > 0 && !lancamentoFormDraft.centro_custo_id) {
       setLancamentoFormDraft({ centro_custo_id: centros[0].id });
     }
-  }, [contas, centros, isNovoLancamentoOpen]);
+  }, [contas, centros, isNovoLancamentoOpen, lancamentoFormDraft.conta_bancaria_id, lancamentoFormDraft.centro_custo_id]);
 
   const filteredCategorias = useMemo(() => {
     return categorias.filter(c => c.tipo === lancamentoFormDraft.tipo);
@@ -808,18 +808,22 @@ export default function NovoLancamentoDrawer() {
       centro_custo_id: lancamentoFormDraft.centro_custo_id || null,
       categoria_id: lancamentoFormDraft.categoria_id || null,
       conta_bancaria_id: lancamentoFormDraft.conta_bancaria_id || null,
-      status_pagamento: lancamentoFormDraft.ja_recebido ? (pagamentoParcial ? 'pago_parcial' : 'pago') : 'aberto',
-      status_aprovacao: editingItem?.status_aprovacao || 'pendente_digital',
+      status_pagamento: lancamentoFormDraft.ja_recebido && isMaster
+        ? (pagamentoParcial ? 'pago_parcial' : 'pago')
+        : 'aberto',
+      status_aprovacao: lancamentoFormDraft.ja_recebido
+        ? (isMaster ? 'confirmado_master' : 'pendente_digital')
+        : (editingItem?.status_aprovacao || 'pendente_digital'),
       observacoes: lancamentoFormDraft.observacoes,
       condicao: lancamentoFormDraft.condicao,
-      ja_recebido: lancamentoFormDraft.ja_recebido,
+      ja_recebido: lancamentoFormDraft.ja_recebido && !isMaster,
       desconto_valor: parseMoney(lancamentoFormDraft.desconto_valor),
       desconto_tipo: lancamentoFormDraft.desconto_tipo,
       motivo_desconto_id: parseMoney(lancamentoFormDraft.desconto_valor) > 0 ? (lancamentoFormDraft.motivo_desconto_id || null) : null,
       acrescimo_valor: parseMoney(lancamentoFormDraft.acrescimo_valor),
       acrescimo_tipo: lancamentoFormDraft.acrescimo_tipo,
       motivo_acrescimo_id: parseMoney(lancamentoFormDraft.acrescimo_valor) > 0 ? (lancamentoFormDraft.motivo_acrescimo_id || null) : null,
-      valor_recebido: parseMoney(lancamentoFormDraft.valor_recebido)
+      valor_recebido: lancamentoFormDraft.ja_recebido && valorRecebido <= 0 ? saldoRecebimento : valorRecebido
     };
 
     try {
@@ -1065,7 +1069,7 @@ export default function NovoLancamentoDrawer() {
                     <button
                       type="button"
                       disabled={shouldLockFields}
-                      onClick={() => setLancamentoFormDraft({ tipo: 'entrada' })}
+                      onClick={() => setLancamentoFormDraft({ tipo: 'entrada', categoria_id: '' })}
                       className={`flex-1 text-xs font-black rounded-lg transition-all uppercase tracking-tighter ${
                         lancamentoFormDraft.tipo === 'entrada'
                           ? 'bg-white dark:bg-surface text-bank-truth-green shadow-sm'
@@ -1077,7 +1081,7 @@ export default function NovoLancamentoDrawer() {
                     <button
                       type="button"
                       disabled={shouldLockFields}
-                      onClick={() => setLancamentoFormDraft({ tipo: 'saida' })}
+                      onClick={() => setLancamentoFormDraft({ tipo: 'saida', categoria_id: '' })}
                       className={`flex-1 text-xs font-black rounded-lg transition-all uppercase tracking-tighter ${
                         lancamentoFormDraft.tipo === 'saida'
                           ? 'bg-white dark:bg-surface text-alert-red shadow-sm'

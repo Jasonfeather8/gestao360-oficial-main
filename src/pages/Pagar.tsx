@@ -7,7 +7,6 @@ export default function Pagar() {
       typeOverride="saida"
       titleOverride="Contas a Pagar"
       statusAprovacaoOverride="fila_operacional"
-      initialTypeFilter="all"
     />
   );
 }
