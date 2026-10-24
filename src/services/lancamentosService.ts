@@ -706,30 +706,11 @@ export const lancamentosService = {
    if (isAVR) {
      const now = new Date();
      const timestampStr = `${now.toLocaleDateString('pt-BR')} às ${now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
-     const { data: { user } } = await supabase.auth.getUser();
-     let recurrenceId = current.recorrencia_id;
+     // AVR é edição pura: nunca cria registro. A recorrência só é atualizada
+     // quando o título já pertence a uma; título avulso continua avulso.
+     const recurrenceId = current.recorrencia_id;
 
-     if (data.parcelas?.length && !recurrenceId) {
-       if (!user) throw new Error('Usuário não autenticado');
-       const config = data.parcela_config || {
-         quantidade: data.parcelas.length,
-         periodicidade: 'mensal',
-         com_entrada: false
-       };
-       const { data: recurrence, error: recurrenceError } = await supabase
-         .from('recorrencias')
-         .insert([{
-           user_id: user.id,
-           periodicidade: config.periodicidade,
-           quantidade_total_parcelas: config.quantidade,
-           data_inicio: data.parcelas[0].data,
-           periodicidade_customizada_dias: config.periodicidade_customizada_dias
-         }])
-         .select('id')
-         .single();
-       if (recurrenceError) throw recurrenceError;
-       recurrenceId = recurrence.id;
-     } else if (recurrenceId && data.parcela_config) {
+     if (recurrenceId && data.parcela_config) {
        const { error: recurrenceError } = await supabase
          .from('recorrencias')
          .update({
@@ -747,10 +728,12 @@ export const lancamentosService = {
        motivo_ajuste: data.motivo_ajuste || current.motivo_ajuste || null,
        valor_previsto: valorParcelaSelecionadaAVR,
        valor_original: valorTotalAVR,
+       // Numeração e quantidade só mudam quando o título já é parcela de uma
+       // recorrência e a grade do AVR informou esses valores.
        ...(recurrenceId ? {
          recorrencia_id: recurrenceId,
-         numero_parcela: data.parcelas?.find(parcela => parcela.id === id)?.numero || 1,
-         quantidade_total_parcelas: data.parcela_config?.quantidade || data.parcelas?.length
+         ...(parcelaSelecionadaAVR?.numero ? { numero_parcela: parcelaSelecionadaAVR.numero } : {}),
+         ...(data.parcela_config?.quantidade ? { quantidade_total_parcelas: data.parcela_config.quantidade } : {})
        } : {}),
        ...(data.condicao ? { condicao: data.condicao } : {}),
        ...(data.data_competencia ? { data_competencia: data.data_competencia } : {}),

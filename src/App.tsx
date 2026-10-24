@@ -176,7 +176,7 @@ function MasterRoute({ children }: { children: React.ReactNode }) {
 }
 
 function AppContent() {
-  const { setModalOpen, isSidebarCollapsed, setSidebarCollapsed } = useUIStore();
+  const { setModalOpen, setSelectedLancamentoIdForModal, isSidebarCollapsed, setSidebarCollapsed } = useUIStore();
   const { signOut } = useAuth();
   const [isMobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
@@ -221,7 +221,14 @@ function AppContent() {
                   <div className="flex items-center gap-3">
                     <NotificationDropdown />
                     <NewLaunchButton
-                      onClick={() => setModalOpen('isNovoLancamentoOpen', true)}
+                      onClick={() => {
+                        // "Novo Lançamento" é sempre criação: fecha a visão de um
+                        // registro e descarta a seleção (edição/AVR) para o painel
+                        // não abrir preenchido com os dados de uma conta existente.
+                        setModalOpen('isComprovanteOpen', false);
+                        setSelectedLancamentoIdForModal(null);
+                        setModalOpen('isNovoLancamentoOpen', true);
+                      }}
                     />
                     <button
                       type="button"

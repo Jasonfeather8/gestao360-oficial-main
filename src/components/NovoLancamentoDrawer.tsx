@@ -309,7 +309,10 @@ export default function NovoLancamentoDrawer() {
     }
   }, [isNovoLancamentoOpen]);
 
+  // O registro só entra no rascunho com o painel aberto: abrir os detalhes de um
+  // título não pode deixar os dados dele no rascunho do próximo lançamento.
   useEffect(() => {
+    if (!isNovoLancamentoOpen) return;
     if (editingItem) {
       setLancamentoFormDraft({
         tipo: editingItem.tipo,
@@ -334,7 +337,7 @@ export default function NovoLancamentoDrawer() {
         valor_recebido: formatBRL(editingItem.valor_recebido || 0),
       });
     }
-  }, [editingItem]);
+  }, [editingItem, isNovoLancamentoOpen]);
 
   useEffect(() => {
     if (!editingItem) {
